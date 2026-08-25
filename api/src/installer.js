@@ -225,6 +225,11 @@ await admin.end()
 
 console.log('\n' + '═'.repeat(72))
 
+// Codes de sortie distincts, pour que l'appelant puisse décider :
+//   1 = défaut de cloisonnement — l'installation est en cause, rien ne doit
+//       démarrer ;
+//   2 = défaut de configuration — la base est saine, l'application peut
+//       démarrer, mais il reste une correction à appliquer.
 if (defautsCloisonnement) {
   console.error(
     `✗ ${defautsCloisonnement} défaut(s) de cloisonnement — le journal d'audit est ` +
@@ -241,7 +246,7 @@ if (defautsConfiguration) {
     `\n✗ ${defautsConfiguration} point(s) de configuration à corriger avant mise en ` +
     `service (voir ci-dessus).\n` +
     `  La base est installée et saine ; il reste à appliquer ces corrections.`)
-  process.exit(1)
+  process.exit(2)
 }
 
 console.log('✓ Base opérationnelle.')
