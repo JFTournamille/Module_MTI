@@ -71,47 +71,150 @@ conteneur, une seule URL.
 
 ### 3. Renseigner les variables d'environnement
 
-**module-mti → App Configs → Environmental Variables** :
+**Où exactement dans CapRover :**
+
+1. menu de gauche → **Apps** ;
+2. cliquer sur **`module-mti`** dans la liste — *pas* sur `mti-db` ;
+3. onglet **App Configs** (deuxième onglet, à côté de *Deployment*) ;
+4. première section de la page : **Environmental Variables**.
+
+Deux façons de saisir :
+
+- **`Add Key/Value Pair`** ajoute une ligne à la fois. La clé va dans le champ
+  de gauche, la valeur **seule** dans celui de droite — ne pas réécrire
+  `DATABASE_URL=` dans la valeur.
+- **`Bulk Edit`** ouvre une zone de texte où l'on colle le bloc entier :
 
 ```
-DATABASE_URL=postgresql://mti_app:A_DEFINIR@srv-captain--mti-db:5432/mti
+DATABASE_URL=postgresql://mti_app:CHOISISSEZ_UN_MOT_DE_PASSE@srv-captain--mti-db:5432/mti
 NODE_ENV=production
 AUTH_MODE=oidc
 ```
+
+Le mot de passe de `mti_app` n'existe pas encore : **c'est vous qui le
+choisissez ici**, et l'étape 4 le créera dans la base avec cette valeur.
+Prenez-le sans `@ : / ? # % &` ni espace, pour ne pas avoir à l'encoder.
+
+5. **descendre en bas de la page et cliquer `Save & Update`** — sans ce clic
+   rien n'est enregistré ; le bouton relance l'app.
+
+Pas de guillemets autour des valeurs : CapRover les prendrait au pied de la
+lettre et le mot de passe serait faux.
 
 Le conteneur **refuse de démarrer sans `DATABASE_URL`**, et l'API refuse de
 démarrer avec `AUTH_MODE=dev` et `NODE_ENV=production` : sans opérateurs
 authentifiés, la traçabilité MTI n'a pas de valeur.
 
-Le mot de passe de `mti_app` n'existe pas encore — il sera créé à l'étape
-suivante, qui l'affichera. Mettez une valeur provisoire ici, le premier
-déploiement échouera au démarrage, c'est attendu : l'étape 4 s'exécute depuis
-le conteneur et vous donnera la bonne valeur à recopier.
+> **À ce stade, l'app démarre mais l'API ne peut pas joindre la base**, qui
+> n'est pas encore installée. C'est attendu : l'interface s'affiche avec le
+> bandeau « Mode hors-ligne », le front fonctionnant sur ses référentiels
+> embarqués. Ce n'est pas une panne.
+>
+> Si les logs montrent `[entrypoint] ✗ DATABASE_URL n'est pas défini`, la
+> variable n'a pas été enregistrée : le `Save & Update` a-t-il été cliqué ?
 
-### 4. Installer la base — une seule commande
+Si vous n'avez **pas** d'accès shell au serveur, ajoutez dès maintenant les
+deux variables temporaires de l'étape 4a plutôt que de faire deux
+déploiements.
 
-Les scripts SQL et les référentiels sont embarqués dans l'image de l'API
-(`/db` et `/shared`). L'installateur s'exécute donc depuis son conteneur.
+Rien à modifier dans le `Dockerfile` ni le `captain-definition` : ce sont des
+fichiers du dépôt, pas de la configuration CapRover.
 
-> **`psql` et `bash` ne sont pas présents dans l'image `node:22-alpine`.**
-> L'installateur est écrit en Node pour cette raison : n'attendez pas de
-> pouvoir lancer `psql` dans ce conteneur.
+### 4. Installer la base
 
-Ouvrez un terminal sur le conteneur (CapRover → module-mti → *Exec Terminal*,
-ou en SSH sur le serveur : `docker exec -it $(docker ps -qf name=module-mti) bash`),
-puis :
+Deux chemins selon que vous avez, ou non, un accès shell au serveur.
+
+#### 4a. Sans accès shell — installation au démarrage *(recommandé si vous n'avez que l'interface CapRover)*
+
+Le conteneur sait installer la base lui-même à son démarrage. Il suffit
+d'ajouter **deux variables temporaires** dans *App Configs → Environmental
+Variables* de `module-mti` :
+
+```
+DATABASE_URL=postgresql://mti_app:CHOISISSEZ_UN_MOT_DE_PASSE@srv-captain--mti-db:5432/mti
+DATABASE_URL_ADMIN=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti
+MTI_APP_PASSWORD=CHOISISSEZ_UN_MOT_DE_PASSE
+NODE_ENV=production
+AUTH_MODE=oidc
+```
+
+`MTI_APP_PASSWORD` et le mot de passe dans `DATABASE_URL` doivent être **la
+même valeur**, que vous choisissez. Prenez-la sans `@ : / ? # % &` ni espace,
+pour ne pas avoir à l'encoder dans l'URL — par exemple 32 caractères
+alphanumériques.
+
+> `MTI_APP_PASSWORD` est **obligatoire** dans ce mode. Sans lui, l'installateur
+> générerait un mot de passe qui n'apparaîtrait que dans les logs, et il
+> faudrait deux déploiements. Le fournir permet de n'en faire qu'un.
+
+Cliquez **Save & Update**. Suivez le déroulement dans *App Logs* :
+
+```
+[entrypoint] DATABASE_URL_ADMIN présent : installation de la base au démarrage
+  ✓ droits superutilisateur confirmés
+    ✓ 001_schema.sql appliqué
+    ✓ 002_roles.sql appliqué
+    ✓ modèle PARCOURS_CART_AUTOLOGUE v1 — 12 processus
+  ✓ effacer une trace d'audit : refusé
+  ✓ modifier une signature posée : refusé
+✓ Cloisonnement du journal d'audit vérifié.
+[entrypoint] ✓ base installée et cloisonnement vérifié
+[entrypoint] ⚠ RETIRER MAINTENANT DATABASE_URL_ADMIN de la configuration de l'app
+```
+
+**Puis retirez `DATABASE_URL_ADMIN` et `MTI_APP_PASSWORD`, et redéployez.**
+Laisser un compte superutilisateur dans la configuration de l'application
+annule le cloisonnement du journal d'audit, qui est toute la raison d'être du
+rôle restreint. `DATABASE_URL` reste, elle.
+
+Comportement selon le résultat :
+
+| Résultat | Conséquence |
+|---|---|
+| Installation réussie | L'app démarre |
+| Défaut de **configuration** (compte de développement actif, par exemple) | L'app démarre, le journal signale ce qui reste à corriger |
+| Défaut de **cloisonnement** | **L'app ne démarre pas** — rien ne doit tourner sur une base dont l'audit est réécrivable |
+| `MTI_APP_PASSWORD` absent | L'app ne démarre pas, avec le motif |
+
+L'opération est idempotente : à chaque redémarrage, les migrations déjà
+appliquées sont ignorées et seules les vérifications sont rejouées.
+
+#### 4b. Avec accès shell
+
+Les scripts SQL et les référentiels sont embarqués dans l'image (`/db` et
+`/shared`).
+
+> **`psql` n'est pas présent dans l'image `node:22-alpine`.** L'installateur
+> est écrit en Node pour cette raison.
+
+L'*Exec Terminal* de CapRover n'existe pas dans toutes les versions. En son
+absence, on passe par SSH :
 
 ```bash
-DATABASE_URL_ADMIN=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti \
+ssh root@<adresse-du-serveur>        # ou ubuntu@ / debian@ selon l'image,
+                                     # avec sudo devant les commandes docker
+
+docker ps --format '{{.Names}}\t{{.Status}}' | grep captain
+```
+
+Puis, en une seule commande — le `-e` ne vaut que pour cette invocation :
+
+```bash
+docker exec \
+  -e DATABASE_URL_ADMIN='postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti' \
+  $(docker ps -qf name=srv-captain--module-mti) \
   node src/installer.js
 ```
+
+> Cette commande contient le mot de passe root et restera dans l'historique du
+> shell. Pour l'éviter : `read -rs MDP` puis utiliser `$MDP`.
 
 L'installateur enchaîne, en s'arrêtant à la première anomalie :
 
 1. connexion et **contrôle des droits superutilisateur** (refuse sinon) ;
 2. migrations `db/*.sql` ;
-3. mot de passe de `mti_app` — généré en `base64url`, donc **sans caractère à
-   encoder dans une URL** (ou fourni via `MTI_APP_PASSWORD`) ;
+3. mot de passe de `mti_app` — généré en `base64url`, donc sans caractère à
+   encoder dans une URL, ou fourni via `MTI_APP_PASSWORD` ;
 4. référentiels, catalogue et produits de référence ;
 5. **test de cloisonnement** : `mti_app` doit être incapable d'effacer ou de
    modifier une trace d'audit, ou de modifier une signature posée, tout en
@@ -119,21 +222,7 @@ L'installateur enchaîne, en s'arrêtant à la première anomalie :
 6. inventaire de ce qui est installé, et alertes de configuration.
 
 Il termine en affichant la `DATABASE_URL` à reporter dans les variables de
-l'app `module-mti` :
-
-```
-✓ Cloisonnement du journal d'audit vérifié.
-✓ Base opérationnelle.
-
-À reporter dans les variables d'environnement de l'application CapRover :
-
-  DATABASE_URL=postgresql://mti_app:...@srv-captain--mti-db:5432/mti
-  NODE_ENV=production
-  AUTH_MODE=oidc
-```
-
-**Le mot de passe généré n'est affiché qu'une fois** : conservez-le dans votre
-gestionnaire de secrets avant de fermer le terminal.
+l'application. **Le mot de passe généré n'est affiché qu'une fois.**
 
 #### Réexécution
 
@@ -182,7 +271,17 @@ erreur** tant qu'il est actif.
 UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';
 ```
 
-### 7. Sauvegardes
+### 7. Sécuriser le tableau de bord CapRover
+
+Si le tableau de bord répond en `http://` sur une IP publique, le mot de passe
+administrateur transite en clair et quiconque l'intercepte peut déployer sur ce
+serveur. C'est bloquant pour une application manipulant des données de santé.
+
+CapRover → *Settings* → renseigner un **Root Domain**, puis activer **HTTPS**
+(Let's Encrypt) et **Force HTTPS**. Indépendant du module MTI, mais à traiter
+avant mise en service.
+
+### 8. Sauvegardes
 
 Une sauvegarde de volume non testée en restauration n'est pas une sauvegarde.
 Mettez en place un `pg_dump` régulier **et** restaurez-le une fois sur une base
