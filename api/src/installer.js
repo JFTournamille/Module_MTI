@@ -309,16 +309,25 @@ for (const [libelle, sql] of [
 
 // Le compte de développement n'est pas authentifié : en production, il
 // attribuerait des saisies à un opérateur qui n'existe pas.
+//
+// Mais sur une instance de recette (AUTH_MODE=dev), c'est l'opérateur
+// légitime : le signaler comme défaut à chaque démarrage serait du bruit, et
+// le bruit finit par masquer les vrais signaux.
+const enProduction = process.env.NODE_ENV === 'production' ||
+                     process.env.AUTH_MODE === 'oidc'
 const { rows: [dev] } = await app.query(
   "SELECT count(*)::int AS n FROM mti.utilisateur WHERE identifiant = 'mdurand' AND actif")
-if (dev.n > 0) {
+if (dev.n > 0 && enProduction) {
   console.log(
-    "\n  ⚠ Le compte de développement « mdurand » est actif. Il n'est pas\n" +
-    "    authentifié : le désactiver avant mise en service, sinon des saisies\n" +
+    "\n  ⚠ Le compte de développement « mdurand » est actif sur une instance de\n" +
+    "    production. Il n'est pas authentifié : le désactiver, sinon des saisies\n" +
     "    pourront être attribuées à un opérateur inexistant.\n" +
-    "\n    UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';\n" +
-    "\n    (il n'est créé que si NODE_ENV n'est pas « production » au moment du seed)")
+    "\n    UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';")
   defautsConfiguration++
+} else if (dev.n > 0) {
+  console.log(
+    "\n  · compte de développement « mdurand » actif — normal en recette,\n" +
+    "    à désactiver avant une mise en service réelle.")
 }
 
 // Patients fictifs : utiles en recette, inacceptables en production.
