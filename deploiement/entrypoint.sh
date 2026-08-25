@@ -113,6 +113,32 @@ if [ -n "${DATABASE_URL_ADMIN:-}" ] || [ -n "${ADMIN_MOT_DE_PASSE:-}" ]; then
   fi
 fi
 
+# ── Patients fictifs au démarrage ────────────────────────────────────────────
+#
+# Même logique que l'installation : sans accès shell, la variable est le seul
+# moyen de déclencher l'insertion. seed-demo.js porte ses propres garde-fous
+# (source « DEMO », refus en production sans SEED_DEMO=oui).
+if [ "${SEED_DEMO:-}" = "oui" ]; then
+  journal "SEED_DEMO=oui : insertion des patients fictifs"
+  if node /app/src/seed-demo.js; then
+    journal "⚠ Patients fictifs en base. À purger avant mise en service :"
+    journal "  retirer SEED_DEMO, ajouter PURGER_DEMO=oui, puis redéployer."
+  else
+    journal "✗ insertion des patients fictifs en échec (voir ci-dessus)."
+    journal "  Le démarrage continue : ce n'est pas bloquant."
+  fi
+fi
+
+# Purge, par le même canal.
+if [ "${PURGER_DEMO:-}" = "oui" ]; then
+  journal "PURGER_DEMO=oui : suppression des patients fictifs"
+  if node /app/src/seed-demo.js --supprimer; then
+    journal "✓ patients fictifs supprimés — retirer PURGER_DEMO de la configuration"
+  else
+    journal "✗ purge refusée (voir ci-dessus). Le démarrage continue."
+  fi
+fi
+
 journal "démarrage de l'API Node sur 127.0.0.1:3000"
 node /app/src/server.js &
 PID_NODE=$!
