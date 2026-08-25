@@ -53,6 +53,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production
 ENV PORT=3000
+# nginx relaie depuis le même conteneur : l'API n'écoute que sur la boucle
+# locale, elle n'est donc pas joignable depuis le réseau de l'orchestrateur.
+ENV HOST=127.0.0.1
 EXPOSE 80
 
 ENTRYPOINT ["/sbin/tini", "--"]

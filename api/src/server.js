@@ -152,9 +152,17 @@ await app.register(patients)
 await app.register(dossiers)
 
 const port = Number(process.env.PORT ?? 3000)
+
+// Dans l'image combinée, nginx tourne dans le MÊME conteneur et relaie vers
+// 127.0.0.1 : l'API n'a alors aucune raison d'être joignable depuis le réseau
+// de l'orchestrateur, où d'autres conteneurs pourraient l'atteindre en
+// contournant nginx. HOST=127.0.0.1 ferme cette porte.
+// En topologie à deux apps, nginx est dans un autre conteneur : 0.0.0.0 y est
+// nécessaire, d'où le défaut conservé.
+const host = process.env.HOST ?? '0.0.0.0'
 try {
-  await app.listen({ port, host: '0.0.0.0' })
-  app.log.info(`API MTI démarrée sur le port ${port} (auth : ${mode})`)
+  await app.listen({ port, host })
+  app.log.info(`API MTI démarrée sur ${host}:${port} (auth : ${mode})`)
 } catch (e) {
   app.log.error(e)
   process.exit(1)

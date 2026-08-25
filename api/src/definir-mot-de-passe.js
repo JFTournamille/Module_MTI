@@ -36,7 +36,7 @@ try {
   await pool.query(ordre)
 
   console.log('✓ mot de passe de mti_app défini')
-  console.log('  Reporter ce mot de passe dans la DATABASE_URL de l\'app mti-api.')
+  console.log('  Reporter ce mot de passe dans la DATABASE_URL de l\'application.')
 } catch (e) {
   console.error(`✗ ${e.message}`)
   process.exit(1)
