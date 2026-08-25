@@ -43,14 +43,31 @@ app.get('/api/sante', async () => {
     await pool.query('SELECT 1')
     base.joignable = true
   } catch (e) {
-    return {
-      statut: 'hors_service',
-      authMode: mode,
-      base,
-      diagnostic: "Base injoignable — vérifier DATABASE_URL (hôte, mot de passe) " +
-                  "et que l'app PostgreSQL est démarrée.",
-      detail: e.message
+    // Un échec d'authentification du rôle applicatif a deux causes très
+    // différentes, et PostgreSQL renvoie le même message dans les deux cas :
+    // le rôle peut ne pas exister du tout (installation jamais lancée), ou
+    // avoir un mot de passe qui diffère de celui de DATABASE_URL.
+    let diagnostic
+    if (/password authentication failed/i.test(e.message)) {
+      diagnostic =
+        "Le serveur de base est joint, mais le rôle applicatif est refusé. " +
+        "Deux causes possibles : (1) l'installation n'a jamais tourné, donc le " +
+        "rôle mti_app n'existe pas ou n'a pas de mot de passe — renseigner " +
+        "ADMIN_HOTE, ADMIN_UTILISATEUR, ADMIN_MOT_DE_PASSE, ADMIN_BASE et " +
+        "MTI_APP_PASSWORD puis redéployer ; (2) MTI_APP_PASSWORD et le mot de " +
+        "passe de DATABASE_URL diffèrent — ils doivent être identiques."
+    } else if (/ENOTFOUND|EAI_AGAIN/i.test(e.message)) {
+      diagnostic = "Nom d'hôte introuvable dans DATABASE_URL. Sur CapRover, " +
+                   "c'est srv-captain--<nom-de-l-app-base>."
+    } else if (/ECONNREFUSED/i.test(e.message)) {
+      diagnostic = "Hôte joignable mais rien n'écoute : l'app PostgreSQL est-elle démarrée ?"
+    } else if (/does not exist/i.test(e.message)) {
+      diagnostic = "La base nommée dans DATABASE_URL n'existe pas."
+    } else {
+      diagnostic = "Base injoignable — vérifier DATABASE_URL et que l'app " +
+                   "PostgreSQL est démarrée."
     }
+    return { statut: 'hors_service', authMode: mode, base, diagnostic, detail: e.message }
   }
 
   try {
