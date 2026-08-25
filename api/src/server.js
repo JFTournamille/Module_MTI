@@ -14,9 +14,120 @@ const app = Fastify({
 
 brancherAuth(app, mode)
 
+/**
+ * État de santé, consultable au navigateur sans authentification.
+ *
+ * C'est le seul canal de diagnostic disponible quand on n'a ni accès shell au
+ * serveur ni logs applicatifs dans l'interface d'hébergement : il indique si
+ * la base est installée et si le cloisonnement du journal d'audit est en
+ * place.
+ *
+ * Volontairement sans détail exploitable : ni version du serveur, ni noms
+ * d'utilisateurs, ni identité de patients. Des compteurs et des booléens.
+ */
 app.get('/api/sante', async () => {
-  const { rows } = await pool.query('SELECT 1 AS ok')
-  return { statut: 'ok', base: rows[0].ok === 1, authMode: mode }
+  const base = {
+    joignable: false,
+    schemaInstalle: false,
+    migrationsAppliquees: null,
+    modeleActif: null,
+    referentielsCharges: false,
+    cloisonnementAudit: null,
+    utilisateursActifs: null,
+    patientsFictifs: null
+  }
+  let statut = 'degrade'
+  let diagnostic = null
+
+  try {
+    await pool.query('SELECT 1')
+    base.joignable = true
+  } catch (e) {
+    return {
+      statut: 'hors_service',
+      authMode: mode,
+      base,
+      diagnostic: "Base injoignable — vérifier DATABASE_URL (hôte, mot de passe) " +
+                  "et que l'app PostgreSQL est démarrée.",
+      detail: e.message
+    }
+  }
+
+  try {
+    const { rows: [t] } = await pool.query(
+      `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'mti'`)
+    base.schemaInstalle = t.n > 0
+
+    if (!base.schemaInstalle) {
+      return {
+        statut: 'non_installe',
+        authMode: mode,
+        base,
+        diagnostic: "Base joignable mais vide : les migrations n'ont pas été " +
+                    "appliquées. Renseigner DATABASE_URL_ADMIN et MTI_APP_PASSWORD " +
+                    "puis redéployer, ou lancer node src/installer.js."
+      }
+    }
+
+    // Le cloisonnement est vérifié directement auprès du serveur : le rôle
+    // courant doit être incapable d'effacer une trace d'audit.
+    const { rows: [p] } = await pool.query(
+      `SELECT has_table_privilege('mti.audit', 'DELETE') AS peut_effacer,
+              has_table_privilege('mti.audit', 'SELECT') AS peut_lire`)
+    base.cloisonnementAudit = !p.peut_effacer && p.peut_lire
+      ? 'verifie'
+      : (p.peut_effacer ? 'DEFAILLANT' : 'lecture_impossible')
+
+    // La table de suivi des migrations peut ne pas exister (schéma appliqué
+    // à la main) : son absence n'est pas une anomalie.
+    try {
+      const { rows: [m] } = await pool.query(
+        'SELECT count(*)::int AS n FROM public.migration')
+      base.migrationsAppliquees = m.n
+    } catch {
+      base.migrationsAppliquees = null
+    }
+
+    const { rows: mod } = await pool.query(
+      `SELECT code, version FROM mti.modele_parcours WHERE actif LIMIT 1`)
+    base.modeleActif = mod.length ? `${mod[0].code} v${mod[0].version}` : null
+
+    const { rows: [c] } = await pool.query(
+      `SELECT (SELECT count(*) FROM mti.catalogue_processus WHERE actif) > 0
+              AND (SELECT count(*) FROM mti.produit WHERE actif) > 0 AS ok`)
+    base.referentielsCharges = c.ok === true
+
+    const { rows: [u] } = await pool.query(
+      `SELECT count(*)::int AS n FROM mti.utilisateur WHERE actif`)
+    base.utilisateursActifs = u.n
+
+    const { rows: [f] } = await pool.query(
+      `SELECT count(*)::int AS n FROM mti.patient WHERE source = 'DEMO'`)
+    base.patientsFictifs = f.n
+
+    if (base.cloisonnementAudit === 'DEFAILLANT') {
+      statut = 'hors_service'
+      diagnostic = "Le rôle applicatif peut effacer le journal d'audit. " +
+                   "L'API tourne probablement en superutilisateur : la traçabilité " +
+                   "n'a aucune valeur en l'état. Ne pas mettre en service."
+    } else if (!base.modeleActif || !base.referentielsCharges) {
+      diagnostic = "Schéma installé mais référentiels absents — lancer le seed."
+    } else if (base.utilisateursActifs === 0) {
+      diagnostic = "Aucun utilisateur actif : les saisies n'auraient pas d'auteur. " +
+                   "Insérer au moins un compte correspondant au login du SSO."
+    } else if (base.patientsFictifs > 0) {
+      diagnostic = `${base.patientsFictifs} patient(s) fictif(s) présents. ` +
+                   "Acceptable en recette, à purger avant mise en service " +
+                   "(node src/seed-demo.js --supprimer) : un patient fictif pourrait " +
+                   "être rattaché à un dossier réel."
+    } else {
+      statut = 'ok'
+    }
+  } catch (e) {
+    return { statut: 'degrade', authMode: mode, base, diagnostic: e.message }
+  }
+
+  return { statut, authMode: mode, base, ...(diagnostic ? { diagnostic } : {}) }
 })
 
 await app.register(referentiels)
