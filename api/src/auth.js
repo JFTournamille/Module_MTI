@@ -1,4 +1,6 @@
 
+import { requete } from './db.js'
+
 /**
  * Authentification.
  *
@@ -27,6 +29,42 @@ export function verifierConfigurationAuth () {
   return mode
 }
 
+/**
+ * Opérateur du mode `dev`, résolu par son identifiant plutôt que par son UUID.
+ *
+ * Exiger DEV_UTILISATEUR_ID imposait de lire un UUID en base pour le recopier
+ * dans la configuration — impossible sans accès shell. L'identifiant suffit :
+ * il est stable et connu (« mdurand », créé par le seed).
+ *
+ * Résolu une fois puis mémorisé ; réessayé si la base n'était pas encore prête.
+ */
+let operateurDev = null
+
+async function resoudreOperateurDev () {
+  if (operateurDev) return operateurDev
+
+  const explicite = process.env.DEV_UTILISATEUR_ID
+  const identifiant = process.env.DEV_UTILISATEUR_IDENTIFIANT ?? 'mdurand'
+
+  if (explicite) {
+    operateurDev = {
+      id: explicite,
+      identifiant,
+      nom: process.env.DEV_UTILISATEUR_NOM ?? 'M. Martin DURAND'
+    }
+    return operateurDev
+  }
+
+  const { rows } = await requete(
+    `SELECT id, coalesce(titre || ' ', '') || prenom || ' ' || nom AS nom
+       FROM mti.utilisateur WHERE identifiant = $1 AND actif LIMIT 1`,
+    [identifiant])
+
+  if (!rows.length) return null
+  operateurDev = { id: rows[0].id, identifiant, nom: rows[0].nom }
+  return operateurDev
+}
+
 /** Plugin Fastify : renseigne `request.utilisateur`. */
 export function brancherAuth (app, mode) {
   app.decorateRequest('utilisateur', null)
@@ -35,17 +73,26 @@ export function brancherAuth (app, mode) {
     if (request.url === '/api/sante') return
 
     if (mode === 'dev') {
-      request.utilisateur = {
-        id: process.env.DEV_UTILISATEUR_ID ?? null,
-        nom: process.env.DEV_UTILISATEUR_NOM ?? 'M. Martin DURAND',
-        identifiant: process.env.DEV_UTILISATEUR_IDENTIFIANT ?? 'mdurand'
-      }
-      if (!request.utilisateur.id) {
+      let operateur = null
+      try {
+        operateur = await resoudreOperateurDev()
+      } catch (e) {
         return reply.code(503).send({
-          erreur: 'DEV_UTILISATEUR_ID non configuré — exécuter npm run seed pour ' +
-                  "créer l'utilisateur de développement."
+          erreur: "Base injoignable — impossible de résoudre l'opérateur de " +
+                  'développement. Voir /api/sante.',
+          detail: e.message
         })
       }
+
+      if (!operateur) {
+        return reply.code(503).send({
+          erreur: `Aucun utilisateur actif « ${process.env.DEV_UTILISATEUR_IDENTIFIANT ?? 'mdurand'} » ` +
+                  "en base. Lancer le seed, ou renseigner DEV_UTILISATEUR_IDENTIFIANT " +
+                  'avec le login d\'un compte existant. Voir /api/sante.'
+        })
+      }
+
+      request.utilisateur = operateur
       return
     }
 

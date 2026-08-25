@@ -141,6 +141,13 @@ Deux chemins selon que vous avez, ou non, un accès shell au serveur.
 
 #### 4a. Sans accès shell — installation au démarrage *(recommandé si vous n'avez que l'interface CapRover)*
 
+> **Instance de recette.** En `AUTH_MODE=oidc`, l'API renvoie 501 sur toutes les
+> routes : l'interface est inutilisable tant que le SSO n'est pas branché. Pour
+> une instance de test, utiliser `AUTH_MODE=dev` et `NODE_ENV=development`.
+> L'opérateur est alors résolu par son identifiant (`mdurand`, créé par le
+> seed) : aucun UUID à recopier.
+
+
 Le conteneur sait installer la base lui-même à son démarrage. Il suffit
 d'ajouter **deux variables temporaires** dans *App Configs → Environmental
 Variables* de `module-mti` :
@@ -390,7 +397,8 @@ de patient — des compteurs et des booléens.
 |---|---|---|
 | `type "statut_dossier" does not exist` | Fonction PL/pgSQL sans `SET search_path` | Corrigé depuis 296f634 — vérifier que la migration à jour est bien appliquée |
 | `AUTH_MODE=dev est interdit avec NODE_ENV=production` | Garde-fou volontaire | Brancher le SSO, ou passer `NODE_ENV=development` en recette uniquement |
-| `DEV_UTILISATEUR_ID non configuré` (503) | `npm run seed` pas exécuté | Lancer le seed et reporter l'identifiant |
+| `Aucun utilisateur actif « mdurand »` (503) | Seed non exécuté, ou compte désactivé | Lancer le seed, ou pointer `DEV_UTILISATEUR_IDENTIFIANT` sur un compte existant |
+| Toutes les routes répondent 501 | `AUTH_MODE=oidc` sans SSO branché | Sur une instance de recette, passer en `AUTH_MODE=dev` + `NODE_ENV=development` |
 | `permission denied for table audit` **au démarrage** | Anormal | Le trigger est `SECURITY DEFINER` : vérifier que les migrations ont tourné en superutilisateur |
 | `password authentication failed for user "mti_app"` | Mot de passe du rôle non défini | Étape `ALTER ROLE` de la §4 |
 | `role "mti_app" does not exist` | `002_roles.sql` non appliqué | Relancer `node src/migrer.js` |
