@@ -1,0 +1,18 @@
+{
+  "name": "module-mti-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "installer": "node src/installer.js",
+    "migrer": "node src/migrer.js",
+    "motdepasse": "node src/definir-mot-de-passe.js",
+    "seed": "node src/seed.js",
+    "test:e2e": "node tests/e2e.mjs"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "pg": "^8.13.1"
+  }
+}

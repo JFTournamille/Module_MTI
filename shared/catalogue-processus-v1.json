@@ -1,0 +1,106 @@
+{
+  "code": "CATALOGUE_PROCESSUS",
+  "version": 1,
+  "groupes": [
+    {
+      "groupe": "Contrôle qualité",
+      "items": [
+        {
+          "code": "CQ_INTERMEDIAIRE", "icone": "🔬", "nom": "Contrôle qualité intermédiaire",
+          "description": "Points de contrôle AQ en cours de fabrication ou de stockage.",
+          "sections": [ { "titre": "Contrôle qualité", "points": [
+            { "libelle": "Aspect macroscopique conforme", "type": "ouinon" },
+            { "libelle": "T° relevée", "type": "valeur" },
+            { "libelle": "Signature libération intermédiaire", "type": "texte" },
+            { "libelle": "Photo documentation", "type": "photo" }
+          ] } ]
+        },
+        {
+          "code": "NON_CONFORMITE", "icone": "📋", "nom": "Non-conformité / déviation",
+          "description": "Gestion et traçabilité d'une déviation ou incident qualité.",
+          "sections": [ { "titre": "Gestion déviation", "points": [
+            { "libelle": "Description de l'incident", "type": "texte" },
+            { "libelle": "Impact produit évalué", "type": "ouinon" },
+            { "libelle": "Déclaration au référent qualité", "type": "ouinon" },
+            { "libelle": "Décision libération / rejet", "type": "ouinon" }
+          ] } ]
+        }
+      ]
+    },
+    {
+      "groupe": "Logistique & transport",
+      "items": [
+        {
+          "code": "TRANSPORT_INTERNE", "icone": "🚚", "nom": "Transport interne",
+          "description": "Transfert intra-établissement avec traçabilité température.",
+          "sections": [ { "titre": "Transport interne", "points": [
+            { "libelle": "T° au départ (relevé)", "type": "valeur" },
+            { "libelle": "T° à l'arrivée (relevé)", "type": "valeur" },
+            { "libelle": "Durée de transport", "type": "timer" },
+            { "libelle": "Intégrité emballage confirmée", "type": "ouinon" }
+          ] } ]
+        },
+        {
+          "code": "RECONTROLE_CUVE", "icone": "❄️", "nom": "Recontrôle cuve azote",
+          "description": "Vérification complémentaire des cuves cryogéniques.",
+          "sections": [ { "titre": "Recontrôle cuves", "points": [
+            { "libelle": "Niveau azote ≥ seuil", "type": "valeur" },
+            { "libelle": "Alarme température active", "type": "ouinon" },
+            { "libelle": "Photo niveau jauge", "type": "photo" },
+            { "libelle": "Identité opérateur contrôle", "type": "texte" }
+          ] } ]
+        }
+      ]
+    },
+    {
+      "groupe": "Médical & pharmacie",
+      "items": [
+        {
+          "code": "CONSULT_MEDECIN", "icone": "👩‍⚕️", "nom": "Consultation médecin référent",
+          "description": "Validation médicale avant étape critique (administration, libération…).",
+          "sections": [ { "titre": "Consultation médicale", "points": [
+            { "libelle": "Médecin référent consulté", "type": "ouinon" },
+            { "libelle": "Décision thérapeutique actée", "type": "texte" },
+            { "libelle": "Heure de consultation", "type": "auto", "valeurAuto": "Horodatage auto" },
+            { "libelle": "Signature médecin", "type": "texte" }
+          ] } ]
+        },
+        {
+          "code": "VALIDATION_PHARMA", "icone": "💊", "nom": "Validation pharmaceutique",
+          "description": "Validation du pharmacien avant dispensation ou administration.",
+          "sections": [ { "titre": "Validation pharmacien", "points": [
+            { "libelle": "Prescription vérifiée (dose, voie, patient)", "type": "ouinon" },
+            { "libelle": "Compatibilité / interactions vérifiées", "type": "ouinon" },
+            { "libelle": "Dispensation autorisée", "type": "ouinon" },
+            { "libelle": "N° ordonnancier", "type": "texte" }
+          ] } ]
+        },
+        {
+          "code": "PREMEDICATION", "icone": "🧪", "nom": "Prémédication",
+          "description": "Administration et traçabilité de la prémédication.",
+          "sections": [ { "titre": "Prémédication", "points": [
+            { "libelle": "Médicament de prémédication identifié", "type": "ouinon" },
+            { "libelle": "Dose vérifiée", "type": "ouinon" },
+            { "libelle": "Administration voie IV confirmée", "type": "ouinon" },
+            { "libelle": "Délai minimum respecté avant produit", "type": "timer" }
+          ] } ]
+        }
+      ]
+    },
+    {
+      "groupe": "Administratif",
+      "items": [
+        {
+          "code": "DOSSIER_PATIENT", "icone": "📁", "nom": "Constitution dossier patient",
+          "description": "Vérification complétude du dossier avant mise en fabrication.",
+          "sections": [ { "titre": "Dossier patient", "points": [
+            { "libelle": "Consentement éclairé signé", "type": "ouinon" },
+            { "libelle": "Ordonnance nominative présente", "type": "ouinon" },
+            { "libelle": "Identito-vigilance vérifiée (2 concordances)", "type": "ouinon" },
+            { "libelle": "N° ordonnancier renseigné", "type": "texte" }
+          ] } ]
+        }
+      ]
+    }
+  ]
+}

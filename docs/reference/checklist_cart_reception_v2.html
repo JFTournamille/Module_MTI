@@ -1,0 +1,639 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;font-size:12px;}
+.win{background:#f0f0f0;border:2px solid #888;border-radius:3px;width:100%;max-width:980px;margin:0 auto;}
+.titlebar{background:#4a3880;color:white;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:13px;}
+.hdr-patient{background:#6045a0;color:white;padding:6px 10px 6px 160px;text-align:center;position:relative;}
+.hdr-patient .name{font-weight:bold;font-size:14px;}
+.hdr-patient .ord{color:#ffaaaa;font-size:12px;}
+.btn-search-patient{position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);color:white;border-radius:4px;padding:5px 9px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.btn-search-patient:hover{background:rgba(255,255,255,0.32);}
+.hdr-meta{background:#f5f2ff;border-bottom:1px solid #ccc;padding:5px 10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.meta-item{display:flex;align-items:center;gap:5px;font-size:12px;color:#333;}
+.meta-item label{color:#666;font-size:11px;white-space:nowrap;}
+.meta-item input{border:1px solid #aaa;padding:2px 5px;font-size:12px;background:white;border-radius:2px;}
+.user-badge{margin-left:auto;background:#4a3880;color:white;padding:3px 10px;border-radius:3px;font-size:12px;display:flex;align-items:center;gap:5px;}
+.btn-add-op2{background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);color:white;width:20px;height:20px;border-radius:50%;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-left:4px;line-height:1;flex-shrink:0;}
+.btn-add-op2:hover{background:rgba(255,255,255,0.4);}
+.btn-add-op2.active{background:#2e7d4e;border-color:#4caf50;}
+.op2-badge-area{display:flex;align-items:center;gap:5px;background:#e8f5e9;border:1px solid #81c784;border-radius:3px;padding:3px 8px;font-size:12px;}
+.op2-badge-area label{color:#1b5e20;font-size:11px;white-space:nowrap;}
+.scroll{overflow-y:auto;max-height:470px;}
+table{width:100%;border-collapse:collapse;table-layout:fixed;}
+col.c-label{width:26%;}
+col.c-type{width:8%;}
+col.c-obl{width:8%;}
+col.c-detail{width:17%;}
+col.c-rep{width:8%;}
+col.c-date{width:11%;}
+col.c-op{width:22%;}
+th.th{background:#6045a0;color:white;padding:4px 5px;font-size:11px;font-weight:bold;text-align:center;border:1px solid #8060b0;}
+th.th.left{text-align:left;padding-left:7px;}
+.sec td{background:#c0aee0;color:#1e0e50;font-weight:bold;padding:4px 7px;border:1px solid #a090cc;font-size:12px;}
+.row td{background:white;padding:4px 5px;border:1px solid #e0d8f0;vertical-align:middle;}
+.row:nth-child(even) td{background:#f5f2fc;}
+.row.op2-row td{background:#eafbf0 !important;border-left:3px solid #4caf50;}
+.op-cell{display:flex;align-items:center;gap:4px;}
+.op-badge{font-size:10px;padding:1px 5px;border-radius:2px;font-weight:bold;white-space:nowrap;flex-shrink:0;}
+.op-badge.op1{background:#4a3880;color:white;}
+.op-badge.op2{background:#2e7d4e;color:white;}
+.op-badge.sys{background:#777;color:white;}
+.op-name{font-size:11px;color:#4a3880;font-style:italic;}
+.lbl{color:#222;font-size:12px;line-height:1.35;}
+.sublbl{color:#777;font-size:10px;font-style:italic;margin-top:1px;}
+.ex-badge{display:inline-block;background:#ffe0b2;color:#e65100;font-size:10px;padding:1px 5px;border-radius:3px;margin-top:2px;font-weight:bold;}
+.type-badge{display:inline-block;font-size:10px;padding:2px 5px;border-radius:3px;font-weight:bold;white-space:nowrap;text-align:center;}
+.t-ouinon{background:#e8e0ff;color:#3a2880;}
+.t-valeur{background:#ddeeff;color:#1a5080;}
+.t-photo{background:#e8f8e8;color:#1a5a1a;}
+.t-timer{background:#fff0dd;color:#7a4000;}
+.t-texte{background:#f8f0e8;color:#6a4010;}
+.t-auto{background:#f0f0f0;color:#555;}
+.yn{display:flex;gap:8px;justify-content:center;align-items:center;}
+.yn label{display:flex;align-items:center;gap:2px;cursor:pointer;font-size:11px;}
+input[type=radio].oui{accent-color:#007733;}
+input[type=radio].non{accent-color:#cc2200;}
+.obl-cell{text-align:center;vertical-align:middle;}
+input.obl-cb{width:15px;height:15px;cursor:pointer;accent-color:#4a3880;}
+.finput{border:1px solid #aaa;padding:2px 4px;font-size:11px;background:white;border-radius:2px;width:100%;}
+.finput.sm{width:70px;}
+.date-f{border:1px solid #aaa;padding:2px 3px;font-size:10px;background:white;border-radius:2px;width:100%;}
+.alarm{background:#ffdddd;border:1px solid #cc4444;color:#aa2200;font-size:10px;padding:1px 5px;border-radius:2px;white-space:nowrap;}
+.ok-badge{background:#ddfff0;border:1px solid #44aa77;color:#116644;font-size:10px;padding:1px 5px;border-radius:2px;white-space:nowrap;}
+.timer-row{display:flex;align-items:center;gap:4px;}
+.t-disp{font-family:monospace;font-size:12px;background:#1a1a1a;color:#00ee88;padding:1px 6px;border-radius:2px;min-width:48px;text-align:center;}
+.bt{font-size:10px;padding:2px 6px;border-radius:2px;cursor:pointer;border:1px solid #8060b0;background:#ede8ff;color:#3a2880;}
+.bt.stop{background:#fdeaea;border-color:#cc4444;color:#aa2200;}
+.thumb-row{display:flex;gap:3px;flex-wrap:wrap;}
+.thumb{width:32px;height:32px;background:#eee;border:1px dashed #aaa;border-radius:2px;font-size:9px;color:#888;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.thumb.done{background:#d0eeff;border-color:#4488cc;color:#1155aa;}
+.sig-area{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
+.sig-box{border:1px solid #aaa;background:white;border-radius:2px;padding:4px 6px;min-height:36px;}
+.sig-box label{font-size:10px;color:#666;display:block;margin-bottom:2px;}
+.footer{background:#f8f6ff;border-top:2px solid #ccc;padding:8px 10px;}
+.footer-btns{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.btn-act{background:#e5e5e5;border:1px solid #999;color:#222;font-size:11px;padding:4px 9px;cursor:pointer;border-radius:2px;}
+.btn-val{background:#2e7d4e;border:1px solid #1e5c38;color:white;font-weight:bold;font-size:12px;padding:4px 14px;cursor:pointer;border-radius:2px;margin-left:auto;}
+.btn-ann{background:#b52a1c;border:1px solid #8a1f14;color:white;font-size:12px;padding:4px 10px;cursor:pointer;border-radius:2px;}
+.conf-grp{display:flex;align-items:center;gap:7px;font-weight:bold;border:1px solid #aaa;padding:3px 9px;background:white;border-radius:2px;font-size:12px;}
+.conf-grp label{display:flex;align-items:center;gap:3px;font-weight:normal;font-size:11px;cursor:pointer;}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:white;border-radius:6px;padding:16px;width:92%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,0.35);}
+.modal h3{font-size:14px;color:#4a3880;margin-bottom:10px;border-bottom:2px solid #6045a0;padding-bottom:6px;}
+.modal-search{display:flex;gap:6px;margin-bottom:10px;}
+.modal-search input{flex:1;border:1px solid #aaa;padding:5px 8px;border-radius:3px;font-size:13px;}
+.modal-search button{background:#4a3880;color:white;border:none;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px;}
+.patient-list{max-height:200px;overflow-y:auto;border:1px solid #ddd;border-radius:3px;}
+.patient-item{padding:7px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:12px;}
+.patient-item:hover{background:#f0eaff;}
+.patient-item .pid{font-weight:bold;color:#4a3880;}
+.patient-item .pinfo{color:#777;font-size:11px;margin-top:2px;}
+.modal-close{display:flex;justify-content:flex-end;margin-top:10px;}
+.modal-close button{background:#ede8ff;border:1px solid #8060b0;color:#3a2880;padding:4px 14px;border-radius:3px;cursor:pointer;font-size:12px;}
+</style>
+
+<div class="modal-overlay" id="searchModal">
+  <div class="modal">
+    <h3>🔍 Recherche patient — Base de données</h3>
+    <div class="modal-search">
+      <input type="text" id="searchInput" placeholder="Nom, prénom, identifiant, protocole..." oninput="filterPatients()"/>
+      <button onclick="filterPatients()">Rechercher</button>
+    </div>
+    <div class="patient-list" id="patientList"></div>
+    <div class="modal-close"><button onclick="closeSearch()">Annuler</button></div>
+  </div>
+</div>
+
+<div class="win">
+<div class="titlebar">
+  <span>Processus de réception — CAR-T / Thérapie Cellulaire &nbsp;·&nbsp; YESCARTA® / KYMRIAH®</span>
+  <button style="background:#cc0000;color:white;border:none;width:17px;height:17px;font-size:11px;border-radius:2px;cursor:pointer;">✕</button>
+</div>
+
+<div class="hdr-patient">
+  <button class="btn-search-patient" onclick="openSearch()" title="Sélectionner le patient dans la base">🔍 Sélectionner patient</button>
+  <div class="name" id="patientName">MARTIN Sophie (724501) — TISAGENLECLEUCEL (KYMRIAH®)</div>
+  <div class="ord" id="patientOrd">N° d'ordonnanciers : 8812 &nbsp;|&nbsp; Protocole : ALL-B r/r &nbsp;|&nbsp; Date de réception prévue : 14/06/2026</div>
+</div>
+
+<div class="hdr-meta">
+  <div class="meta-item"><label>Étiquetage CB</label><input type="text" placeholder="Scan code-barre..." style="width:130px;" /></div>
+  <div class="meta-item"><label>N° lot produit</label><input type="text" placeholder="ex : KYM-2026-0814" style="width:130px;" /></div>
+  <div class="meta-item"><label>Date péremption</label><input type="text" placeholder="jj/mm/aaaa" style="width:95px;" /></div>
+  <div class="meta-item">
+    <label>Nb exemplaires</label>
+    <input type="number" id="nb-ex" min="1" max="10" value="1" style="width:46px;" onchange="applyNExemplaires()"/>
+    <span style="font-size:10px;color:#888;">(photos &amp; stockage)</span>
+  </div>
+  <div class="user-badge">
+    <span style="font-size:14px;">👤</span>
+    <div>
+      <div style="font-size:10px;color:#ccc;">Opérateur 1</div>
+      <div style="font-weight:bold;" id="op1Label">M. Martin DURAND</div>
+    </div>
+    <button class="btn-add-op2" id="btnAddOp2" onclick="toggleDoubleControl()" title="Ajouter un second opérateur (double contrôle)">+</button>
+  </div>
+  <div class="op2-badge-area" id="op2Meta" style="display:none;">
+    <span style="font-size:14px;">👤</span>
+    <label>Opérateur 2 :</label>
+    <input type="text" id="op2Name" placeholder="Nom Prénom..." style="width:140px;border:1px solid #81c784;padding:2px 5px;border-radius:2px;font-size:12px;" oninput="updateOp2Labels()"/>
+  </div>
+</div>
+
+<div class="scroll">
+<table>
+<colgroup>
+  <col class="c-label"/><col class="c-type"/><col class="c-obl"/><col class="c-detail"/><col class="c-rep"/><col class="c-date"/><col class="c-op"/>
+</colgroup>
+<thead>
+<tr>
+  <th class="th left">Point de contrôle</th>
+  <th class="th">Type</th>
+  <th class="th">Obligatoire</th>
+  <th class="th">Valeur / Détail</th>
+  <th class="th">Oui / Non</th>
+  <th class="th">Date &amp; Heure</th>
+  <th class="th">Opérateur</th>
+</tr>
+</thead>
+<tbody id="mainTbody">
+
+<tr class="sec"><td colspan="7">1. PRISE EN CHARGE DU CONTENEUR</td></tr>
+<tr class="row" data-row="r11">
+  <td class="lbl">1.1 Conformité du destinataire du colis</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r11" class="oui"/>Oui</label><label><input type="radio" name="r11" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r12">
+  <td class="lbl">1.2 Concordance étiquette dryshipper / bon de commande (Kite Connect)</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r12" class="oui"/>Oui</label><label><input type="radio" name="r12" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r13">
+  <td class="lbl">1.3 Dryshipper non endommagé<div class="sublbl">Inspection visuelle de l'intégrité du conteneur</div></td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td><input type="text" class="finput" placeholder="ID équipement (ex: DS-042)"/></td>
+  <td><div class="yn"><label><input type="radio" name="r13" class="oui"/>Oui</label><label><input type="radio" name="r13" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r14">
+  <td class="lbl">1.4 Couvercle noir vase de Dewar sous LN2, lien plastique bleu numéroté présent</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r14" class="oui"/>Oui</label><label><input type="radio" name="r14" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r15">
+  <td class="lbl">1.5 Concordance N° série lien plastique bleu / récépissé<div class="sublbl">N° série sur dessus du récipient d'expédition</div></td>
+  <td><span class="type-badge t-texte">Texte</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td><input type="text" class="finput" placeholder="N° série relevé"/></td>
+  <td><div class="yn"><label><input type="radio" name="r15" class="oui"/>Oui</label><label><input type="radio" name="r15" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<tr class="sec"><td colspan="7">2. VÉRIFICATION DES ALARMES DE TEMPÉRATURE DU CONTENEUR</td></tr>
+<tr class="row" data-row="r21">
+  <td class="lbl">2.1–2.3 Dispositif SMART PACK I HOBO — fonctionnement &amp; symbole alarme<div class="sublbl">Vérification du dispositif de surveillance</div></td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r21" class="oui"/>Oui</label><label><input type="radio" name="r21" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r24">
+  <td class="lbl">2.4 Relevé de température — SMART PACK I<div class="sublbl">Valeur affichée sur le dispositif</div></td>
+  <td><span class="type-badge t-valeur">Valeur °C</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td><div style="display:flex;align-items:center;gap:5px;"><input type="text" class="finput sm temp-input" data-seuil="-150" placeholder="−168"/><span class="temp-badge ok-badge">—</span></div></td>
+  <td><div class="yn"><label><input type="radio" name="r24" class="oui"/>Oui</label><label><input type="radio" name="r24" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r25">
+  <td class="lbl">2.5–2.7 Dispositif SMART PACK II — fonctionnement &amp; alarmes déclenchées</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r25" class="oui"/>Oui</label><label><input type="radio" name="r25" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r28">
+  <td class="lbl">2.8 Extraction données température — site Cryoport®</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r28" class="oui"/>Oui</label><label><input type="radio" name="r28" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r29">
+  <td class="lbl">2.9 Relevé température affichée — SMART PACK II</td>
+  <td><span class="type-badge t-valeur">Valeur °C</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td><div style="display:flex;align-items:center;gap:5px;"><input type="text" class="finput sm temp-input" data-seuil="-150" placeholder="−165"/><span class="temp-badge ok-badge">—</span></div></td>
+  <td><div class="yn"><label><input type="radio" name="r29" class="oui"/>Oui</label><label><input type="radio" name="r29" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r210">
+  <td class="lbl">2.10 Respect températures de conservation (&lt; −150°C)</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r210" class="oui"/>Oui</label><label><input type="radio" name="r210" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<tr class="sec"><td colspan="7">3. VÉRIFICATION DES CUVES D'AZOTE</td></tr>
+<tr class="row" data-row="r31">
+  <td class="lbl">3.1 Température cuve de stockage &lt; −160°C<div class="sublbl">ID équipement à renseigner</div></td>
+  <td><span class="type-badge t-valeur">Valeur °C</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td>
+    <div style="display:flex;flex-direction:column;gap:3px;">
+      <input type="text" class="finput" placeholder="ID cuve (ex: CN-07)"/>
+      <div style="display:flex;align-items:center;gap:4px;"><input type="text" class="finput sm temp-input" data-seuil="-160" placeholder="−168"/><span class="temp-badge ok-badge">—</span></div>
+    </div>
+  </td>
+  <td><div class="yn"><label><input type="radio" name="r31" class="oui"/>Oui</label><label><input type="radio" name="r31" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<tr class="sec"><td colspan="7">4. EXTRACTION DU PRODUIT DU DRYSHIPPER</td></tr>
+<tr class="row" data-row="r41">
+  <td class="lbl">4.1 Concordance informations patient / cassette<div class="sublbl">Nom, Prénom, Date de naissance</div></td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r41" class="oui"/>Oui</label><label><input type="radio" name="r41" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r42">
+  <td class="lbl">4.2 Concordance étiquette cassette / poche du produit final</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r42" class="oui"/>Oui</label><label><input type="radio" name="r42" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r43">
+  <td class="lbl">4.3–4.7 Conformité visuelle de la poche<div class="sublbl">Absence fissures, soudures, déchirures, plis, anomalies</div></td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r43" class="oui"/>Oui</label><label><input type="radio" name="r43" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r48">
+  <td class="lbl">4.8–4.9 Altérations de la poche — faces 1 et 2</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r48" class="oui"/>Oui</label><label><input type="radio" name="r48" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<!-- Photos — dupliqué par n exemplaires -->
+<tr class="row" data-row="r410" data-dup-group="photos">
+  <td class="lbl">4.10 Photos prises — faces 1 et 2<div class="sublbl">+ Certificats fabricant (RFI, Certificate for release)</div></td>
+  <td><span class="type-badge t-photo">Photo</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td>
+    <div class="thumb-row">
+      <div class="thumb" onclick="tog(this,'F1')">F1</div>
+      <div class="thumb" onclick="tog(this,'F2')">F2</div>
+      <div class="thumb" onclick="tog(this,'RFI')">RFI</div>
+      <div class="thumb" onclick="tog(this,'Cert')">Cert</div>
+    </div>
+    <button class="bt" style="margin-top:3px;width:100%;font-size:10px;">+ Ajouter photo</button>
+  </td>
+  <td><div class="yn"><label><input type="radio" name="r410" class="oui"/>Oui</label><label><input type="radio" name="r410" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<!-- Section 5 — dupliquée par n exemplaires -->
+<tr class="sec" data-dup-group="stockage"><td colspan="7">5. STOCKAGE</td></tr>
+<tr class="row" data-row="r51" data-dup-group="stockage">
+  <td class="lbl">5.1 Identification de l'emplacement de stockage<div class="sublbl">Cuve n°, rack n°, position INF/SUP</div></td>
+  <td><span class="type-badge t-texte">Texte</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+      <input type="text" class="finput sm" placeholder="Cuve n°"/>
+      <input type="text" class="finput sm" placeholder="Rack n°"/>
+      <select style="border:1px solid #aaa;padding:2px;font-size:11px;background:white;border-radius:2px;"><option>INF</option><option>SUP</option></select>
+    </div>
+  </td>
+  <td><div class="yn"><label><input type="radio" name="r51" class="oui"/>Oui</label><label><input type="radio" name="r51" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r52" data-dup-group="stockage">
+  <td class="lbl">5.2 Emplacement noté dans le dossier de lot correspondant</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r52" class="oui"/>Oui</label><label><input type="radio" name="r52" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r53" data-dup-group="stockage">
+  <td class="lbl">5.3 Heure transfert dans le container de stockage<div class="sublbl">Enregistrement T0 — début décompte si applicable</div></td>
+  <td><span class="type-badge t-timer">Minuteur</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td>
+    <div class="timer-row">
+      <button class="bt timer-start-btn" onclick="startTimer(this)">▶ T0</button>
+      <div class="t-disp timer-disp">00:00</div>
+      <button class="bt stop timer-stop-btn" onclick="stopTimer(this)" disabled>■ Fin</button>
+    </div>
+    <div style="font-size:10px;color:#555;margin-top:2px;">Début: <b class="timer-ts">—</b> &nbsp; Fin: <b class="timer-te">—</b></div>
+  </td>
+  <td><div class="yn"><label><input type="radio" name="r53" class="oui"/>Oui</label><label><input type="radio" name="r53" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f timer-dt-field" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r54" data-dup-group="stockage">
+  <td class="lbl">5.4 Température container stockage &lt; −160°C après fermeture</td>
+  <td><span class="type-badge t-valeur">Valeur °C</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td><div style="display:flex;align-items:center;gap:5px;"><input type="text" class="finput sm temp-input" data-seuil="-160" placeholder="−162"/><span class="temp-badge ok-badge">—</span></div></td>
+  <td><div class="yn"><label><input type="radio" name="r54" class="oui"/>Oui</label><label><input type="radio" name="r54" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+<tr class="sec"><td colspan="7">6. GESTION INFORMATIQUE &amp; ADMINISTRATIVE</td></tr>
+<tr class="row" data-row="r61">
+  <td class="lbl">6.1 Accusé de réception transmis</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r61" class="oui"/>Oui</label><label><input type="radio" name="r61" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r62">
+  <td class="lbl">6.2 Produit mis en quarantaine</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r62" class="oui"/>Oui</label><label><input type="radio" name="r62" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r63">
+  <td class="lbl">6.3 Entrée en stock PHARMA®</td>
+  <td><span class="type-badge t-auto">Auto</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" title="Point obligatoire"/></td>
+  <td><span style="font-size:10px;color:#555;font-style:italic;">Déclenché à la validation</span></td>
+  <td><div class="yn"><label><input type="radio" name="r63" class="oui"/>Oui</label><label><input type="radio" name="r63" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge sys">Sys</span><span class="op-name">Système</span></div></td>
+</tr>
+<tr class="row" data-row="r64">
+  <td class="lbl">6.4 Entrée en stock CHIMIO®</td>
+  <td><span class="type-badge t-auto">Auto</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" title="Point obligatoire"/></td>
+  <td><span style="font-size:10px;color:#555;font-style:italic;">Déclenché à la validation</span></td>
+  <td><div class="yn"><label><input type="radio" name="r64" class="oui"/>Oui</label><label><input type="radio" name="r64" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge sys">Sys</span><span class="op-name">Système</span></div></td>
+</tr>
+<tr class="row" data-row="r65">
+  <td class="lbl">6.5 Informations transmises au médecin référent</td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" checked title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r65" class="oui"/>Oui</label><label><input type="radio" name="r65" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+<tr class="row" data-row="r66">
+  <td class="lbl">6.6 Retour dryshipper organisé<div class="sublbl">FedEx Airway bill complété</div></td>
+  <td><span class="type-badge t-ouinon">Oui/Non</span></td>
+  <td class="obl-cell"><input type="checkbox" class="obl-cb" title="Point obligatoire"/></td>
+  <td></td>
+  <td><div class="yn"><label><input type="radio" name="r66" class="oui"/>Oui</label><label><input type="radio" name="r66" class="non"/>Non</label></div></td>
+  <td><input type="text" class="date-f" placeholder="jj/mm hh:mm"/></td>
+  <td><div class="op-cell"><span class="op-badge op1">Op.1</span><span class="op-name">M. DURAND</span></div></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<div class="footer">
+  <div style="font-size:11px;color:#555;margin-bottom:3px;">Commentaires / motif de non-conformité</div>
+  <textarea style="width:100%;height:42px;border:1px solid #aaa;font-size:12px;padding:4px;resize:none;background:white;border-radius:2px;" placeholder="Saisir tout écart, non-conformité ou observation..."></textarea>
+  <div class="sig-area">
+    <div class="sig-box"><label>Réception réalisée par (Nom, Prénom)</label><input type="text" class="finput" placeholder="M. Martin DURAND" style="margin-top:2px;"/></div>
+    <div class="sig-box"><label>Vérifiée et libérée par (Nom, Prénom)</label><input type="text" class="finput" placeholder="Pharmacien vérificateur" style="margin-top:2px;"/></div>
+  </div>
+  <div class="footer-btns">
+    <button class="btn-act">Fiche dématérialisée</button>
+    <button class="btn-act">Imprimer traçabilité</button>
+    <button class="btn-act">Exporter PDF</button>
+    <div class="conf-grp">
+      Conformité réception
+      <label><input type="radio" name="conf" class="non"/>Non conforme</label>
+      <label><input type="radio" name="conf" class="oui"/>Conforme</label>
+    </div>
+    <button class="btn-ann">✕ Annuler</button>
+    <button class="btn-val">✓ Valider la réception</button>
+  </div>
+</div>
+</div>
+
+<script>
+/* ── Température générique ── */
+document.addEventListener('input',function(e){
+  if(!e.target.classList.contains('temp-input'))return;
+  const inp=e.target, badge=inp.closest('div').querySelector('.temp-badge');
+  if(!badge)return;
+  const seuil=parseFloat(inp.getAttribute('data-seuil'));
+  const v=parseFloat(inp.value.replace(',','.'));
+  if(isNaN(v)){badge.className='temp-badge ok-badge';badge.textContent='—';return;}
+  if(v>seuil){badge.className='temp-badge alarm';badge.textContent='⚠ >'+seuil+'°C';}
+  else{badge.className='temp-badge ok-badge';badge.textContent='✓ OK';}
+});
+
+/* ── Miniatures photo ── */
+function tog(el,lbl){el.classList.toggle('done');el.textContent=el.classList.contains('done')?lbl+' ✓':lbl;}
+
+/* ── Minuteur générique ── */
+const timers={};let tidCounter=0;
+function pad(n){return String(n).padStart(2,'0');}
+function nowS(){const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+function nowF(){const d=new Date();return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes());}
+function startTimer(btn){
+  const row=btn.closest('tr');
+  if(!btn.dataset.tid)btn.dataset.tid='t'+(tidCounter++);
+  const tid=btn.dataset.tid;
+  if(timers[tid])return;
+  const stopBtn=row.querySelector('.timer-stop-btn');
+  const disp=row.querySelector('.timer-disp');
+  const tsEl=row.querySelector('.timer-ts');
+  btn.disabled=true;
+  if(stopBtn){stopBtn.disabled=false;stopBtn.dataset.tid=tid;}
+  if(tsEl)tsEl.textContent=nowS();
+  timers[tid]={sec:0,iv:setInterval(function(){timers[tid].sec++;if(disp)disp.textContent=pad(Math.floor(timers[tid].sec/60))+':'+pad(timers[tid].sec%60);},1000)};
+}
+function stopTimer(btn){
+  const row=btn.closest('tr'),tid=btn.dataset.tid;
+  if(!tid||!timers[tid])return;
+  clearInterval(timers[tid].iv);delete timers[tid];
+  btn.disabled=true;
+  const teEl=row.querySelector('.timer-te'),dtF=row.querySelector('.timer-dt-field');
+  if(teEl)teEl.textContent=nowS();
+  if(dtF)dtF.value=nowF();
+}
+
+/* ── Recherche patient ── */
+const fakePatients=[
+  {id:'724501',name:'MARTIN Sophie',dob:'12/03/1978',proto:'ALL-B r/r',prod:'KYMRIAH®'},
+  {id:'812334',name:'BERNARD Paul',dob:'07/11/1965',proto:'DLBCL r/r',prod:'YESCARTA®'},
+  {id:'631002',name:'DUBOIS Marie',dob:'22/09/1981',proto:'MCL r/r',prod:'TECARTUS®'},
+  {id:'945678',name:'LEROY Antoine',dob:'14/06/1972',proto:'ALL-B r/r',prod:'KYMRIAH®'},
+  {id:'378901',name:'MOREAU Claire',dob:'30/01/1989',proto:'MM r/r',prod:'CARVYKTI®'},
+];
+function openSearch(){
+  document.getElementById('searchModal').classList.add('open');
+  document.getElementById('searchInput').value='';
+  renderPatients(fakePatients);
+  setTimeout(()=>document.getElementById('searchInput').focus(),80);
+}
+function closeSearch(){document.getElementById('searchModal').classList.remove('open');}
+function filterPatients(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  renderPatients(fakePatients.filter(p=>p.name.toLowerCase().includes(q)||p.id.includes(q)||p.proto.toLowerCase().includes(q)||p.prod.toLowerCase().includes(q)));
+}
+function renderPatients(list){
+  const el=document.getElementById('patientList');
+  if(!list.length){el.innerHTML='<div style="padding:10px;color:#999;text-align:center;">Aucun patient trouvé</div>';return;}
+  el.innerHTML=list.map(p=>`<div class="patient-item" onclick="selectPatient('${p.id}')"><div><span class="pid">${p.id}</span> — ${p.name}</div><div class="pinfo">Né(e) le ${p.dob} &nbsp;|&nbsp; ${p.proto} &nbsp;|&nbsp; <b>${p.prod}</b></div></div>`).join('');
+}
+function selectPatient(id){
+  const p=fakePatients.find(x=>x.id===id);if(!p)return;
+  document.getElementById('patientName').textContent=p.name+' ('+p.id+') — '+p.prod;
+  document.getElementById('patientOrd').textContent='Protocole : '+p.proto+' | Date de réception prévue : —';
+  closeSearch();
+}
+document.getElementById('searchModal').addEventListener('click',function(e){if(e.target===this)closeSearch();});
+
+/* ── Double contrôle ── */
+let doubleControlActive=false;
+function toggleDoubleControl(){
+  doubleControlActive=!doubleControlActive;
+  const btn=document.getElementById('btnAddOp2'),meta2=document.getElementById('op2Meta');
+  btn.classList.toggle('active',doubleControlActive);
+  btn.textContent=doubleControlActive?'−':'+';
+  btn.title=doubleControlActive?'Désactiver le double contrôle':'Ajouter un second opérateur (double contrôle)';
+  meta2.style.display=doubleControlActive?'flex':'none';
+  if(doubleControlActive)addOp2Rows();else removeOp2Rows();
+}
+function getOp2Name(){return document.getElementById('op2Name').value.trim()||'Op. 2';}
+function updateOp2Labels(){
+  const name=getOp2Name();
+  document.querySelectorAll('tr.op2-row .op-name').forEach(el=>el.textContent=name);
+}
+function addOp2Rows(){
+  const op2Name=getOp2Name();let uid=0;
+  Array.from(document.querySelectorAll('#mainTbody tr.row:not(.op2-row)')).forEach(row=>{
+    const badge=row.querySelector('.op-badge');
+    if(badge&&badge.classList.contains('sys'))return;
+    const clone=row.cloneNode(true);
+    clone.classList.add('op2-row');
+    clone.setAttribute('data-generated-op2','true');
+    clone.removeAttribute('data-dup-group');
+    clone.querySelectorAll('input[type=radio]').forEach(r=>r.name=r.name+'_op2_'+uid);
+    const timerRow=clone.querySelector('.timer-row');
+    if(timerRow)timerRow.innerHTML='<span style="font-size:10px;color:#999;font-style:italic;">— minuteur Op.1 —</span>';
+    const timerInfo=clone.querySelector('.timer-ts');
+    if(timerInfo&&timerInfo.parentNode)timerInfo.parentNode.style.display='none';
+    const b=clone.querySelector('.op-badge');if(b){b.textContent='Op.2';b.className='op-badge op2';}
+    const n=clone.querySelector('.op-name');if(n)n.textContent=op2Name;
+    const firstTd=clone.querySelector('td.lbl');
+    if(firstTd){const l=document.createElement('div');l.style.cssText='font-size:9px;color:#2e7d4e;font-weight:bold;margin-bottom:2px;';l.textContent='▸ Contrôle Op.2';firstTd.prepend(l);}
+    row.parentNode.insertBefore(clone,row.nextSibling);uid++;
+  });
+}
+function removeOp2Rows(){document.querySelectorAll('tr[data-generated-op2]').forEach(el=>el.remove());}
+
+/* ── N exemplaires ── */
+let timerUid=100;
+function applyNExemplaires(){
+  const n=Math.max(1,Math.min(10,parseInt(document.getElementById('nb-ex').value)||1));
+  document.querySelectorAll('[data-generated-dup]').forEach(el=>el.remove());
+  document.querySelectorAll('[data-dup-group]').forEach(el=>el.style.display='');
+  if(n<=1){if(doubleControlActive){removeOp2Rows();addOp2Rows();}return;}
+
+  /* Photos */
+  const photoOrig=Array.from(document.querySelectorAll('[data-dup-group="photos"]'));
+  if(photoOrig.length){
+    photoOrig.forEach(r=>r.style.display='none');
+    const ref=photoOrig[photoOrig.length-1].nextSibling;
+    for(let i=1;i<=n;i++){
+      photoOrig.forEach(orig=>{
+        const clone=orig.cloneNode(true);
+        clone.removeAttribute('data-dup-group');clone.setAttribute('data-generated-dup','true');clone.style.display='';
+        const lbl=clone.querySelector('.lbl');
+        if(lbl){const sub=lbl.querySelector('.sublbl'),subH=sub?sub.outerHTML:'';lbl.innerHTML='4.10.'+i+' Photos — <span class="ex-badge">Ex. '+i+'/'+n+'</span>'+subH;}
+        clone.querySelectorAll('input[type=radio]').forEach(r=>r.name=r.name+'_ex'+i);
+        orig.parentNode.insertBefore(clone,ref);
+      });
+    }
+  }
+
+  /* Stockage */
+  const stockOrig=Array.from(document.querySelectorAll('[data-dup-group="stockage"]'));
+  if(stockOrig.length){
+    stockOrig.forEach(el=>el.style.display='none');
+    const ref=stockOrig[stockOrig.length-1].nextSibling;
+    for(let i=1;i<=n;i++){
+      stockOrig.forEach(orig=>{
+        const clone=orig.cloneNode(true);
+        clone.removeAttribute('data-dup-group');clone.setAttribute('data-generated-dup','true');clone.style.display='';
+        if(clone.classList.contains('sec')){
+          const td=clone.querySelector('td');
+          if(td)td.innerHTML='5.'+i+'. STOCKAGE &nbsp;<span class="ex-badge" style="background:#c8e6c9;color:#1b5e20;">Exemplaire '+i+'/'+n+'</span>';
+        } else {
+          const lbl=clone.querySelector('.lbl');
+          if(lbl){const sub=lbl.querySelector('.sublbl'),subH=sub?sub.outerHTML:'',txt=lbl.childNodes[0]?lbl.childNodes[0].textContent:'';lbl.innerHTML=txt+'<span class="ex-badge" style="background:#c8e6c9;color:#1b5e20;margin-left:4px;">Ex.'+i+'/'+n+'</span>'+subH;}
+          const sb=clone.querySelector('.timer-start-btn'),eb=clone.querySelector('.timer-stop-btn');
+          const newTid='t'+(timerUid++);
+          if(sb){sb.dataset.tid=newTid;sb.disabled=false;}
+          if(eb){eb.dataset.tid=newTid;eb.disabled=true;}
+          clone.querySelectorAll('input[type=radio]').forEach(r=>r.name=r.name+'_cuve'+i);
+        }
+        orig.parentNode.insertBefore(clone,ref);
+      });
+    }
+  }
+  if(doubleControlActive){removeOp2Rows();addOp2Rows();}
+}
+</script>

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+
+# Référentiels recopiés depuis shared/ par npm run sync:referentiels
+web/src/data/*.json
