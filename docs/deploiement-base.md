@@ -295,7 +295,25 @@ UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';
 
 ### 7. Patients fictifs (recette uniquement)
 
-Pour éprouver la recherche patient sans annuaire SIH branché :
+Pour éprouver la recherche patient sans annuaire SIH branché.
+
+**Sans accès shell** — ajouter dans *App Configs* :
+
+```
+SEED_DEMO=oui
+```
+
+`Save & Update`, et l'insertion a lieu au démarrage. Retirer la variable
+ensuite : sinon l'insertion est retentée à chaque redémarrage (sans effet, elle
+est idempotente, mais ça encombre les logs).
+
+Pour purger, par le même canal :
+
+```
+PURGER_DEMO=oui
+```
+
+**Avec accès shell** :
 
 ```bash
 docker exec -e SEED_DEMO=oui $(docker ps -qf name=srv-captain--module-mti) \
@@ -311,6 +329,9 @@ l'installateur et par `/api/sante`, tant qu'ils n'ont pas été purgés.
 
 > **À purger avant toute mise en service** : un patient fictif pourrait être
 > rattaché à un dossier réel.
+>
+> Par variable : `PURGER_DEMO=oui` puis `Save & Update`.
+> Par shell :
 >
 > ```bash
 > docker exec $(docker ps -qf name=srv-captain--module-mti) \
