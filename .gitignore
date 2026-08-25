@@ -7,3 +7,13 @@ dist/
 
 # Référentiels recopiés depuis shared/ par npm run sync:referentiels
 web/src/data/*.json
+
+# Aucun secret dans le dépôt : il est public, et l'historique Git conserve tout
+# ce qui y a été commité, même après suppression. Les mots de passe et les
+# identifiants vivent dans les variables d'environnement de l'hébergeur.
+docs/confidentiel
+**/confidentiel*
+*.secret
+*secrets*
+.env.*
+!.env.example

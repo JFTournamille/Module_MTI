@@ -90,3 +90,14 @@ PostgreSQL, `mti-api`, `mti-web`). Détails et réserves dans
 - Pas d'ORM : le SQL reste lisible et auditable.
 - Les commentaires expliquent *pourquoi*, en particulier quand une contrainte
   réglementaire dicte un choix technique.
+
+## Secrets
+
+**Le dépôt est public.** Aucun mot de passe, jeton ou identifiant ne doit y
+figurer — et l'historique Git conserve tout ce qui y a été commité, même après
+suppression du fichier. Un secret poussé par erreur doit être considéré comme
+compromis et **changé**, pas seulement effacé.
+
+Les secrets vivent dans les variables d'environnement de l'hébergeur
+(CapRover → App Configs). `.env.example` documente les noms de variables, jamais
+leurs valeurs.
