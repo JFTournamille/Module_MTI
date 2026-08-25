@@ -99,7 +99,7 @@ if (!verifierSeulement) {
   etape(3, 'Mot de passe du rôle applicatif mti_app')
 
   // Une réexécution ne doit PAS faire tourner le mot de passe en silence :
-  // l'app mti-api porte l'ancien dans sa configuration et cesserait de
+  // l'application CapRover porte l'ancien dans sa configuration et cesserait de
   // fonctionner sans que rien ne l'indique.
   const { rows: [role] } = await admin.query(
     'SELECT rolpassword IS NOT NULL AS defini FROM pg_authid WHERE rolname = $1', ['mti_app'])
@@ -107,7 +107,7 @@ if (!verifierSeulement) {
   if (role?.defini && !motDePasse && !roterMotDePasse) {
     console.error(
       "\n✗ mti_app a déjà un mot de passe : le régénérer casserait la configuration\n" +
-      "  de l'app mti-api, qui porte l'ancien.\n\n" +
+      "  de l'application CapRover, qui porte l'ancien.\n\n" +
       "  À noter : dans PostgreSQL un rôle appartient au CLUSTER, pas à une base.\n" +
       "  Si vous installez une seconde base (recette, par exemple) sur la même\n" +
       "  instance, mti_app existe déjà et son mot de passe est commun aux deux.\n\n" +
@@ -246,7 +246,7 @@ if (defautsConfiguration) {
 
 console.log('✓ Base opérationnelle.')
 if (!verifierSeulement) {
-  console.log('\nÀ reporter dans les variables d\'environnement de l\'app mti-api :')
+  console.log('\nÀ reporter dans les variables d\'environnement de l\'application CapRover :')
   console.log('\n  DATABASE_URL=' + urlApplicative(motDePasse))
   console.log('  NODE_ENV=production')
   console.log('  AUTH_MODE=oidc')

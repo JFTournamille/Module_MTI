@@ -7,7 +7,6 @@ COPY api/package*.json ./
 RUN npm ci --omit=dev
 
 COPY api/src ./src
-COPY api/tests ./tests
 # Les scripts SQL et les référentiels sont embarqués : `npm run migrer` et
 # `npm run seed` doivent être exécutables depuis le conteneur déployé.
 COPY db /db

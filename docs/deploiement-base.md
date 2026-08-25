@@ -19,47 +19,74 @@ le journal d'audit devient réécrivable et ne vaut plus rien en inspection.
 
 ### 1. Créer l'app PostgreSQL
 
-Dans CapRover → **Apps** → **One-Click Apps/Databases** → `PostgreSQL`.
+**C'est la première étape, et elle est indépendante du déploiement de
+l'application.** Rien ne peut fonctionner avant.
+
+Dans CapRover → **Apps** → **One-Click Apps/Databases** → chercher
+`PostgreSQL` :
 
 | Champ | Valeur |
 |---|---|
 | App Name | `mti-db` |
 | PostgreSQL Version | `16-alpine` |
 | PostgreSQL Root Password | *(mot de passe fort, à conserver)* |
-| PostgreSQL Database | `mti` |
+| PostgreSQL Root User | `postgres` |
+| PostgreSQL Default Database | `mti` |
 
-Le nom d'app détermine le nom d'hôte interne : `srv-captain--mti-db`.
-Si vous choisissez un autre nom, adaptez `web/nginx.conf` et les
-`DATABASE_URL` en conséquence.
+Cliquer **Deploy**, puis attendre que l'app apparaisse dans la liste.
 
-### 2. Vérifier le volume persistant
+Le nom d'app détermine le nom d'hôte interne : **`srv-captain--mti-db`**. Si
+vous choisissez un autre nom, adaptez les `DATABASE_URL` en conséquence.
 
-Dans **mti-db → App Configs**, confirmez qu'un volume persistant est monté sur
-`/var/lib/postgresql/data`. Sans lui, la base est perdue au moindre
-redéploiement.
+Ensuite, dans **mti-db → App Configs** :
 
-> **N'exposez pas la base sur Internet.** Laissez « HTTP Settings » désactivé
-> et ne publiez pas le port 5432. L'API y accède par le réseau interne
-> CapRover.
+- confirmer qu'un **volume persistant** est monté sur
+  `/var/lib/postgresql/data` — sans lui, la base est perdue au moindre
+  redéploiement ;
+- laisser **HTTP Settings désactivé** et ne pas publier le port 5432 : la base
+  ne doit pas être joignable depuis Internet. L'application y accède par le
+  réseau interne CapRover.
 
-### 3. Déployer l'API
+### 2. Créer l'app applicative
 
-**Apps → New App** → `mti-api` → déploiement depuis ce dépôt, en indiquant
-`./api/captain-definition` comme chemin du captain-definition.
+**Apps → New App** → nom `module-mti` → cocher *Has Persistent Data* seulement
+si vous prévoyez de stocker les pièces jointes sur volume.
 
-Variables d'environnement (**mti-api → App Configs**) :
+Puis **module-mti → Deployment → Method 3: Deploy from Github/Bitbucket/Gitlab** :
+
+| Champ | Valeur |
+|---|---|
+| Repository | `github.com/JFTournamille/Module_MTI` |
+| Branch | `main` |
+| Username / Password ou Token | votre accès GitHub |
+| Captain Definition Relative Path | `./captain-definition` *(valeur par défaut)* |
+
+> **Attention à la casse de la branche.** `Main` avec une majuscule échoue :
+> `fatal: Remote branch Main not found in upstream origin`. Les noms de
+> branches Git sont sensibles à la casse.
+
+L'image combinée sert le front sur le port 80 et fait tourner l'API sur le
+port 3000 interne au conteneur ; nginx relaie `/api/` vers elle. Un seul
+conteneur, une seule URL.
+
+### 3. Renseigner les variables d'environnement
+
+**module-mti → App Configs → Environmental Variables** :
 
 ```
-DATABASE_URL=postgresql://mti_app:MOT_DE_PASSE_APP@srv-captain--mti-db:5432/mti
+DATABASE_URL=postgresql://mti_app:A_DEFINIR@srv-captain--mti-db:5432/mti
 NODE_ENV=production
 AUTH_MODE=oidc
-PORT=3000
-LOG_LEVEL=info
 ```
 
-> `AUTH_MODE=dev` avec `NODE_ENV=production` fait **échouer le démarrage**,
-> volontairement : sans opérateurs authentifiés, la traçabilité MTI n'a pas de
-> valeur. Voir §5 si le SSO n'est pas encore branché.
+Le conteneur **refuse de démarrer sans `DATABASE_URL`**, et l'API refuse de
+démarrer avec `AUTH_MODE=dev` et `NODE_ENV=production` : sans opérateurs
+authentifiés, la traçabilité MTI n'a pas de valeur.
+
+Le mot de passe de `mti_app` n'existe pas encore — il sera créé à l'étape
+suivante, qui l'affichera. Mettez une valeur provisoire ici, le premier
+déploiement échouera au démarrage, c'est attendu : l'étape 4 s'exécute depuis
+le conteneur et vous donnera la bonne valeur à recopier.
 
 ### 4. Installer la base — une seule commande
 
@@ -70,8 +97,9 @@ Les scripts SQL et les référentiels sont embarqués dans l'image de l'API
 > L'installateur est écrit en Node pour cette raison : n'attendez pas de
 > pouvoir lancer `psql` dans ce conteneur.
 
-Ouvrez un terminal sur le conteneur `mti-api` (CapRover → mti-api →
-**Deployment** → *Exec Terminal*, ou en SSH sur le serveur), puis :
+Ouvrez un terminal sur le conteneur (CapRover → module-mti → *Exec Terminal*,
+ou en SSH sur le serveur : `docker exec -it $(docker ps -qf name=module-mti) bash`),
+puis :
 
 ```bash
 DATABASE_URL_ADMIN=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti \
@@ -91,13 +119,13 @@ L'installateur enchaîne, en s'arrêtant à la première anomalie :
 6. inventaire de ce qui est installé, et alertes de configuration.
 
 Il termine en affichant la `DATABASE_URL` à reporter dans les variables de
-l'app `mti-api` :
+l'app `module-mti` :
 
 ```
 ✓ Cloisonnement du journal d'audit vérifié.
 ✓ Base opérationnelle.
 
-À reporter dans les variables d'environnement de l'app mti-api :
+À reporter dans les variables d'environnement de l'application CapRover :
 
   DATABASE_URL=postgresql://mti_app:...@srv-captain--mti-db:5432/mti
   NODE_ENV=production
@@ -110,7 +138,7 @@ gestionnaire de secrets avant de fermer le terminal.
 #### Réexécution
 
 L'installateur est relançable, mais il **refuse de faire tourner le mot de
-passe en silence** : l'app `mti-api` porte l'ancien dans sa configuration et
+passe en silence** : l'app `module-mti` porte l'ancien dans sa configuration et
 cesserait de fonctionner sans que rien ne l'indique.
 
 ```bash
