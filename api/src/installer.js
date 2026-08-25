@@ -24,20 +24,96 @@ const ici = dirname(fileURLToPath(import.meta.url))
 const verifierSeulement = process.argv.includes('--verifier')
 const roterMotDePasse = process.argv.includes('--nouveau-mot-de-passe')
 
-const urlAdmin = process.env.DATABASE_URL_ADMIN
-if (!urlAdmin) {
-  console.error(
-    "✗ DATABASE_URL_ADMIN est requis (compte superutilisateur de la base).\n" +
-    "  Exemple : postgresql://postgres:MDP_ROOT@srv-captain--mti-db:5432/mti")
-  process.exit(1)
+/**
+ * Codes de sortie, pour que l'appelant (l'entrypoint) puisse décider :
+ *   0 installation saine
+ *   1 CLOISONNEMENT défaillant — le journal d'audit est réécrivable, rien ne
+ *     doit démarrer
+ *   2 défaut de configuration — la base est saine, l'application peut démarrer
+ *   3 installation impossible (identifiants, droits, prérequis) — la base n'est
+ *     pas installée, mais l'application peut démarrer pour rester diagnosticable
+ */
+const SORTIE = { OK: 0, CLOISONNEMENT: 1, CONFIGURATION: 2, IMPOSSIBLE: 3 }
+
+/**
+ * Paramètres de connexion administrateur.
+ *
+ * Deux formes acceptées. Les variables séparées sont préférables : un mot de
+ * passe contenant @ : / ? # % ou un espace doit être encodé en pourcentage
+ * dans une URL, ce qui est une source d'échec fréquente — les mots de passe
+ * générés par les hébergeurs en contiennent souvent.
+ */
+function connexionAdmin () {
+  if (process.env.ADMIN_MOT_DE_PASSE) {
+    return {
+      host: process.env.ADMIN_HOTE ?? 'srv-captain--mti-db',
+      port: Number(process.env.ADMIN_PORT ?? 5432),
+      user: process.env.ADMIN_UTILISATEUR ?? 'postgres',
+      password: process.env.ADMIN_MOT_DE_PASSE,
+      database: process.env.ADMIN_BASE ?? 'mti'
+    }
+  }
+  if (process.env.DATABASE_URL_ADMIN) {
+    return { connectionString: process.env.DATABASE_URL_ADMIN }
+  }
+  return null
 }
 
-/** Construit l'URL du rôle applicatif à partir de celle de l'administrateur. */
+const configAdmin = connexionAdmin()
+if (!configAdmin) {
+  console.error(
+    "✗ Identifiants administrateur de la base manquants. Deux formes possibles.\n\n" +
+    "  Variables séparées — à préférer, aucun encodage nécessaire :\n" +
+    "    ADMIN_HOTE=srv-captain--mti-db\n" +
+    "    ADMIN_UTILISATEUR=postgres\n" +
+    "    ADMIN_MOT_DE_PASSE=<le mot de passe, tel quel>\n" +
+    "    ADMIN_BASE=mti\n\n" +
+    "  Ou une URL unique :\n" +
+    "    DATABASE_URL_ADMIN=postgresql://postgres:MOT_DE_PASSE@srv-captain--mti-db:5432/mti")
+  process.exit(SORTIE.IMPOSSIBLE)
+}
+
+/** Paramètres de connexion du rôle applicatif, dérivés de ceux de l'admin. */
+function connexionApplicative (motDePasse) {
+  if (configAdmin.connectionString) {
+    const u = new URL(configAdmin.connectionString)
+    u.username = 'mti_app'
+    u.password = motDePasse
+    return { connectionString: u.toString() }
+  }
+  return { ...configAdmin, user: 'mti_app', password: motDePasse }
+}
+
+/** Représentation lisible, sans mot de passe, pour les messages. */
+function descriptionAdmin () {
+  if (configAdmin.connectionString) {
+    try {
+      const u = new URL(configAdmin.connectionString)
+      return `${u.username}@${u.hostname}:${u.port || 5432}${u.pathname}`
+    } catch { return '(URL illisible)' }
+  }
+  return `${configAdmin.user}@${configAdmin.host}:${configAdmin.port}/${configAdmin.database}`
+}
+
+/**
+ * URL administrateur pour les scripts enfants (migrer.js, definir-mot-de-passe.js),
+ * qui ne lisent qu'une DATABASE_URL. Avec les variables séparées, le mot de
+ * passe est encodé ici : c'est le seul endroit où l'encodage est nécessaire, et
+ * il est fait par le code plutôt que par l'opérateur.
+ */
+function urlAdminPourEnfant () {
+  if (configAdmin.connectionString) return configAdmin.connectionString
+  const { user, password, host, port, database } = configAdmin
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}` +
+         `@${host}:${port}/${database}`
+}
+
+/** URL applicative, à afficher en fin d'installation. */
 function urlApplicative (motDePasse) {
-  const u = new URL(urlAdmin)
-  u.username = 'mti_app'
-  u.password = motDePasse
-  return u.toString()
+  const c = connexionApplicative(motDePasse)
+  if (c.connectionString) return c.connectionString
+  return `postgresql://mti_app:${encodeURIComponent(motDePasse)}` +
+         `@${c.host}:${c.port}/${c.database}`
 }
 
 /** Relance un script du dépôt avec son propre DATABASE_URL. */
@@ -66,13 +142,49 @@ let defautsConfiguration = 0
 // ─────────────────────────────────────────────────────── Contrôle préalable ──
 
 etape(1, 'Connexion au serveur')
-const admin = new pg.Client({ connectionString: urlAdmin, connectionTimeoutMillis: 8000 })
+// La construction du client peut échouer avant toute connexion : une URL mal
+// formée (mot de passe contenant @ : / ? # non encodés) lève ici.
+let admin
+try {
+  admin = new pg.Client({ ...configAdmin, connectionTimeoutMillis: 8000 })
+} catch (e) {
+  console.error(`✗ Paramètres de connexion invalides : ${e.message}`)
+  console.error(
+    "\n  L'URL est probablement mal formée. C'est le cas si le mot de passe\n" +
+    "  contient @ : / ? # % ou un espace : ces caractères ont un sens dans une\n" +
+    "  URL et la coupent.\n\n" +
+    "  Utilisez les variables séparées, qui n'exigent aucun encodage :\n" +
+    "    ADMIN_HOTE=srv-captain--mti-db\n" +
+    "    ADMIN_UTILISATEUR=postgres\n" +
+    "    ADMIN_MOT_DE_PASSE=<le mot de passe, tel quel, sans guillemets>\n" +
+    "    ADMIN_BASE=mti")
+  process.exit(SORTIE.IMPOSSIBLE)
+}
+
 try {
   await admin.connect()
 } catch (e) {
-  console.error(`✗ Connexion impossible : ${e.message}`)
-  console.error('  Vérifier le nom d\'hôte (srv-captain--<nom-app>), le port et le mot de passe.')
-  process.exit(1)
+  console.error(`✗ Connexion impossible à ${descriptionAdmin()} : ${e.message}`)
+  if (/password authentication failed/i.test(e.message)) {
+    console.error(
+      "\n  Le serveur a été joint : seul le mot de passe est refusé.\n" +
+      "  Deux causes fréquentes :\n" +
+      "   • le mot de passe contient @ : / ? # % ou un espace, et l'URL le coupe.\n" +
+      "     Utilisez alors les variables séparées, qui n'exigent aucun encodage :\n" +
+      "       ADMIN_HOTE, ADMIN_UTILISATEUR, ADMIN_MOT_DE_PASSE, ADMIN_BASE\n" +
+      "   • l'utilisateur root de la base n'est pas « postgres ».\n" +
+      "  La valeur exacte se lit dans la configuration de l'app PostgreSQL\n" +
+      "  (variables POSTGRES_USER et POSTGRES_PASSWORD).")
+  } else if (/ENOTFOUND|EAI_AGAIN/i.test(e.message)) {
+    console.error(
+      "\n  Nom d'hôte introuvable : vérifier ADMIN_HOTE / l'URL.\n" +
+      "  Sur CapRover, c'est srv-captain--<nom-de-l-app-base>.")
+  } else if (/ECONNREFUSED|timeout/i.test(e.message)) {
+    console.error("\n  Hôte joignable mais rien n'écoute : l'app PostgreSQL est-elle démarrée ?")
+  } else if (/does not exist/i.test(e.message)) {
+    console.error("\n  La base n'existe pas : vérifier ADMIN_BASE (« mti » par défaut).")
+  }
+  process.exit(SORTIE.IMPOSSIBLE)
 }
 const { rows: [info] } = await admin.query(
   `SELECT current_database() AS base, current_user AS utilisateur,
@@ -83,7 +195,7 @@ if (!info.superutilisateur) {
   console.error(
     "✗ Ce compte n'est pas superutilisateur. Les migrations ont besoin de\n" +
     "  CREATE EXTENSION et CREATE ROLE. Utiliser le compte root de la base.")
-  process.exit(1)
+  process.exit(SORTIE.IMPOSSIBLE)
 }
 console.log('  ✓ droits superutilisateur confirmés')
 
@@ -94,7 +206,7 @@ let motDePasseGenere = false
 
 if (!verifierSeulement) {
   etape(2, 'Schéma, rôles et privilèges')
-  await lancer('migrer.js', { DATABASE_URL: urlAdmin })
+  await lancer('migrer.js', { DATABASE_URL: urlAdminPourEnfant() })
 
   etape(3, 'Mot de passe du rôle applicatif mti_app')
 
@@ -117,7 +229,7 @@ if (!verifierSeulement) {
       "  TOUTES les apps qui utilisent cette instance) :\n" +
       "    node src/installer.js --nouveau-mot-de-passe")
     await admin.end()
-    process.exit(1)
+    process.exit(SORTIE.IMPOSSIBLE)
   }
 
   if (!motDePasse) {
@@ -128,25 +240,26 @@ if (!verifierSeulement) {
       ? '  nouveau mot de passe généré (l\'ancien est révoqué)'
       : '  mot de passe généré (aucun caractère à encoder dans une URL)')
   }
-  await lancer('definir-mot-de-passe.js', { DATABASE_URL: urlAdmin, MTI_APP_PASSWORD: motDePasse })
+  await lancer('definir-mot-de-passe.js',
+    { DATABASE_URL: urlAdminPourEnfant(), MTI_APP_PASSWORD: motDePasse })
 
   etape(4, 'Référentiels et produits de référence')
   await lancer('seed.js', { DATABASE_URL: urlApplicative(motDePasse) })
 } else if (!motDePasse) {
   console.error('\n✗ --verifier exige MTI_APP_PASSWORD pour tester le rôle applicatif.')
-  process.exit(1)
+  process.exit(SORTIE.IMPOSSIBLE)
 }
 
 // ──────────────────────────────────────────────────────────── Vérifications ──
 
 etape(verifierSeulement ? 2 : 5, 'Cloisonnement du rôle applicatif')
-const app = new pg.Client({ connectionString: urlApplicative(motDePasse), connectionTimeoutMillis: 8000 })
+const app = new pg.Client({ ...connexionApplicative(motDePasse), connectionTimeoutMillis: 8000 })
 try {
   await app.connect()
   console.log('  ✓ mti_app se connecte')
 } catch (e) {
   console.error(`  ✗ mti_app ne peut pas se connecter : ${e.message}`)
-  process.exit(1)
+  process.exit(SORTIE.IMPOSSIBLE)
 }
 
 /** Une opération qui DOIT être refusée. Si elle passe, l'audit est réécrivable. */
@@ -186,7 +299,8 @@ for (const [libelle, sql] of [
   ['modèles de parcours actifs', "SELECT code || ' v' || version FROM mti.modele_parcours WHERE actif"],
   ['catalogues actifs', "SELECT 'v' || version FROM mti.catalogue_processus WHERE actif"],
   ['produits de référence', 'SELECT denomination FROM mti.produit WHERE actif ORDER BY denomination'],
-  ['utilisateurs', "SELECT titre || ' ' || nom || ' (' || identifiant || ')' FROM mti.utilisateur WHERE actif"]
+  ['utilisateurs', "SELECT titre || ' ' || nom || ' (' || identifiant || ')' FROM mti.utilisateur WHERE actif"],
+  ['patients fictifs', "SELECT reference FROM mti.patient WHERE source = 'DEMO' ORDER BY reference"]
 ]) {
   const { rows } = await app.query(sql)
   const valeurs = rows.map((r) => Object.values(r)[0])
@@ -204,6 +318,18 @@ if (dev.n > 0) {
     "    pourront être attribuées à un opérateur inexistant.\n" +
     "\n    UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';\n" +
     "\n    (il n'est créé que si NODE_ENV n'est pas « production » au moment du seed)")
+  defautsConfiguration++
+}
+
+// Patients fictifs : utiles en recette, inacceptables en production.
+const { rows: [fictifs] } = await app.query(
+  "SELECT count(*)::int AS n FROM mti.patient WHERE source = 'DEMO'")
+if (fictifs.n > 0) {
+  console.log(
+    `\n  ⚠ ${fictifs.n} patient(s) fictif(s) en base (source « DEMO »).\n` +
+    "    Acceptable en recette. À purger avant mise en service : un patient\n" +
+    "    fictif pourrait être rattaché à un dossier réel.\n" +
+    "\n    node src/seed-demo.js --supprimer")
   defautsConfiguration++
 }
 
@@ -236,7 +362,7 @@ if (defautsCloisonnement) {
     `réécrivable depuis l'application.\n` +
     `  NE PAS mettre en service. Les migrations ont-elles bien tourné avec le\n` +
     `  compte superutilisateur, et l'API utilise-t-elle bien mti_app ?`)
-  process.exit(1)
+  process.exit(SORTIE.CLOISONNEMENT)
 }
 
 console.log('✓ Cloisonnement du journal d\'audit vérifié.')
@@ -246,7 +372,7 @@ if (defautsConfiguration) {
     `\n✗ ${defautsConfiguration} point(s) de configuration à corriger avant mise en ` +
     `service (voir ci-dessus).\n` +
     `  La base est installée et saine ; il reste à appliquer ces corrections.`)
-  process.exit(2)
+  process.exit(SORTIE.CONFIGURATION)
 }
 
 console.log('✓ Base opérationnelle.')

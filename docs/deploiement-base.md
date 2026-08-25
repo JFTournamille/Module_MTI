@@ -271,7 +271,35 @@ erreur** tant qu'il est actif.
 UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';
 ```
 
-### 7. Sécuriser le tableau de bord CapRover
+### 7. Patients fictifs (recette uniquement)
+
+Pour éprouver la recherche patient sans annuaire SIH branché :
+
+```bash
+docker exec -e SEED_DEMO=oui $(docker ps -qf name=srv-captain--module-mti) \
+  node src/seed-demo.js
+```
+
+Huit patients, portant `source = 'DEMO'` et des références `DEMO-…`, donc
+identifiables par requête.
+
+En `NODE_ENV=production`, l'insertion **exige** `SEED_DEMO=oui` : un oubli ne
+suffit pas. Leur présence est signalée comme défaut de configuration par
+l'installateur et par `/api/sante`, tant qu'ils n'ont pas été purgés.
+
+> **À purger avant toute mise en service** : un patient fictif pourrait être
+> rattaché à un dossier réel.
+>
+> ```bash
+> docker exec $(docker ps -qf name=srv-captain--module-mti) \
+>   node src/seed-demo.js --supprimer
+> ```
+>
+> La purge refuse de s'exécuter si un patient fictif est déjà rattaché à un
+> dossier : elle laisserait ce dossier sans patient. Traiter ces dossiers
+> d'abord — ce sont probablement des essais.
+
+### 8. Sécuriser le tableau de bord CapRover
 
 Si le tableau de bord répond en `http://` sur une IP publique, le mot de passe
 administrateur transite en clair et quiconque l'intercepte peut déployer sur ce
@@ -281,7 +309,7 @@ CapRover → *Settings* → renseigner un **Root Domain**, puis activer **HTTPS*
 (Let's Encrypt) et **Force HTTPS**. Indépendant du module MTI, mais à traiter
 avant mise en service.
 
-### 8. Sauvegardes
+### 9. Sauvegardes
 
 Une sauvegarde de volume non testée en restauration n'est pas une sauvegarde.
 Mettez en place un `pg_dump` régulier **et** restaurez-le une fois sur une base
@@ -320,6 +348,26 @@ En local, faire tourner l'API sous `postgres` est acceptable. En production,
 non : voir §6.
 
 ---
+
+## Diagnostic sans accès au serveur
+
+`GET /api/sante` s'ouvre au navigateur, sans authentification, et donne l'état
+exact de la base. C'est le canal à utiliser quand l'hébergeur n'expose ni shell
+ni logs :
+
+```
+https://<url-de-l-app>/api/sante
+```
+
+| `statut` | Signification |
+|---|---|
+| `ok` | Base installée, cloisonnement vérifié, prête |
+| `non_installe` | Base joignable mais vide — les migrations n'ont pas tourné |
+| `hors_service` | Base injoignable (`detail` donne la cause exacte), ou cloisonnement défaillant |
+| `degrade` | Base installée, mais `diagnostic` indique ce qui reste à faire |
+
+La réponse ne contient ni version de serveur, ni nom d'utilisateur, ni identité
+de patient — des compteurs et des booléens.
 
 ## Diagnostic
 
