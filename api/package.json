@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "migrer": "node src/migrer.js",
+    "motdepasse": "node src/definir-mot-de-passe.js",
     "seed": "node src/seed.js",
     "test:e2e": "node tests/e2e.mjs"
   },

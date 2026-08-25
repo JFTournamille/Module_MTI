@@ -149,7 +149,8 @@ Trois apps :
 | `mti-api` | Ce dépôt, `./api/captain-definition` | Variables : cf. `.env.example` |
 | `mti-web` | Ce dépôt, `./web/captain-definition` | nginx sert le bundle et relaie `/api/` vers `srv-captain--mti-api:3000` |
 
-Mise en service de la base :
+Procédure détaillée, commandes vérifiées et diagnostic :
+[deploiement-base.md](deploiement-base.md). En résumé :
 
 ```bash
 npm --prefix api run migrer   # applique db/*.sql, une fois chacun, empreinte vérifiée

@@ -4,6 +4,9 @@ Logiciel de gestion des médicaments de thérapies innovantes (MTI) — parcours
 chronologique complet, de la réception du matériel de leucaphérèse au suivi
 post-administration, avec la traçabilité exigée par les BPP.
 
+Création de la base pas à pas (CapRover et local) :
+[docs/deploiement-base.md](docs/deploiement-base.md).
+
 ## Démarrage rapide
 
 ```bash
