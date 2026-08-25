@@ -1,0 +1,509 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+.dlg{width:100%;border:1.5px solid #555;border-radius:4px;overflow:hidden;font-family:Arial,sans-serif;font-size:14px;display:flex;flex-direction:column;height:680px;}
+.titlebar{background:#4a3880;color:#fff;padding:7px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:15px;flex-shrink:0;}
+.titlebar .x{background:#cc0000;color:#fff;border:none;width:22px;height:22px;font-size:13px;border-radius:2px;cursor:pointer;}
+.hdr{background:#6045a0;color:#fff;padding:7px 14px;flex-shrink:0;display:flex;justify-content:space-between;align-items:flex-start;}
+.hdr-left .name{font-size:15px;font-weight:bold;}
+.hdr-left .meta{font-size:13px;color:#c8b8f8;margin-top:2px;}
+.hdr-left .unaffected{font-size:14px;font-style:italic;color:#c0b8e8;font-weight:normal;}
+.op-badge{background:#3a2870;color:#d0c8f8;font-size:12px;padding:4px 12px;border-radius:2px;text-align:right;}
+.op-badge span{font-size:13px;color:#fff;font-weight:bold;display:block;}
+.body{display:flex;flex:1;overflow:hidden;}
+.sidebar{width:220px;min-width:220px;background:#2e2060;display:flex;flex-direction:column;overflow:hidden;}
+.sb-lbl{font-size:11px;color:#8878c0;font-weight:bold;letter-spacing:.4px;text-transform:uppercase;padding:8px 13px 4px;}
+.proc-list{flex:1;overflow-y:auto;}
+.proc{display:flex;align-items:flex-start;gap:9px;padding:8px 12px;cursor:pointer;border-left:3px solid transparent;}
+.proc:hover{background:#3d2e80;}
+.proc.done{border-left-color:#44bb77;}
+.proc.active{background:#4a3880;border-left-color:#b0a0ff;}
+.proc.pending{opacity:.55;}
+.proc.sel{background:#4a3880!important;opacity:1!important;border-left-color:#b0a0ff!important;}
+.pn{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;flex-shrink:0;margin-top:1px;}
+.pnd{background:#1a5c36;color:#7fe0a8;}.pna{background:#5040a0;color:#d0c8f8;border:1px solid #b0a0ff;}.pnp{background:#1e1040;color:#3a2870;border:1px solid #3a2870;}
+.pname{color:#e0d8ff;font-size:13px;font-weight:bold;line-height:1.25;}
+.psub{font-size:11px;color:#8878c0;margin-top:1px;}.psub.ok{color:#44bb77;}.psub.cur{color:#b0a0ff;}
+.proc.sel .pname{color:#fff;}.proc.sel .psub{color:#c0b8f8;}
+/* Sidebar footer */
+.sb-footer{padding:8px 12px;border-top:1px solid #3d2e80;flex-shrink:0;}
+.sb-add{width:100%;background:none;border:1px dashed #5048a0;color:#8878c0;font-size:12px;padding:5px;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .15s;}
+.sb-add:hover{background:#3d2e80;color:#d0c8f8;border-color:#8878c0;}
+/* Process catalog modal */
+.cat-ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:9990;justify-content:center;align-items:center;}
+.cat-ov.show{display:flex;}
+.cat-dlg{background:#fff;border-radius:4px;border:2px solid #4a3880;width:460px;max-height:520px;display:flex;flex-direction:column;overflow:hidden;}
+.cat-hd{background:#4a3880;color:#fff;padding:8px 12px;font-weight:bold;font-size:13px;display:flex;justify-content:space-between;align-items:center;}
+.cat-hd button{background:none;border:none;color:#fff;cursor:pointer;font-size:15px;}
+.cat-sub{padding:8px 12px;font-size:11px;color:#555;background:#f5f2ff;border-bottom:1px solid #ddd;}
+.cat-body{flex:1;overflow-y:auto;padding:8px 12px;}
+.cat-grp{font-size:10px;color:#8060c0;font-weight:bold;letter-spacing:.4px;text-transform:uppercase;padding:6px 0 3px;border-bottom:1px solid #e8e0f8;margin-bottom:3px;}
+.cat-item{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:3px;cursor:pointer;margin-bottom:2px;border:1px solid transparent;}
+.cat-item:hover{background:#f0ecff;border-color:#c8b8f8;}
+.cat-item.sel{background:#e8e0ff;border-color:#8060d0;}
+.cat-ico{font-size:18px;width:28px;text-align:center;flex-shrink:0;}
+.cat-name{font-weight:bold;font-size:12px;color:#1e0e50;}
+.cat-desc{font-size:11px;color:#666;margin-top:1px;line-height:1.3;}
+.cat-foot{padding:8px 12px;border-top:1px solid #ddd;display:flex;justify-content:flex-end;gap:8px;}
+.cat-btn-ok{background:#4a3880;color:#fff;border:none;font-size:12px;padding:5px 14px;border-radius:2px;cursor:pointer;}
+.cat-btn-ok:hover{background:#6045a0;}
+.cat-btn-ok:disabled{background:#aaa;cursor:default;}
+.cat-btn-cancel{background:#eee;border:1px solid #ccc;color:#333;font-size:12px;padding:5px 12px;border-radius:2px;cursor:pointer;}
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#f0f0f0;min-width:0;}
+.proc-head{background:#5038a0;color:#fff;padding:7px 14px;display:flex;align-items:center;gap:11px;flex-shrink:0;}
+.ph-num{width:26px;height:26px;border-radius:50%;background:#3a2870;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#c8beff;flex-shrink:0;}
+.ph-name{font-size:14px;font-weight:bold;}.ph-sub{font-size:12px;opacity:.8;margin-top:1px;}
+.status-badge{margin-left:auto;font-size:11px;padding:2px 10px;border-radius:2px;font-weight:bold;color:#fff;}
+.s-active{background:#cc6600;}.s-done{background:#1a6636;}.s-prev{background:#555;}
+.tbl-wrap{flex:1;overflow-y:auto;}
+.banner{padding:5px 11px;font-size:12px;border-bottom:1px solid;}
+.b-done{background:#efffef;border-color:#bbe8cc;color:#117744;}
+.b-prev{background:#fffbec;border-color:#e0c840;color:#7a6000;}
+.b-ext{background:#f0f0ff;border-color:#c0b0e0;color:#5040a0;font-style:italic;}
+.std-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.std-th{background:#4a3880;color:#fff;padding:6px 7px;font-size:12px;font-weight:bold;text-align:left;}
+.std-th.c{text-align:center;}
+.std-sec td{background:#d4c8f0;color:#1e0e50;font-weight:bold;padding:5px 8px;font-size:13px;border-bottom:1px solid #b8a8e0;}
+.std-ir td{background:#fff;padding:6px 7px;border-bottom:.5px solid #e8e0f8;vertical-align:middle;}
+.std-ir:nth-child(even) td{background:#faf8ff;}
+.std-lbl{color:#222;font-size:13px;line-height:1.3;}.std-sublbl{color:#888;font-size:11px;font-style:italic;}
+.std-badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:2px;font-weight:bold;}
+.b-yn{background:#e8e0ff;color:#3a2880;}.b-val{background:#ddeeff;color:#1a5080;}
+.b-photo{background:#e8f8e8;color:#1a5a1a;}.b-timer{background:#fff0dd;color:#7a4000;}
+.b-texte{background:#f8f0e8;color:#6a4010;}.b-auto{background:#f0f0f0;color:#555;}
+.std-ok{background:#ddfff0;border:1px solid #44aa77;color:#116644;font-size:11px;padding:2px 6px;border-radius:2px;}
+.std-dash{color:#bbb;font-size:12px;}.std-ck{color:#117744;font-size:16px;}
+.std-yn{display:flex;gap:10px;}.std-yn label{display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;}
+input[type=radio].oui{accent-color:#007733;}input[type=radio].non{accent-color:#cc2200;}
+.std-finput{border:1px solid #aaa;padding:3px 6px;font-size:12px;background:#fff;border-radius:2px;width:100%;}
+.std-tdsp{font-family:monospace;font-size:13px;background:#1a1a1a;color:#00ee88;padding:2px 6px;border-radius:2px;min-width:48px;display:inline-block;text-align:center;}
+.std-bt{font-size:11px;padding:3px 7px;border-radius:2px;cursor:pointer;border:1px solid #8060b0;background:#ede8ff;color:#3a2880;}
+.std-op{color:#4a3880;font-size:12px;font-style:italic;}.std-ts{font-size:12px;color:#555;}
+.footer{background:#f0eeff;border-top:1px solid #ccc;padding:8px 14px;display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.f-btn{font-size:13px;padding:5px 12px;border:1px solid #aaa;background:#e8e8e8;color:#333;cursor:pointer;border-radius:2px;}
+.conf-grp{display:flex;align-items:center;gap:9px;font-size:13px;margin-left:4px;}
+.conf-grp label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+.btn-ann{background:#b52a1c;border:1px solid #8a1f14;color:#fff;font-size:13px;padding:5px 13px;cursor:pointer;border-radius:2px;margin-left:auto;}
+.btn-val{background:#2e7d4e;border:1px solid #1e5c38;color:#fff;font-weight:bold;font-size:14px;padding:5px 16px;cursor:pointer;border-radius:2px;}
+/* Checklist namespaced */
+.chk{display:flex;flex-direction:column;height:100%;font-family:Arial,sans-serif;font-size:12px;}
+.chk .ch-hdr{background:#6045a0;color:#fff;padding:5px 10px;text-align:center;flex-shrink:0;}
+.chk .ch-hdr .cname{font-weight:bold;font-size:14px;}
+.chk .ch-meta{background:#f5f2ff;border-bottom:1px solid #ccc;padding:5px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
+.chk .mi{display:flex;align-items:center;gap:4px;font-size:11px;color:#333;}
+.chk .mi label{color:#666;font-size:11px;}
+.chk .mi input{border:1px solid #aaa;padding:2px 5px;font-size:11px;background:#fff;border-radius:2px;}
+.chk .ubadge{margin-left:auto;background:#4a3880;color:#fff;padding:3px 10px;border-radius:3px;font-size:11px;}
+.chk .nbadge{background:#4a3880;color:#fff;padding:2px 7px;border-radius:2px;font-size:11px;}
+.chk .ch-pa{background:#fffbf0;border-top:2px solid #b07800;border-bottom:2px solid #b07800;padding:6px 10px;flex-shrink:0;}
+.chk .ch-pa-tog{display:flex;align-items:center;gap:10px;font-weight:bold;color:#7a5000;font-size:12px;}
+.chk .ch-pa-tog label{display:flex;align-items:center;gap:4px;font-weight:normal;cursor:pointer;}
+.chk .ch-pa-flds{display:none;margin-top:6px;flex-wrap:wrap;gap:7px;align-items:center;}
+.chk .ch-pa-flds.show{display:flex;}
+.chk .pg{display:flex;align-items:center;gap:4px;font-size:11px;color:#555;}
+.chk .pg label{font-weight:bold;color:#7a5000;}
+.chk .pg input{border:1px solid #c0a030;padding:2px 6px;font-size:11px;border-radius:2px;background:#fff;}
+.chk .sbtn{background:#4a3880;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:11px;}
+.chk .ch-scroll{overflow-y:auto;flex:1;}
+.chk table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.chk col.cn{width:4%}.chk col.cl{width:28%}.chk col.ct{width:9%}.chk col.co{width:5%}.chk col.cd{width:20%}.chk col.cdt{width:13%}.chk col.cop{width:21%}
+.chk .cth{background:#6045a0;color:#fff;padding:4px 5px;font-size:11px;font-weight:bold;text-align:center;border:1px solid #8060b0;}
+.chk .cth.l{text-align:left;padding-left:7px;}
+.chk .csec td{background:#c0aee0;color:#1e0e50;font-weight:bold;padding:4px 7px;border:1px solid #a090cc;font-size:12px;}
+.chk .crow td{background:#fff;padding:3px 4px;border:1px solid #e0d8f0;vertical-align:middle;}
+.chk .crow:nth-child(even) td{background:#f5f2fc;}
+.chk .crow.op2r td{background:#f0ecff;border-top:1px dashed #c0a8e8;}
+.chk .cnc{text-align:center;color:#888;font-size:10px;}
+.chk .clbl{color:#222;font-size:11px;line-height:1.35;}.chk .csub{color:#777;font-size:10px;font-style:italic;margin-top:1px;}.chk .cmul{color:#5040a0;font-size:9px;font-style:italic;}
+.chk .ctb{display:inline-block;font-size:10px;padding:2px 5px;border-radius:3px;font-weight:bold;white-space:nowrap;}
+.chk .t-on{background:#e8e0ff;color:#3a2880;}.chk .t-va{background:#ddeeff;color:#1a5080;}.chk .t-ph{background:#e8f8e8;color:#1a5a1a;}.chk .t-ti{background:#fff0dd;color:#7a4000;}.chk .t-tx{background:#f8f0e8;color:#6a4010;}.chk .t-au{background:#f0f0f0;color:#555;}
+.chk .cobl{text-align:center;vertical-align:middle;}.chk .cobtn{background:none;border:none;cursor:pointer;font-size:14px;line-height:1;padding:2px;}.chk .cobtn.on{color:#cc2200;}.chk .cobtn.off{color:#ccc;}
+.chk .cyn{display:flex;gap:6px;justify-content:center;align-items:center;}.chk .cyn label{display:flex;align-items:center;gap:2px;cursor:pointer;font-size:11px;}
+.chk input[type=radio].roi{accent-color:#007733;}.chk input[type=radio].ron{accent-color:#cc2200;}
+.chk .cfi{border:1px solid #aaa;padding:2px 4px;font-size:11px;background:#fff;border-radius:2px;width:100%;}
+.chk .cdf{border:1px solid #aaa;padding:2px 3px;font-size:10px;background:#fff;border-radius:2px;width:100%;}
+.chk .copw{display:flex;align-items:center;gap:4px;}.chk .copi{flex:1;border:1px solid #aaa;padding:2px 4px;font-size:11px;background:#fff;border-radius:2px;}
+.chk .cadd{background:#6045a0;color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.chk .calm{background:#ffdddd;border:1px solid #cc4444;color:#aa2200;font-size:10px;padding:1px 5px;border-radius:2px;white-space:nowrap;}
+.chk .cokb{background:#ddfff0;border:1px solid #44aa77;color:#116644;font-size:10px;padding:1px 5px;border-radius:2px;white-space:nowrap;}
+.chk .ctrow{display:flex;align-items:center;gap:4px;}.chk .ctd{font-family:monospace;font-size:12px;background:#1a1a1a;color:#00ee88;padding:1px 6px;border-radius:2px;min-width:48px;text-align:center;display:inline-block;}
+.chk .cbt{font-size:10px;padding:2px 6px;border-radius:2px;cursor:pointer;border:1px solid #8060b0;background:#ede8ff;color:#3a2880;}
+.chk .cthr{display:flex;gap:3px;}.chk .cth2{width:28px;height:28px;background:#eee;border:1px dashed #aaa;border-radius:2px;font-size:10px;color:#888;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.chk .cth2.done{background:#d0eeff;border-color:#4488cc;}
+.cmodal-ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:9999;justify-content:center;align-items:center;}
+.cmodal-ov.show{display:flex;}
+.cmodal{background:#fff;border-radius:4px;border:2px solid #4a3880;width:360px;overflow:hidden;}
+.cmodal-hd{background:#4a3880;color:#fff;padding:6px 10px;font-weight:bold;font-size:12px;display:flex;justify-content:space-between;}
+.cmodal-bd{padding:10px;}.cmodal-bd input{width:100%;border:1px solid #aaa;padding:4px 8px;font-size:12px;border-radius:2px;margin-bottom:8px;}
+.cmodal-res{border:1px solid #ddd;border-radius:2px;max-height:140px;overflow-y:auto;}
+.cmodal-row{padding:5px 8px;cursor:pointer;font-size:11px;border-bottom:1px solid #eee;}.cmodal-row:hover{background:#f0eeff;}
+.cmodal-row span{color:#666;font-size:10px;margin-left:8px;}
+</style>
+
+<!-- Patient search modal -->
+<div class="cmodal-ov" id="cPatMod">
+  <div class="cmodal">
+    <div class="cmodal-hd">Recherche patient <button onclick="cCloseModal()" style="background:none;border:none;color:#fff;cursor:pointer;font-size:14px;">✕</button></div>
+    <div class="cmodal-bd">
+      <input type="text" id="cModSearch" placeholder="Nom, prénom ou N° patient…" oninput="cFilter(this.value)">
+      <div class="cmodal-res" id="cModRes"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Process catalog modal -->
+<div class="cat-ov" id="catOv">
+  <div class="cat-dlg">
+    <div class="cat-hd">Ajouter un processus préparamétré <button onclick="closeCat()">✕</button></div>
+    <div class="cat-sub">Sélectionnez un type de processus dans le catalogue. Les points de contrôle associés seront pré-chargés.</div>
+    <div class="cat-body" id="catBody"></div>
+    <div class="cat-foot">
+      <button class="cat-btn-cancel" onclick="closeCat()">Annuler</button>
+      <button class="cat-btn-ok" id="catOkBtn" disabled onclick="confirmCat()">Ajouter ce processus</button>
+    </div>
+  </div>
+</div>
+
+<div class="dlg">
+  <div class="titlebar"><span>Scénario MTI — Processus chronologique</span><button class="x">✕</button></div>
+  <div class="hdr">
+    <div class="hdr-left">
+      <div class="name" id="hdrName">Non affecté à un patient</div>
+      <div class="meta" id="hdrMeta">N° lot : TC-2026-0814 &nbsp;|&nbsp; N° ordonnancier : <span id="hdrOrd" style="display:none">8812 &nbsp;|&nbsp; </span>Péremption : 30/06/2026</div>
+    </div>
+    <div class="op-badge">Opérateur connecté<span>M. Martin DURAND</span></div>
+  </div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="sb-lbl">Processus chronologiques</div>
+      <div class="proc-list" id="procList"></div>
+      <div class="sb-footer">
+        <button class="sb-add" onclick="openCat()">＋ Ajouter un processus</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="proc-head" id="procHead"></div>
+      <div class="tbl-wrap" id="tblWrap"></div>
+    </div>
+  </div>
+  <div class="footer">
+    <button class="f-btn">Imprimer</button>
+    <button class="f-btn">Exporter PDF</button>
+    <div class="conf-grp">Conformité :
+      <label><input type="radio" name="conf" value="nc"> Non conforme</label>
+      <label><input type="radio" name="conf" value="c"> Conforme</label>
+    </div>
+    <button class="btn-ann">✕ Annuler</button>
+    <button class="btn-val">✓ Valider</button>
+  </div>
+</div>
+
+<script>
+// ── Global state ──────────────────────────────────────────────
+let preallocationActive=false;
+let preallocationPatient=null; // {nom, id}
+const FAB_INDEX=4; // process index 4 = "Mise en fabrication" (n°5) → patient + ordonnancier visible
+
+const P=[
+  {n:1,name:"Réception (+/- préallocation)",state:"active",op:"M. Martin DURAND",ext:false},
+  {n:2,name:"Stockage",state:"pending",ext:false,sections:[{title:"Stockage matériel leucaphérèse",items:[
+    {lbl:"Température cuve azote (relevé)",type:"val"},{lbl:"Emplacement cuve noté",type:"texte"},{lbl:"Photo jauge azote",type:"photo"},{lbl:"Entrée en stock logiciel PUI",type:"auto",val:"À la validation"},
+  ]}]},
+  {n:3,name:"Déstockage",state:"pending",ext:false,sections:[{title:"Déstockage pour envoi fabricant",items:[
+    {lbl:"Concordance identité produit / bon de sortie",type:"yn"},{lbl:"Intégrité emballage cryogénique",type:"yn"},{lbl:"Sortie de stock logiciel PUI",type:"auto",val:"À la validation"},{lbl:"Heure de déstockage notée",type:"texte"},
+  ]}]},
+  {n:4,name:"Décongélation",state:"pending",ext:false,sections:[{title:"Décongélation matériel leucaphérèse",items:[
+    {lbl:"Démarrage minuteur décongélation",type:"timer"},{lbl:"Décongélation bain-marie 37 °C",type:"timer"},{lbl:"Aspect post-décongélation conforme",type:"photo"},{lbl:"Viabilité cellulaire mesurée",type:"val"},
+  ]}]},
+  {n:5,name:"Mise en fabrication",state:"pending",ext:true,sections:[{title:"Transfert vers site de fabrication",items:[
+    {lbl:"Dossier patient transmis au fabricant",type:"yn"},{lbl:"Bon de commande fabricant confirmé",type:"yn"},{lbl:"Matériel confié au transporteur",type:"yn"},{lbl:"N° suivi envoi",type:"texte"},
+  ]}]},
+  {n:6,name:"Fabrication",state:"pending",ext:true,sections:[{title:"Fabrication (site externe)",items:[
+    {lbl:"Réception matériel leucaphérèse confirmée",type:"yn"},{lbl:"N° lot attribué",type:"texte"},{lbl:"Conditionnement cryogénique effectué",type:"yn"},{lbl:"Durée fabrication",type:"auto",val:"À renseigner"},
+  ]}]},
+  {n:7,name:"Libération",state:"pending",ext:true,sections:[{title:"Contrôle libération (AQ fabricant)",items:[
+    {lbl:"Certificat de conformité (CoA) émis",type:"yn"},{lbl:"Stérilité / mycoplasmose négatifs",type:"auto",val:"Résultat externe"},{lbl:"Viabilité cellulaire conforme",type:"val"},{lbl:"Autorisation d'expédition confirmée",type:"yn"},
+  ]}]},
+  {n:8,name:"Stockage",state:"pending",ext:true,sections:[{title:"Stockage site fabricant (pré-expédition)",items:[
+    {lbl:"Stockage cryogénique confirmé",type:"yn"},{lbl:"Température cuve expéditeur",type:"val"},{lbl:"Alarmes actives",type:"yn"},
+  ]}]},
+  {n:9,name:"Envoi",state:"pending",ext:true,sections:[{title:"Expédition",items:[
+    {lbl:"Conteneur dryshipper qualifié",type:"yn"},{lbl:"Température embarquement",type:"val"},{lbl:"Alarmes activées",type:"yn"},{lbl:"Bon de retour édité",type:"yn"},{lbl:"N° suivi expédition",type:"texte"},
+  ]}]},
+  {n:10,name:"Réception service",state:"pending",ext:false,sections:[{title:"Traçabilité de réception",items:[
+    {lbl:"Date et heure de réception",type:"auto",val:"Horodatage automatique"},{lbl:"Identité du réceptionnaire",type:"texte"},{lbl:"Conformité globale de la livraison",type:"yn"},{lbl:"Accusé de réception transmis",type:"yn"},{lbl:"Entrée en stock logiciel PUI",type:"auto",val:"À la validation"},
+  ]}]},
+  {n:11,name:"Administration",state:"pending",ext:false,sections:[{title:"Administration au patient",items:[
+    {lbl:"Identité patient vérifiée (2 concordances)",type:"yn"},{lbl:"Prémédication administrée",type:"yn"},{lbl:"Voie veineuse vérifiée",type:"yn"},{lbl:"Administration réalisée",type:"yn"},{lbl:"Durée perfusion enregistrée",type:"val"},
+  ]}]},
+  {n:12,name:"Post-administration",state:"pending",ext:false,sections:[{title:"Surveillance & traçabilité",items:[
+    {lbl:"Surveillance patient ≥ 1h post-administration",type:"yn"},{lbl:"Traçabilité dans logiciel prescriptions",type:"auto",val:"À la validation"},{lbl:"Bon de retour conteneur complété",type:"yn"},{lbl:"Suivi J8 / J15 planifié",type:"texte"},
+  ]}]},
+];
+
+// ── Process catalog ───────────────────────────────────────────
+const CATALOG=[
+  {group:"Contrôle qualité",items:[
+    {ico:"🔬",name:"Contrôle qualité intermédiaire",desc:"Points de contrôle AQ en cours de fabrication ou de stockage.",sections:[{title:"Contrôle qualité",items:[{lbl:"Aspect macroscopique conforme",type:"yn"},{lbl:"T° relevée",type:"val"},{lbl:"Signature libération intermédiaire",type:"texte"},{lbl:"Photo documentation",type:"photo"}]}]},
+    {ico:"📋",name:"Non-conformité / déviation",desc:"Gestion et traçabilité d'une déviation ou incident qualité.",sections:[{title:"Gestion déviation",items:[{lbl:"Description de l'incident",type:"texte"},{lbl:"Impact produit évalué",type:"yn"},{lbl:"Déclaration au référent qualité",type:"yn"},{lbl:"Décision libération / rejet",type:"yn"}]}]},
+  ]},
+  {group:"Logistique & transport",items:[
+    {ico:"🚚",name:"Transport interne",desc:"Transfert intra-établissement avec traçabilité température.",sections:[{title:"Transport interne",items:[{lbl:"T° au départ (relevé)",type:"val"},{lbl:"T° à l'arrivée (relevé)",type:"val"},{lbl:"Durée de transport",type:"timer"},{lbl:"Intégrité emballage confirmée",type:"yn"}]}]},
+    {ico:"❄️",name:"Recontrôle cuve azote",desc:"Vérification complémentaire des cuves cryogéniques.",sections:[{title:"Recontrôle cuves",items:[{lbl:"Niveau azote ≥ seuil",type:"val"},{lbl:"Alarme température active",type:"yn"},{lbl:"Photo niveau jauge",type:"photo"},{lbl:"Identité opérateur contrôle",type:"texte"}]}]},
+  ]},
+  {group:"Médical & pharmacie",items:[
+    {ico:"👩‍⚕️",name:"Consultation médecin référent",desc:"Validation médicale avant étape critique (administration, libération…).",sections:[{title:"Consultation médicale",items:[{lbl:"Médecin référent consulté",type:"yn"},{lbl:"Décision thérapeutique actée",type:"texte"},{lbl:"Heure de consultation",type:"auto",val:"Horodatage auto"},{lbl:"Signature médecin",type:"texte"}]}]},
+    {ico:"💊",name:"Validation pharmaceutique",desc:"Validation du pharmacien avant dispensation ou administration.",sections:[{title:"Validation pharmacien",items:[{lbl:"Prescription vérifiée (dose, voie, patient)",type:"yn"},{lbl:"Compatibilité / interactions vérifiées",type:"yn"},{lbl:"Dispensation autorisée",type:"yn"},{lbl:"N° ordonnancier",type:"texte"}]}]},
+    {ico:"🧪",name:"Prémédication",desc:"Administration et traçabilité de la prémédication.",sections:[{title:"Prémédication",items:[{lbl:"Médicament de prémédication identifié",type:"yn"},{lbl:"Dose vérifiée",type:"yn"},{lbl:"Administration voie IV confirmée",type:"yn"},{lbl:"Délai minimum respecté avant produit",type:"timer"}]}]},
+  ]},
+  {group:"Administratif",items:[
+    {ico:"📁",name:"Constitution dossier patient",desc:"Vérification complétude du dossier avant mise en fabrication.",sections:[{title:"Dossier patient",items:[{lbl:"Consentement éclairé signé",type:"yn"},{lbl:"Ordonnance nominative présente",type:"yn"},{lbl:"Identito-vigilance vérifiée (2 concordances)",type:"yn"},{lbl:"N° ordonnancier renseigné",type:"texte"}]}]},
+  ]},
+];
+
+let catSel=null;
+
+function openCat(){
+  catSel=null;
+  document.getElementById('catOkBtn').disabled=true;
+  const body=document.getElementById('catBody');
+  body.innerHTML=CATALOG.map(g=>`
+    <div class="cat-grp">${g.group}</div>
+    ${g.items.map((item,ii)=>`
+      <div class="cat-item" data-gid="${g.group}" data-iid="${ii}" onclick="selCat(this,'${g.group}',${ii})">
+        <div class="cat-ico">${item.ico}</div>
+        <div><div class="cat-name">${item.name}</div><div class="cat-desc">${item.desc}</div></div>
+      </div>`).join('')}
+  `).join('');
+  document.getElementById('catOv').classList.add('show');
+}
+function selCat(el,gid,iid){
+  document.querySelectorAll('.cat-item').forEach(e=>e.classList.remove('sel'));
+  el.classList.add('sel');
+  catSel={gid,iid};
+  document.getElementById('catOkBtn').disabled=false;
+}
+function closeCat(){document.getElementById('catOv').classList.remove('show');}
+function confirmCat(){
+  if(!catSel)return;
+  const g=CATALOG.find(x=>x.group===catSel.gid);
+  const item=g.items[catSel.iid];
+  const n=P.length+1;
+  P.push({n,name:item.name,state:'pending',ext:false,sections:item.sections,_catalog:true});
+  closeCat();
+  renderSide();
+  go(P.length-1);
+}
+
+// ── Header update ─────────────────────────────────────────────
+function updateHeader(idx){
+  const nameEl=document.getElementById('hdrName');
+  const ordEl=document.getElementById('hdrOrd');
+  // Patient appears if: preallocation is active, OR current process >= FAB_INDEX
+  if(preallocationActive&&preallocationPatient){
+    nameEl.innerHTML=`${preallocationPatient.nom} &nbsp;•&nbsp; N° ${preallocationPatient.id}`;
+    nameEl.className='name';
+  } else if(idx>=FAB_INDEX){
+    nameEl.innerHTML=`<span style="font-style:italic;color:#c8b8f8;font-size:13px;">Patient à identifier à la mise en fabrication</span>`;
+    nameEl.className='name';
+  } else {
+    nameEl.innerHTML=`<span class="unaffected">Non affecté à un patient</span>`;
+    nameEl.className='name';
+  }
+  // N° ordonnancier: only from FAB_INDEX onwards
+  ordEl.style.display=(idx>=FAB_INDEX)?'inline':'none';
+}
+
+// ── Checklist ─────────────────────────────────────────────────
+const SECTIONS=[
+  {title:"1 — Réception du conteneur",rows:[
+    {num:"1.1",lbl:"Vérification intégrité du conteneur (pas de choc, fuite, humidité)",type:"ouinon",obl:true,multi:false},
+    {num:"1.2",lbl:"Concordance étiquetage produit / bon de livraison",type:"ouinon",obl:true,multi:false},
+    {num:"1.3",lbl:"Alarme température SMART PACK I — seuil < −150 °C",sub:"Relever la valeur affichée sur l'enregistreur",type:"valeur",obl:true,multi:false,alarm:true,seuil:-150},
+    {num:"1.4",lbl:"Alarme température SMART PACK II — seuil < −150 °C",sub:"Si second enregistreur présent",type:"valeur",obl:false,multi:false,alarm:true,seuil:-150},
+    {num:"1.5",lbl:"Vérification visuelle état externe conteneur",sub:"Photo obligatoire — à prendre avant ouverture",type:"photo",obl:true,multi:"photo"},
+    {num:"1.6",lbl:"Vérification accès site dédié fabricant (tracking expédition)",type:"ouinon",obl:false,multi:false},
+  ]},
+  {title:"2 — Vérification cuves d'azote",rows:[
+    {num:"2.1",lbl:"Niveau azote liquide cuve ≥ seuil minimum",type:"valeur",obl:true,multi:"cuve"},
+    {num:"2.2",lbl:"Température cuve d'azote — seuil < −160 °C",sub:"Relever la valeur affichée sur le contrôleur",type:"valeur",obl:true,multi:"cuve",alarm:true,seuil:-160},
+    {num:"2.3",lbl:"Alarme température cuve activée et fonctionnelle",type:"ouinon",obl:true,multi:"cuve"},
+  ]},
+  {title:"3 — Extraction produit du dryshipper",rows:[
+    {num:"3.1",lbl:"Minuteur T0 — démarré à l'extraction du dryshipper",sub:"Le délai maximal d'administration est compté depuis T0",type:"timer",obl:true,multi:false},
+    {num:"3.2",lbl:"Aspect de la poche produit — absence de particules / coloration anormale",sub:"Photo avant et après extraction",type:"photo",obl:true,multi:"photo"},
+    {num:"3.3",lbl:"Concordance N° lot étiquette produit / documents",type:"ouinon",obl:true,multi:false},
+    {num:"3.4",lbl:"Vérification date de péremption non dépassée",type:"ouinon",obl:true,multi:false},
+  ]},
+  {title:"4 — Vérification documents (CoA / BPP)",rows:[
+    {num:"4.1",lbl:"Certificat de conformité (CoA) présent et complet",type:"ouinon",obl:true,multi:false},
+    {num:"4.2",lbl:"Numération cellulaire ≥ seuil prescrit",sub:"Valeur CoA à reporter",type:"valeur",obl:true,multi:false},
+    {num:"4.3",lbl:"Viabilité cellulaire ≥ seuil prescrit",sub:"Valeur CoA à reporter",type:"valeur",obl:true,multi:false},
+    {num:"4.4",lbl:"Concordance identité patient / étiquette produit (2 concordances)",type:"ouinon",obl:true,multi:false},
+  ]},
+  {title:"5 — Stockage cryogénique",rows:[
+    {num:"5.1",lbl:"Identification emplacement dans la cuve d'azote",sub:"Indiquer cuve / rack / position",type:"texte",obl:true,multi:"cuve"},
+    {num:"5.2",lbl:"Enregistrement position dans logiciel PUI",type:"auto",obl:true,multi:"cuve"},
+    {num:"5.3",lbl:"Photo étiquetage emplacement cuve après stockage",type:"photo",obl:false,multi:"photo"},
+  ]},
+  {title:"6 — Gestion informatique",rows:[
+    {num:"6.1",lbl:"Enregistrement réception dans logiciel PUI",type:"auto",obl:true,multi:false},
+    {num:"6.2",lbl:"Prescription saisie dans logiciel prescriptions",type:"ouinon",obl:true,multi:false},
+    {num:"6.3",lbl:"Médecin référent informé de la réception",type:"ouinon",obl:false,multi:false},
+    {num:"6.4",lbl:"Bon de retour conteneur complété",sub:"Retourner dans les délais impartis au transporteur",type:"ouinon",obl:false,multi:false},
+  ]},
+];
+let cNex=1,cObl={},cTim={};
+const PATS=[{id:"P-00123",nom:"MARTIN Sophie",ddn:"12/03/1978"},{id:"P-00456",nom:"DURAND Jean-Pierre",ddn:"04/07/1965"},{id:"P-00789",nom:"BERNARD Claire",ddn:"22/11/1982"},{id:"P-01011",nom:"PETIT Marie",ddn:"09/05/1991"},{id:"P-01234",nom:"ROBERT Alain",ddn:"30/01/1955"}];
+
+function cBadge(t){const m={ouinon:['t-on','Oui/Non'],valeur:['t-va','Valeur °C'],photo:['t-ph','Photo'],timer:['t-ti','Minuteur'],texte:['t-tx','Texte'],auto:['t-au','Auto']};const[c,l]=m[t]||['t-au',t];return`<span class="ctb ${c}">${l}</span>`;}
+function cDetail(r,key){
+  switch(r.type){
+    case'ouinon':return`<div class="cyn"><label><input type="radio" class="roi" name="${key}"> Oui</label><label><input type="radio" class="ron" name="${key}"> Non</label></div>`;
+    case'valeur':return`<div style="display:flex;align-items:center;gap:3px;"><input class="cfi" type="number" step="0.1" placeholder="°C" style="width:64px;" oninput="cCheckT(this,${r.seuil||0},'${key}')"><span id="cal_${key}" style="display:none"></span></div>`;
+    case'photo':return`<div class="cthr"><div class="cth2" onclick="this.classList.toggle('done');this.textContent=this.classList.contains('done')?'✅':'📷'">📷</div><div class="cth2" onclick="this.classList.toggle('done');this.textContent=this.classList.contains('done')?'✅':'📷'">📷</div></div>`;
+    case'timer':return`<div class="ctrow"><span class="ctd" id="ctd_${key}">00:00</span><button class="cbt" onclick="cStartT('${key}')">▶ T0</button><button class="cbt" id="cstp_${key}" style="display:none" onclick="cStopT('${key}')">■</button></div>`;
+    case'texte':return`<input class="cfi" type="text" placeholder="Saisir…">`;
+    case'auto':return`<span style="font-size:10px;color:#777;font-style:italic;">Automatique</span>`;
+    default:return`<input class="cfi" type="text">`;
+  }
+}
+function cBuildTable(){
+  const tb=document.getElementById('cTbody');if(!tb)return;tb.innerHTML='';
+  SECTIONS.forEach(sec=>{
+    const sr=document.createElement('tr');sr.className='csec';sr.innerHTML=`<td colspan="7">${sec.title}</td>`;tb.appendChild(sr);
+    sec.rows.forEach(r=>{
+      const copies=(r.multi!==false)?cNex:1;
+      for(let ex=1;ex<=copies;ex++){
+        const key=r.num+(copies>1?`_e${ex}`:'');
+        if(cObl[key]===undefined)cObl[key]=r.obl;
+        const suf=copies>1?` <span class="cmul">(Ex. ${ex}/${copies})</span>`:'';
+        const mulTag=r.multi&&ex===1?`<div class="cmul">× ${copies} ${r.multi==='photo'?'photo(s)':'cuve(s)'}</div>`:'';
+        const tr=document.createElement('tr');tr.className='crow';tr.dataset.key=key;
+        tr.innerHTML=`<td class="cnc">${r.num}${copies>1?`<br><span style="font-size:9px;color:#8060c0">${ex}/${copies}</span>`:''}</td>
+          <td><div class="clbl">${r.lbl}${suf}</div>${r.sub?`<div class="csub">${r.sub}</div>`:''}${mulTag}</td>
+          <td style="text-align:center">${cBadge(r.type)}</td>
+          <td class="cobl"><button class="cobtn ${cObl[key]?'on':'off'}" onclick="cTogObl('${key}',this)">★</button></td>
+          <td>${cDetail(r,key)}</td>
+          <td><input class="cdf" type="datetime-local"></td>
+          <td><div class="copw"><input class="copi" type="text" placeholder="Opérateur 1" value="M. Martin DURAND"><button class="cadd" onclick="cAddOp2(this,'${key}')">+</button></div></td>`;
+        tb.appendChild(tr);
+      }
+    });
+  });
+}
+function cApplyN(){const i=document.getElementById('cNex');if(!i)return;cNex=Math.max(1,Math.min(10,parseInt(i.value)||1));document.getElementById('cNBadge').textContent='n = '+cNex;cBuildTable();}
+function cTogObl(k,b){cObl[k]=!cObl[k];b.className='cobtn '+(cObl[k]?'on':'off');}
+function cCheckT(inp,seuil,key){const al=document.getElementById('cal_'+key);if(!al)return;const v=parseFloat(inp.value);if(!isNaN(v)){al.style.display='inline';if(v>seuil){al.className='calm';al.textContent=`⚠ ${v}°C > ${seuil}°C`;}else{al.className='cokb';al.textContent=`✓ ${v}°C`;}}else al.style.display='none';}
+function cStartT(k){if(cTim[k])return;const s=Date.now();document.getElementById('cstp_'+k).style.display='inline';cTim[k]=setInterval(()=>{const el=document.getElementById('ctd_'+k);if(!el)return;const d=Math.floor((Date.now()-s)/1000);el.textContent=String(Math.floor(d/60)).padStart(2,'0')+':'+String(d%60).padStart(2,'0');},500);}
+function cStopT(k){clearInterval(cTim[k]);delete cTim[k];document.getElementById('cstp_'+k).style.display='none';}
+function cAddOp2(btn,key){const mR=btn.closest('tr'),nx=mR.nextElementSibling;if(nx&&nx.classList.contains('op2r')&&nx.dataset.k2===key){nx.remove();btn.style.background='#6045a0';return;}const r=document.createElement('tr');r.className='crow op2r';r.dataset.k2=key;r.innerHTML=`<td></td><td><span style="font-size:10px;color:#6045a0;font-style:italic;">↳ Contrôle double signature</span></td><td></td><td></td><td></td><td><input class="cdf" type="datetime-local"></td><td><div class="copw"><span style="font-size:10px;color:#6045a0;margin-right:4px;">Op. 2 :</span><input class="copi" type="text" placeholder="Opérateur de contrôle"></div></td>`;mR.insertAdjacentElement('afterend',r);btn.style.background='#2e7d4e';}
+
+// Preallocation toggle: called from the checklist panel radio buttons
+function cTogPA(show){
+  document.getElementById('cPaFlds').className='ch-pa-flds'+(show?' show':'');
+  preallocationActive=show;
+  if(!show){preallocationPatient=null;}
+  updateHeader(sel);
+}
+function cOpenModal(){document.getElementById('cModSearch').value='';cFilter('');document.getElementById('cPatMod').classList.add('show');document.getElementById('cModSearch').focus();}
+function cCloseModal(){document.getElementById('cPatMod').classList.remove('show');}
+function cFilter(q){const res=document.getElementById('cModRes');const f=q.length<1?PATS:PATS.filter(p=>p.nom.toLowerCase().includes(q.toLowerCase())||p.id.includes(q));res.innerHTML=f.length?f.map(p=>`<div class="cmodal-row" onclick="cSelPat('${p.nom}','${p.id}')"><strong>${p.nom}</strong><span>${p.id} — DDN : ${p.ddn}</span></div>`).join(''):'<div style="padding:8px;color:#aaa;font-size:11px;">Aucun résultat</div>';}
+function cSelPat(nom,id){
+  preallocationPatient={nom,id};
+  document.getElementById('cPatDisp').textContent=`${nom} (${id})`;
+  updateHeader(sel);
+  cCloseModal();
+}
+
+function buildChecklistPanel(){
+  return`<div class="chk">
+    <div class="ch-hdr"><div class="cname">Désignation produit : <span style="font-weight:normal;font-size:13px;">___________________________________________________</span></div></div>
+    <div class="ch-meta">
+      <div class="mi"><label>Étiquetage CB</label><input type="text" placeholder="Scan code-barre…" style="width:120px;"></div>
+      <div class="mi"><label>N° lot</label><input type="text" placeholder="Ex : TC-2026-0814" style="width:105px;"></div>
+      <div class="mi"><label>Date péremption</label><input type="date" style="width:115px;"></div>
+      <div class="mi" style="border-left:2px solid #c0a8e8;padding-left:10px;"><label>N exemplaires</label><input type="number" id="cNex" min="1" max="10" value="${cNex}" style="width:40px;"><button class="cbt" onclick="cApplyN()">Appliquer</button><span class="nbadge" id="cNBadge">n = ${cNex}</span></div>
+      <div class="ubadge">👤 M. Martin DURAND</div>
+    </div>
+    <div class="ch-pa">
+      <div class="ch-pa-tog">Préallocation :
+        <label><input type="radio" name="cpa" value="non" ${!preallocationActive?'checked':''} onchange="cTogPA(false)"> Non</label>
+        <label><input type="radio" name="cpa" value="oui" ${preallocationActive?'checked':''} onchange="cTogPA(true)"> Oui</label>
+      </div>
+      <div class="ch-pa-flds${preallocationActive?' show':''}" id="cPaFlds">
+        <div class="pg"><label>Patient</label><button class="sbtn" onclick="cOpenModal()">🔍 Rechercher patient</button><span id="cPatDisp" style="font-size:11px;color:#4a3880;font-weight:bold;margin-left:4px;">${preallocationPatient?preallocationPatient.nom+' ('+preallocationPatient.id+')':''}</span></div>
+        <div class="pg"><label>Initiales</label><input type="text" placeholder="Ex : MS" style="width:48px;"></div>
+        <div class="pg"><label>DDN</label><input type="date" style="width:115px;"></div>
+        <div class="pg" style="border-left:1px solid #d0b060;padding-left:8px;"><label>N° commande</label><input type="text" placeholder="CMD-XXXX" style="width:95px;"></div>
+        <div class="pg"><label>Date fabrication</label><input type="date" style="width:115px;"></div>
+        <div class="pg"><label>Transporteur</label><input type="text" placeholder="Nom transporteur" style="width:95px;"></div>
+      </div>
+    </div>
+    <div class="ch-scroll">
+      <table><colgroup><col class="cn"><col class="cl"><col class="ct"><col class="co"><col class="cd"><col class="cdt"><col class="cop"></colgroup>
+        <thead><tr><th class="cth">#</th><th class="cth l">Point de contrôle</th><th class="cth">Type</th><th class="cth" title="Obligatoire">Obl.</th><th class="cth l">Valeur / Détail</th><th class="cth">Date &amp; Heure</th><th class="cth l">Opérateur</th></tr></thead>
+        <tbody id="cTbody"></tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+let sel=0;
+const stdTimers={};
+function renderSide(){
+  document.getElementById('procList').innerHTML=P.map((p,i)=>{
+    const sc=p.state,nc=sc==='done'?'pnd':sc==='active'?'pna':'pnp';
+    const sub=sc==='done'?(p.date||'Validé'):sc==='active'?'En cours…':'—';
+    const subC=sc==='done'?'psub ok':sc==='active'?'psub cur':'psub';
+    return`<div class="proc ${sc==='pending'?'pending':sc}${sel===i?' sel':''}" onclick="go(${i})">
+      <div class="pn ${nc}">${p.n}</div>
+      <div><div class="pname">${p.name}</div><div class="${subC}">${sub}</div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Main ──────────────────────────────────────────────────────
+const bC={yn:'b-yn',val:'b-val',photo:'b-photo',timer:'b-timer',texte:'b-texte',auto:'b-auto'};
+const bL={yn:'Oui/Non',val:'Valeur',photo:'Photo',timer:'Minuteur',texte:'Texte',auto:'Auto'};
+
+function renderMain(){
+  const p=P[sel];
+  const ph=document.getElementById('procHead'),tw=document.getElementById('tblWrap');
+  updateHeader(sel);
+  if(sel===0){ph.style.display='none';tw.innerHTML=buildChecklistPanel();cBuildTable();return;}
+  ph.style.display='flex';
+  const sMap={done:'s-done',active:'s-active',pending:'s-prev'};
+  const sLbl={done:'Validé',active:'EN COURS',pending:'À venir'};
+  ph.innerHTML=`<div class="ph-num">${p.n}</div><div><div class="ph-name">${p.name}</div><div class="ph-sub">${p.op||''}</div></div><div class="status-badge ${sMap[p.state]}">${sLbl[p.state]}</div>`;
+  let html='';
+  if(p.state==='done') html+=`<div class="banner b-done">✓ Processus validé${p.ext?' — externe':''}</div>`;
+  if(p.ext&&p.state!=='done') html+=`<div class="banner b-ext">Processus externe — réalisé par le fabricant</div>`;
+  if(p.state==='pending') html+=`<div class="banner b-prev">⏳ À venir — processus non encore démarré</div>`;
+  const secs=p.sections||[{title:p.name,items:[{lbl:'Points de contrôle à définir',type:'texte'}]}];
+  html+=`<table class="std-table"><colgroup><col style="width:32%"><col style="width:10%"><col style="width:22%"><col style="width:8%"><col style="width:14%"><col style="width:14%"></colgroup>
+    <tr><th class="std-th">Point de contrôle</th><th class="std-th c">Type</th><th class="std-th">Valeur</th><th class="std-th c">Résultat</th><th class="std-th">Horodatage</th><th class="std-th">Opérateur</th></tr>`;
+  secs.forEach(sec=>{
+    html+=`<tr class="std-sec"><td colspan="6">${sec.title}</td></tr>`;
+    sec.items.forEach((it,ii)=>{
+      const uid=`u${sel}_${ii}`;
+      let ctrl,res=`<span class="std-dash">—</span>`,ts=`<span class="std-dash">—</span>`,op=`<span class="std-dash">—</span>`;
+      if(it.done){ctrl=`<span class="std-ok">${it.val||'Conforme'}</span>`;res=`<span class="std-ck">✔</span>`;ts=`<span class="std-ts">${it.ts||'—'}</span>`;op=`<span class="std-op">${it.sys?'Système':p.op||''}</span>`;}
+      else if(it.type==='yn') ctrl=`<div class="std-yn"><label><input type="radio" class="oui" name="${uid}"> Oui</label><label><input type="radio" class="non" name="${uid}"> Non</label></div>`;
+      else if(it.type==='auto'){ctrl=`<span style="font-size:12px;color:#888">${it.val||'Automatique'}</span>`;op=`<span class="std-op">Système</span>`;}
+      else if(it.type==='timer') ctrl=`<span class="std-tdsp" id="td${uid}">00:00</span> <button class="std-bt" onclick="stog('td${uid}')">▶</button>`;
+      else if(it.type==='photo') ctrl=`<button class="std-bt" onclick="this.textContent=this.textContent==='📷 Ajouter'?'✅ OK':'📷 Ajouter'">📷 Ajouter</button>`;
+      else ctrl=`<input class="std-finput" type="text" placeholder="Saisir…">`;
+      html+=`<tr class="std-ir"><td><div class="std-lbl">${it.lbl}</div>${it.sub?`<div class="std-sublbl">${it.sub}</div>`:''}</td>
+        <td style="text-align:center"><span class="std-badge ${bC[it.type]||'b-auto'}">${bL[it.type]||it.type}</span></td>
+        <td>${ctrl}</td><td style="text-align:center">${res}</td><td>${ts}</td><td>${op}</td></tr>`;
+    });
+  });
+  tw.innerHTML=html+'</table>';
+}
+function stog(id){if(stdTimers[id]){clearInterval(stdTimers[id]);delete stdTimers[id];return;}const s=Date.now();stdTimers[id]=setInterval(()=>{const el=document.getElementById(id);if(!el)return;const d=Math.floor((Date.now()-s)/1000);el.textContent=String(Math.floor(d/60)).padStart(2,'0')+':'+String(d%60).padStart(2,'0');},500);}
+function go(i){sel=i;renderSide();renderMain();}
+renderSide();renderMain();
+</script>
