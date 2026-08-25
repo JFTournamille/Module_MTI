@@ -71,22 +71,47 @@ conteneur, une seule URL.
 
 ### 3. Renseigner les variables d'environnement
 
-**module-mti → App Configs → Environmental Variables** :
+**Où exactement dans CapRover :**
+
+1. menu de gauche → **Apps** ;
+2. cliquer sur **`module-mti`** dans la liste — *pas* sur `mti-db` ;
+3. onglet **App Configs** (deuxième onglet, à côté de *Deployment*) ;
+4. première section de la page : **Environmental Variables**.
+
+Deux façons de saisir :
+
+- **`Add Key/Value Pair`** ajoute une ligne à la fois. La clé va dans le champ
+  de gauche, la valeur **seule** dans celui de droite — ne pas réécrire
+  `DATABASE_URL=` dans la valeur.
+- **`Bulk Edit`** ouvre une zone de texte où l'on colle le bloc entier :
 
 ```
-DATABASE_URL=postgresql://mti_app:A_DEFINIR@srv-captain--mti-db:5432/mti
+DATABASE_URL=postgresql://mti_app:provisoire@srv-captain--mti-db:5432/mti
 NODE_ENV=production
 AUTH_MODE=oidc
 ```
+
+5. **descendre en bas de la page et cliquer `Save & Update`** — sans ce clic
+   rien n'est enregistré ; le bouton relance l'app.
+
+Pas de guillemets autour des valeurs : CapRover les prendrait au pied de la
+lettre et le mot de passe serait faux.
 
 Le conteneur **refuse de démarrer sans `DATABASE_URL`**, et l'API refuse de
 démarrer avec `AUTH_MODE=dev` et `NODE_ENV=production` : sans opérateurs
 authentifiés, la traçabilité MTI n'a pas de valeur.
 
-Le mot de passe de `mti_app` n'existe pas encore — il sera créé à l'étape
-suivante, qui l'affichera. Mettez une valeur provisoire ici, le premier
-déploiement échouera au démarrage, c'est attendu : l'étape 4 s'exécute depuis
-le conteneur et vous donnera la bonne valeur à recopier.
+> **À ce stade, l'app démarre puis s'arrête, et c'est attendu.** Le mot de
+> passe de `mti_app` n'existe pas encore — `provisoire` est un simple
+> marque-place. L'étape 4 le crée, l'affiche, et vous revenez ici le
+> remplacer.
+>
+> Les logs montreront alors soit `[entrypoint] ✗ DATABASE_URL n'est pas
+> défini` (variable non enregistrée : le `Save & Update` a-t-il été cliqué ?),
+> soit une erreur d'authentification Postgres (attendu).
+
+Rien à modifier dans le `Dockerfile` ni le `captain-definition` : ce sont des
+fichiers du dépôt, pas de la configuration CapRover.
 
 ### 4. Installer la base — une seule commande
 
