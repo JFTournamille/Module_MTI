@@ -69,6 +69,21 @@ L'image combinée sert le front sur le port 80 et fait tourner l'API sur le
 port 3000 interne au conteneur ; nginx relaie `/api/` vers elle. Un seul
 conteneur, une seule URL.
 
+### 2 bis. Déclencher un déploiement
+
+**CapRover ne redéploie pas tout seul quand vous poussez sur GitHub.** Il faut
+soit cliquer, soit brancher un webhook.
+
+- **À la main** : *module-mti → Deployment → Method 3* → bouton **`Force Build`**.
+- **Automatiquement** : la même section affiche une **`Webhook URL`**. La coller
+  dans GitHub → *Settings → Webhooks → Add webhook*, content type
+  `application/json`. Chaque fusion dans `main` déclenchera alors le
+  déploiement.
+
+Si l'URL de l'app affiche la page « Your app will be here! » de CapRover, c'est
+que **aucune image n'a été déployée** : l'app existe et sa route HTTP répond,
+mais rien ne tourne derrière. Vérifier les logs de build.
+
 ### 3. Renseigner les variables d'environnement
 
 **Où exactement dans CapRover :**
@@ -384,3 +399,6 @@ de patient — des compteurs et des booléens.
 | `mti_app a déjà un mot de passe` | Réexécution, ou rôle déjà créé par une autre base du cluster | Fournir `MTI_APP_PASSWORD`, ou `--nouveau-mot-de-passe` |
 | `défaut(s) de cloisonnement` | L'API tourne en superutilisateur, ou `002_roles.sql` n'a pas été appliqué | Reprendre la §4 ; ne pas mettre en service |
 | `psql: not found` dans le conteneur | Image `node:22-alpine` sans client Postgres | Utiliser `node src/installer.js --verifier` |
+| Page « Your app will be here! » | Aucune image déployée sur l'app | *Deployment* → `Force Build`, puis lire les logs de build |
+| Un push sur `main` ne change rien | CapRover ne déploie pas automatiquement | `Force Build`, ou brancher la `Webhook URL` (cf. §2 bis) |
+| `Remote branch Main not found` | Casse du nom de branche | `main`, en minuscules |

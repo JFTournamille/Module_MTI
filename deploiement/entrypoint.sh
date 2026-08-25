@@ -42,6 +42,20 @@ fi
 # compte superutilisateur dans la configuration de l'application annulerait le
 # cloisonnement du journal d'audit, qui est toute la raison d'être du rôle
 # mti_app restreint.
+if [ -z "${DATABASE_URL_ADMIN:-}" ] && [ -z "${ADMIN_MOT_DE_PASSE:-}" ]; then
+  # Ce silence-là était trompeur : sans identifiants administrateur, aucune
+  # installation n'a lieu, et l'API échoue plus tard sur une base absente sans
+  # que rien n'ait expliqué pourquoi.
+  journal "aucun identifiant administrateur : installation de la base ignorée."
+  journal "  Si la base n'est pas encore installée, renseigner dans App Configs :"
+  journal "    ADMIN_HOTE=srv-captain--mti-db"
+  journal "    ADMIN_UTILISATEUR=postgres"
+  journal "    ADMIN_MOT_DE_PASSE=<le mot de passe root de la base, tel quel>"
+  journal "    ADMIN_BASE=mti"
+  journal "    MTI_APP_PASSWORD=<le même que dans DATABASE_URL>"
+  journal "  puis redéployer. État exact de la base : GET /api/sante"
+fi
+
 if [ -n "${DATABASE_URL_ADMIN:-}" ] || [ -n "${ADMIN_MOT_DE_PASSE:-}" ]; then
   journal "─────────────────────────────────────────────────────────────"
   journal "identifiants administrateur présents : installation de la base au démarrage"
