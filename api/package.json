@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
+    "installer": "node src/installer.js",
     "migrer": "node src/migrer.js",
     "motdepasse": "node src/definir-mot-de-passe.js",
     "seed": "node src/seed.js",

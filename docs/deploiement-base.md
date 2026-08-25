@@ -61,66 +61,79 @@ LOG_LEVEL=info
 > volontairement : sans opérateurs authentifiés, la traçabilité MTI n'a pas de
 > valeur. Voir §5 si le SSO n'est pas encore branché.
 
-### 4. Appliquer le schéma
+### 4. Installer la base — une seule commande
 
 Les scripts SQL et les référentiels sont embarqués dans l'image de l'API
-(`/db` et `/shared`). On les exécute donc depuis son conteneur, avec une
-`DATABASE_URL` **superutilisateur** passée à la volée.
+(`/db` et `/shared`). L'installateur s'exécute donc depuis son conteneur.
+
+> **`psql` et `bash` ne sont pas présents dans l'image `node:22-alpine`.**
+> L'installateur est écrit en Node pour cette raison : n'attendez pas de
+> pouvoir lancer `psql` dans ce conteneur.
 
 Ouvrez un terminal sur le conteneur `mti-api` (CapRover → mti-api →
-**Deployment** → *Exec Terminal*, ou en SSH sur le serveur) :
+**Deployment** → *Exec Terminal*, ou en SSH sur le serveur), puis :
 
 ```bash
-# Schéma, rôles, privilèges
-DATABASE_URL=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti \
-  node src/migrer.js
+DATABASE_URL_ADMIN=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti \
+  node src/installer.js
 ```
 
-Sortie attendue :
+L'installateur enchaîne, en s'arrêtant à la première anomalie :
+
+1. connexion et **contrôle des droits superutilisateur** (refuse sinon) ;
+2. migrations `db/*.sql` ;
+3. mot de passe de `mti_app` — généré en `base64url`, donc **sans caractère à
+   encoder dans une URL** (ou fourni via `MTI_APP_PASSWORD`) ;
+4. référentiels, catalogue et produits de référence ;
+5. **test de cloisonnement** : `mti_app` doit être incapable d'effacer ou de
+   modifier une trace d'audit, ou de modifier une signature posée, tout en
+   pouvant les lire ;
+6. inventaire de ce qui est installé, et alertes de configuration.
+
+Il termine en affichant la `DATABASE_URL` à reporter dans les variables de
+l'app `mti-api` :
 
 ```
-✓ 001_schema.sql appliqué
-✓ 002_roles.sql appliqué
-Migrations terminées.
+✓ Cloisonnement du journal d'audit vérifié.
+✓ Base opérationnelle.
+
+À reporter dans les variables d'environnement de l'app mti-api :
+
+  DATABASE_URL=postgresql://mti_app:...@srv-captain--mti-db:5432/mti
+  NODE_ENV=production
+  AUTH_MODE=oidc
 ```
 
-`002_roles.sql` crée le rôle `mti_app` **sans mot de passe** — un mot de passe
-n'a pas sa place dans une migration versionnée. Il faut le définir maintenant :
+**Le mot de passe généré n'est affiché qu'une fois** : conservez-le dans votre
+gestionnaire de secrets avant de fermer le terminal.
+
+#### Réexécution
+
+L'installateur est relançable, mais il **refuse de faire tourner le mot de
+passe en silence** : l'app `mti-api` porte l'ancien dans sa configuration et
+cesserait de fonctionner sans que rien ne l'indique.
 
 ```bash
-DATABASE_URL=postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti \
-MTI_APP_PASSWORD='MOT_DE_PASSE_APP' \
-  node src/definir-mot-de-passe.js
+# Poursuivre avec le mot de passe existant
+MTI_APP_PASSWORD='...' node src/installer.js
+
+# Vérifier sans rien installer
+MTI_APP_PASSWORD='...' node src/installer.js --verifier
+
+# Définir un nouveau mot de passe, volontairement
+node src/installer.js --nouveau-mot-de-passe
 ```
 
-Le script refuse un mot de passe de moins de 16 caractères et échappe la valeur
-côté serveur : les apostrophes, guillemets et `$` passent sans risque.
-
-> **Attention à l'encodage dans l'URL.** `DATABASE_URL` est une URL : si le mot
-> de passe contient `@ : / ? # % &` ou un espace, il doit être encodé en
-> pourcentage. Par exemple `p@ss#2026` s'écrit `p%40ss%232026`. Le plus simple
-> est de générer un mot de passe sans ces caractères :
-> `openssl rand -base64 32 | tr -d '/+=' | head -c 32`
-
-Reportez `MOT_DE_PASSE_APP` dans la `DATABASE_URL` de l'app `mti-api` (§3),
-puis chargez les référentiels — cette étape passe avec `mti_app` :
-
-```bash
-node src/seed.js
-```
-
-Sortie attendue :
-
-```
-✓ modèle PARCOURS_CART_AUTOLOGUE v1 — 12 processus
-✓ catalogue v1 — 8 processus disponibles
-✓ 4 produits de référence
-```
+> Dans PostgreSQL, un rôle appartient au **cluster**, pas à une base. Si vous
+> installez une seconde base sur la même instance (une recette, par exemple),
+> `mti_app` existe déjà et son mot de passe est commun aux deux : un
+> `--nouveau-mot-de-passe` doit alors être reporté dans **toutes** les apps qui
+> utilisent cette instance.
 
 ### 5. Créer les premiers utilisateurs
 
-`AUTH_MODE=oidc` authentifie les opérateurs mais ne les crée pas. Il faut
-insérer au moins un compte pour que les saisies aient un auteur :
+`AUTH_MODE=oidc` authentifie les opérateurs mais ne les crée pas. Sans compte,
+les saisies n'auront pas d'auteur — l'installateur le signale.
 
 ```sql
 INSERT INTO mti.utilisateur (identifiant, nom, prenom, titre, fonction)
@@ -130,26 +143,16 @@ VALUES ('jtournamille', 'TOURNAMILLE', 'Jean-François', 'Dr', 'pharmacien');
 L'`identifiant` doit correspondre au login renvoyé par le SSO de
 l'établissement.
 
-### 6. Vérifier que le cloisonnement fonctionne
+### 6. Désactiver le compte de développement
 
-Le test qui compte : `mti_app` doit pouvoir écrire une saisie mais **pas**
-toucher au journal d'audit.
+Si le seed a tourné sans `NODE_ENV=production`, un compte `mdurand` a été créé.
+Il n'est pas authentifié : en production, il permettrait d'attribuer des
+saisies à un opérateur inexistant. L'installateur le signale et **sort en
+erreur** tant qu'il est actif.
 
-```bash
-# Doit répondre : ERROR: permission denied for table audit
-psql "postgresql://mti_app:MOT_DE_PASSE_APP@srv-captain--mti-db:5432/mti" \
-  -c "DELETE FROM mti.audit WHERE id = 1;"
-
-# Doit répondre : ERROR: permission denied for table signature
-psql "postgresql://mti_app:MOT_DE_PASSE_APP@srv-captain--mti-db:5432/mti" \
-  -c "UPDATE mti.signature SET signe_le = now();"
-
-# Doit fonctionner : la lecture reste autorisée
-psql "postgresql://mti_app:MOT_DE_PASSE_APP@srv-captain--mti-db:5432/mti" \
-  -tAc "SELECT count(*) FROM mti.audit;"
+```sql
+UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';
 ```
-
-Si le `DELETE` réussit, l'API tourne en superutilisateur : reprenez la §3.
 
 ### 7. Sauvegardes
 
@@ -169,20 +172,20 @@ pg_dump "postgresql://postgres:MOT_DE_PASSE_ROOT@srv-captain--mti-db:5432/mti" \
 ```bash
 # 1. Base
 docker compose up -d db
-
-# 2. Schéma et rôles (superutilisateur)
-export DATABASE_URL=postgresql://postgres:mti_dev@localhost:5432/mti
 npm --prefix api install
-npm --prefix api run migrer
 
-# 3. Référentiels + utilisateur de développement
-npm --prefix api run seed      # note le DEV_UTILISATEUR_ID affiché
+# 2. Installation complète (schéma, rôles, référentiels, vérifications)
+DATABASE_URL_ADMIN=postgresql://postgres:mti_dev@localhost:5432/mti \
+  npm --prefix api run installer
 
-# 4. API
-export DEV_UTILISATEUR_ID=<valeur affichée>
+# 3. API — reporter la DATABASE_URL affichée, et l'identifiant du compte de
+#    développement créé par le seed
+export DATABASE_URL='<valeur affichée>'
+export DEV_UTILISATEUR_ID=$(psql "$DATABASE_URL" -tAc \
+  "select id from mti.utilisateur where identifiant='mdurand'")
 npm --prefix api start
 
-# 5. Vérification complète
+# 4. Vérification complète
 npm --prefix api run test:e2e
 ```
 
@@ -202,3 +205,7 @@ non : voir §6.
 | `password authentication failed for user "mti_app"` | Mot de passe du rôle non défini | Étape `ALTER ROLE` de la §4 |
 | `role "mti_app" does not exist` | `002_roles.sql` non appliqué | Relancer `node src/migrer.js` |
 | `a changé depuis son application` | Un fichier SQL déjà appliqué a été modifié | Ne pas modifier une migration appliquée : en créer une nouvelle |
+| `Ce compte n'est pas superutilisateur` | `DATABASE_URL_ADMIN` pointe sur `mti_app` | Utiliser le compte root de la base |
+| `mti_app a déjà un mot de passe` | Réexécution, ou rôle déjà créé par une autre base du cluster | Fournir `MTI_APP_PASSWORD`, ou `--nouveau-mot-de-passe` |
+| `défaut(s) de cloisonnement` | L'API tourne en superutilisateur, ou `002_roles.sql` n'a pas été appliqué | Reprendre la §4 ; ne pas mettre en service |
+| `psql: not found` dans le conteneur | Image `node:22-alpine` sans client Postgres | Utiliser `node src/installer.js --verifier` |
