@@ -293,6 +293,15 @@ await ligneInactive.count() === 1 && /Désactivé/.test(await ligneInactive.inne
   ? ok('et consultable via « Afficher les comptes désactivés »')
   : ko('compte désactivé introuvable')
 
+await page.locator('table.adm-t tr', { hasText: login })
+  .locator('.adm-b', { hasText: 'Réactiver' }).click()
+await page.waitForTimeout(700)
+const ligneRendue = page.locator('table.adm-t tr', { hasText: login })
+if (/Actif/.test(await ligneRendue.innerText())) ok('réactivation depuis l\'IHM')
+else ko(`réactivation sans effet : ${await ligneRendue.innerText()}`)
+await page.locator('.adm-bar input[type=checkbox]').uncheck()
+await page.waitForTimeout(500)
+
 // ── Retour au scénario : l'état du parcours ne doit pas avoir été perdu ──
 await page.locator('.onglet', { hasText: 'Scénario' }).click()
 await page.waitForTimeout(400)
@@ -300,7 +309,61 @@ await page.locator('.proc').count() >= 12
   ? ok('retour au scénario, processus toujours présents')
   : ko('le scénario a perdu ses processus')
 
-console.log('\n15. Console du navigateur et réseau')
+// ── 15. Sélection de l'opérateur (mode démonstration) ──
+console.log('\n15. Sélection de l\'opérateur connecté')
+const selOp = page.locator('.op-sel')
+if (await selOp.count() === 0) {
+  console.log('  · sélecteur absent — l\'API n\'est pas en AUTO_MODE=dev, groupe sans objet')
+} else {
+  ok('sélecteur d\'opérateur présent dans l\'en-tête')
+  await page.locator('.demo-bandeau').count() === 1
+    ? ok('un bandeau signale le mode démonstration')
+    : ko('aucun bandeau de mode démonstration')
+
+  const noms = await page.locator('.op-sel option').allTextContents()
+  noms.length >= 2 ? ok(`${noms.length} opérateurs proposés`)
+    : ko(`${noms.length} opérateur(s) : impossible d'éprouver le changement`)
+
+  const depart = await page.locator('.op-sel option:checked').innerText()
+  const autre = noms.find((n) => n !== depart)
+  await page.selectOption('.op-sel', { label: autre })
+  await page.waitForTimeout(700)
+
+  const arrivee = await page.locator('.op-sel option:checked').innerText()
+  arrivee === autre ? ok(`opérateur changé : « ${depart.trim()} » → « ${arrivee.trim()} »`)
+    : ko(`opérateur inchangé (${arrivee})`)
+
+  // La colonne « Opérateur » de la table doit suivre : sinon le changement
+  // serait cosmétique et les saisies porteraient le nom de quelqu'un d'autre.
+  const colonne = await page.locator('.main input[readonly]').first().inputValue()
+  autre.startsWith(colonne) ? ok(`la colonne « Opérateur » suit : ${colonne}`)
+    : ko(`colonne « ${colonne} » ≠ opérateur « ${autre} »`)
+
+  // Le choix doit survivre à un rechargement : c'est ce qu'on attend d'une
+  // démonstration qu'on reprend après une pause.
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(800)
+  const apresRechargement = await page.locator('.op-sel option:checked').innerText()
+  apresRechargement === autre ? ok('le choix survit à un rechargement')
+    : ko(`après rechargement : ${apresRechargement}`)
+
+  // Revenir à l'opérateur par défaut et remettre le compte de test en veille :
+  // une suite de tests n'a pas à laisser d'opérateur derrière elle.
+  await page.selectOption('.op-sel', { label: depart })
+  await page.waitForTimeout(500)
+  await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+  await page.waitForTimeout(600)
+  await page.locator('table.adm-t tr', { hasText: login })
+    .locator('.adm-b', { hasText: 'Désactiver' }).click()
+  await page.waitForTimeout(600)
+  await page.locator('table.adm-t tr', { hasText: login }).count() === 0
+    ? ok('compte de test remis en veille, sélecteur laissé propre')
+    : ko('le compte de test reste actif')
+  await page.locator('.onglet', { hasText: 'Scénario' }).click()
+  await page.waitForTimeout(400)
+}
+
+console.log('\n16. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

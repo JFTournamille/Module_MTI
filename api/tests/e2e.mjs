@@ -16,10 +16,10 @@ const base = process.env.API_URL ?? 'http://localhost:3000'
 let echec = false
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); echec = true }
-const j = async (m, url, body) => {
+const j = async (m, url, body, entetes) => {
   const r = await fetch(base + url, {
     method: m,
-    headers: body ? { 'content-type': 'application/json' } : {},
+    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(entetes ?? {}) },
     body: body ? JSON.stringify(body) : undefined
   })
   return { statut: r.status, corps: await r.json().catch(() => null) }
@@ -197,6 +197,59 @@ r.statut === 409 ? ok('auto-désactivation refusée (409)') : ko(`statut ${r.sta
 r = await j('GET', '/api/profils')
 Array.isArray(r.corps) && r.corps.includes('pharmacien')
   ? ok(`${r.corps.length} profils exposés : ${r.corps.join(', ')}`) : ko('vocabulaire des profils absent')
+
+console.log('\n12. Opérateur de la session, choisi en mode démonstration')
+r = await j('GET', '/api/session')
+r.statut === 200 && r.corps.mode === 'dev' && r.corps.selectionPossible === true
+  ? ok(`mode ${r.corps.mode}, sélection de l'opérateur permise`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r.corps.avertissement && /valeur probante/.test(r.corps.avertissement)
+  ? ok('un avertissement signale que la démonstration n\'a pas valeur probante')
+  : ko('aucun avertissement de mode démonstration')
+r.corps.operateurs.some((o) => o.id === compteId)
+  ? ok(`${r.corps.operateurs.length} opérateur(s) proposé(s) au choix`)
+  : ko('le compte de test ne figure pas parmi les opérateurs proposés')
+const enTete = r.corps.enTete
+
+// L'opérateur désigné doit être celui retenu, et surtout celui que l'audit
+// enregistre comme auteur : sinon la sélection serait cosmétique.
+r = await j('GET', '/api/session', null, { [enTete]: compteId })
+r.corps.operateur?.id === compteId
+  ? ok(`opérateur désigné retenu : ${r.corps.operateur.nom}`)
+  : ko(`opérateur retenu : ${JSON.stringify(r.corps.operateur)}`)
+
+const refOp = `DOS-OP-${Date.now()}`
+r = await j('POST', '/api/dossiers',
+  { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refOp }, { [enTete]: compteId })
+const dossierOp = r.corps?.id
+r.statut === 201 ? ok(`dossier ${refOp} créé sous l'opérateur désigné`) : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers/${dossierOp}/audit`)
+r.corps.some((e) => e.nom === 'ESSAI')
+  ? ok('l\'audit attribue la création à l\'opérateur désigné, pas au défaut')
+  : ko(`auteurs tracés : ${JSON.stringify(r.corps.map((e) => e.nom))}`)
+
+// Un opérateur inconnu ou désactivé doit être refusé explicitement, avec un
+// code que le front sait reconnaître pour remettre sa sélection à zéro.
+r = await j('GET', '/api/session', null, { [enTete]: '00000000-0000-0000-0000-000000000000' })
+r.statut === 409 && r.corps.code === 'operateur_inconnu'
+  ? ok('opérateur inconnu refusé (409, code operateur_inconnu)')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('GET', '/api/session', null, { [enTete]: 'pas-un-uuid' })
+r.statut === 409 ? ok('en-tête malformé refusé (409)') : ko(`statut ${r.statut}`)
+
+// Le compte de test est laissé désactivé : un compte actif figure dans le
+// sélecteur d'opérateur de la démonstration, et une suite de tests n'a pas à
+// peupler ce sélecteur. Il n'est pas supprimé — un compte ne s'efface pas.
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: false })
+r.statut === 200 && r.corps.actif === false
+  ? ok('compte de test laissé désactivé, sans polluer le sélecteur d\'opérateur')
+  : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/session', null, { [enTete]: compteId })
+r.statut === 409
+  ? ok('un compte désactivé cesse aussitôt d\'être désignable, sans redémarrage')
+  : ko(`statut ${r.statut} — un compte désactivé reste utilisable`)
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

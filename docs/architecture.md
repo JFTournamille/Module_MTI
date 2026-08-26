@@ -145,6 +145,31 @@ signature.
 `NODE_ENV=production`. Le branchement du SSO de l'établissement
 (`AUTH_MODE=oidc`) est un préalable à toute mise en service.
 
+### L'opérateur en mode démonstration
+
+Faute de fournisseur d'identité, `AUTH_MODE=dev` permet de **choisir
+l'opérateur connecté dans l'interface** : un sélecteur dans l'en-tête, alimenté
+par les comptes actifs, et l'identité retenue est transmise à chaque requête
+par l'en-tête `x-mti-operateur`. C'est ce qui rend une démonstration crédible —
+la colonne « Opérateur » suit le choix, et l'audit enregistre bien l'opérateur
+désigné comme auteur.
+
+**Laisser le client choisir son identité est une usurpation.** C'est sans
+conséquence en démonstration, où il n'y a pas d'identité à usurper, et
+inacceptable dès qu'un dossier réel est en jeu. Trois garde-fous, tous
+nécessaires et tous vérifiés par la suite de tests :
+
+1. `auth.js` ne lit `x-mti-operateur` que si `mode === 'dev'`. En `oidc`,
+   l'en-tête est ignoré.
+2. `verifierConfigurationAuth` refuse `dev` avec `NODE_ENV=production` : le
+   serveur ne démarre pas.
+3. Un compte désactivé cesse aussitôt d'être désignable — la résolution n'est
+   pas mémorisée, contrairement à l'opérateur par défaut.
+
+L'interface porte en permanence un bandeau rappelant que la double validation
+et la signature électronique **n'ont pas de valeur probante dans cet état**.
+Une démonstration ne doit pas pouvoir passer pour une mise en service.
+
 ### Comptes et profils
 
 L'onglet *Utilisateurs* gère les comptes : création, correction d'état civil,

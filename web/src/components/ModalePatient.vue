@@ -6,6 +6,7 @@
  * patients local : la maquette embarquait une liste en dur (`PATS` / `fakePatients`),
  * ce qui n'est acceptable qu'en démonstration.
  */
+import { appel } from '../api.js'
 import { ref, watch } from 'vue'
 
 const props = defineProps({ ouvert: { type: Boolean, required: true } })
@@ -22,7 +23,7 @@ async function chercher () {
   recherche.value = true
   message.value = ''
   try {
-    const r = await fetch(`/api/patients?q=${encodeURIComponent(requete.value)}`)
+    const r = await appel(`/api/patients?q=${encodeURIComponent(requete.value)}`)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const data = await r.json()
     if (courant !== jeton) return          // réponse obsolète, on l'ignore

@@ -62,3 +62,13 @@ table.adm-t tr.inactif .ident{text-decoration:line-through;}
 .adm-msg-ko{background:#ffebee;border:1px solid #ef9a9a;color:#c62828;}
 .adm-msg-hs{background:#fff8e0;border:1px solid #e0c860;color:#7a5000;}
 .adm-vide{padding:26px;text-align:center;color:#aaa;font-size:13px;}
+
+/* ── Sélecteur d'opérateur (mode démonstration) ── */
+.op-badge label{display:block;font-size:12px;color:#d0c8f8;margin-bottom:2px;}
+.op-sel{font-family:inherit;font-size:13px;font-weight:bold;padding:2px 6px;
+  border:1px solid #6045a0;border-radius:2px;background:#1e1550;color:#fff;max-width:250px;}
+.op-sel:focus{outline:2px solid #b0a0ff;outline-offset:-1px;}
+
+/* Une démonstration ne doit pas pouvoir passer pour une mise en service. */
+.demo-bandeau{background:#fff8e0;border-top:1px solid #e0c860;padding:4px 14px;
+  font-size:11px;color:#7a5000;flex-shrink:0;}

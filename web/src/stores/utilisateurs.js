@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { appel } from '../api.js'
 
 /**
  * Comptes utilisateurs.
@@ -37,8 +38,8 @@ export const useUtilisateurs = defineStore('utilisateurs', () => {
       if (avecInactifs.value) params.set('inactifs', 'oui')
 
       const [rU, rP] = await Promise.all([
-        fetch('/api/utilisateurs?' + params.toString()),
-        profils.value.length ? null : fetch('/api/profils')
+        appel('/api/utilisateurs?' + params.toString()),
+        profils.value.length ? null : appel('/api/profils')
       ])
       if (!rU.ok) throw new Error(await messageDe(rU, `Lecture impossible (${rU.status}).`))
       liste.value = await rU.json()
@@ -57,7 +58,7 @@ export const useUtilisateurs = defineStore('utilisateurs', () => {
   async function envoyer (url, methode, corps) {
     erreur.value = ''
     try {
-      const r = await fetch(url, {
+      const r = await appel(url, {
         method: methode,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(corps)

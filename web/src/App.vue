@@ -7,7 +7,9 @@ import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
 import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
 import { useParcours } from './stores/parcours.js'
+import { useSession } from './stores/session.js'
 
+const session = useSession()
 const store = useParcours()
 
 /** Onglet affiché : 'scenario' | 'utilisateurs'. */
@@ -19,7 +21,10 @@ const TITRES = {
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
 
-onMounted(() => store.charger())
+onMounted(async () => {
+  await session.charger()
+  await store.charger()
+})
 onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
@@ -74,7 +79,19 @@ const blocages = computed(() => {
         </div>
       </div>
       <div class="op-badge">
-        Opérateur connecté<span>{{ store.operateurConnecte.nom }}</span>
+        <template v-if="session.selectionPossible">
+          <label for="op-sel">Opérateur connecté</label>
+          <select id="op-sel" class="op-sel"
+                  :value="session.operateur?.id ?? ''"
+                  @change="session.choisir($event.target.value)">
+            <option v-for="o in session.operateurs" :key="o.id" :value="o.id">
+              {{ o.nom }}{{ o.profil ? ` — ${o.profil}` : '' }}
+            </option>
+          </select>
+        </template>
+        <template v-else>
+          Opérateur connecté<span>{{ store.operateurConnecte.nom }}</span>
+        </template>
       </div>
     </div>
 
@@ -122,6 +139,10 @@ const blocages = computed(() => {
     </div>
 
     <!-- Bandeau d'état : hors-ligne et points bloquants -->
+    <div v-if="session.avertissement" class="demo-bandeau">
+      ⚠ {{ session.avertissement }}
+    </div>
+
     <div v-if="store.horsLigne || blocages.length"
          style="background:#fffbf0;border-top:1px solid #d0b060;padding:4px 14px;
                 font-size:11px;color:#7a5000;display:flex;gap:14px;flex-wrap:wrap;">

@@ -40,6 +40,34 @@ export function verifierConfigurationAuth () {
  */
 let operateurDev = null
 
+/** En-tête par lequel le front désigne l'opérateur, en mode `dev` seulement. */
+export const EN_TETE_OPERATEUR = 'x-mti-operateur'
+
+/** Colonnes d'un opérateur, avec son libellé prêt à afficher. */
+const CHAMPS_OPERATEUR = `id, identifiant, profil,
+  coalesce(titre || ' ', '') || prenom || ' ' || nom AS nom`
+
+/**
+ * Opérateur explicitement désigné par le front.
+ *
+ * DISPONIBLE EN MODE `dev` UNIQUEMENT. Laisser le client choisir son identité
+ * est une usurpation : c'est acceptable en démonstration, où il n'y a pas
+ * d'identité à usurper, et inacceptable dès qu'un dossier réel est en jeu.
+ * Le garde-fou tient en deux points, tous deux nécessaires :
+ *   1. l'en-tête n'est lu que si `mode === 'dev'` (voir `brancherAuth`) ;
+ *   2. `verifierConfigurationAuth` refuse `dev` avec `NODE_ENV=production`.
+ *
+ * Volontairement NON mémorisé, contrairement à l'opérateur par défaut : un
+ * compte désactivé depuis l'onglet Utilisateurs doit cesser d'être utilisable
+ * immédiatement, sans redémarrage.
+ */
+async function resoudreOperateurDesigne (id) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null
+  const { rows } = await requete(
+    `SELECT ${CHAMPS_OPERATEUR} FROM mti.utilisateur WHERE id = $1 AND actif LIMIT 1`, [id])
+  return rows.length ? rows[0] : null
+}
+
 async function resoudreOperateurDev () {
   if (operateurDev) return operateurDev
 
@@ -56,12 +84,11 @@ async function resoudreOperateurDev () {
   }
 
   const { rows } = await requete(
-    `SELECT id, coalesce(titre || ' ', '') || prenom || ' ' || nom AS nom
-       FROM mti.utilisateur WHERE identifiant = $1 AND actif LIMIT 1`,
+    `SELECT ${CHAMPS_OPERATEUR} FROM mti.utilisateur WHERE identifiant = $1 AND actif LIMIT 1`,
     [identifiant])
 
   if (!rows.length) return null
-  operateurDev = { id: rows[0].id, identifiant, nom: rows[0].nom }
+  operateurDev = rows[0]
   return operateurDev
 }
 
@@ -74,6 +101,32 @@ export function brancherAuth (app, mode) {
 
     if (mode === 'dev') {
       let operateur = null
+
+      // L'en-tête n'est lu qu'ici, sous la condition `mode === 'dev'`.
+      const designe = request.headers[EN_TETE_OPERATEUR]
+      if (designe) {
+        let choisi = null
+        try {
+          choisi = await resoudreOperateurDesigne(String(designe))
+        } catch (e) {
+          return reply.code(503).send({
+            erreur: "Base injoignable — impossible de résoudre l'opérateur désigné.",
+            detail: e.message
+          })
+        }
+        if (!choisi) {
+          // `code` permet au front de repérer ce cas précis et de remettre sa
+          // sélection à zéro, plutôt que de rester bloqué sur un compte parti.
+          return reply.code(409).send({
+            code: 'operateur_inconnu',
+            erreur: "L'opérateur sélectionné n'existe plus ou a été désactivé. " +
+                    'Choisissez-en un autre.'
+          })
+        }
+        request.utilisateur = choisi
+        return
+      }
+
       try {
         operateur = await resoudreOperateurDev()
       } catch (e) {
