@@ -6,11 +6,22 @@
 -- qui positionne le search_path masque les références de type non qualifiées.
 SET search_path TO public;
 
+-- Toute la suite tourne dans une transaction annulée à la fin. Trois raisons :
+--   1. les UUID du jeu de test sont figés, donc un second passage violerait
+--      les clés primaires ;
+--   2. `mti.audit` est append-only par construction — on ne peut pas effacer
+--      après coup les traces produites par les tests ;
+--   3. la suite doit pouvoir tourner sur une base installée, sans la polluer.
+-- Les tests attendus en échec sont dans des blocs PL/pgSQL avec gestionnaire
+-- d'exception, qui posent un point de sauvegarde implicite : une erreur
+-- rattrapée n'annule donc pas la transaction englobante.
+BEGIN;
+
 \echo '── Préparation du jeu de test ──'
 
 INSERT INTO mti.utilisateur (id, identifiant, nom, prenom, titre, fonction) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'mdurand', 'DURAND', 'Martin', 'M.', 'préparateur'),
-  ('22222222-2222-2222-2222-222222222222', 'jtournamille', 'TOURNAMILLE', 'Jean-François', 'Dr', 'pharmacien');
+  ('11111111-1111-1111-1111-111111111111', 'test_preparateur', 'TEST', 'Préparateur', 'M.', 'préparateur'),
+  ('22222222-2222-2222-2222-222222222222', 'test_pharmacien', 'TEST', 'Pharmacien', 'Dr', 'pharmacien');
 
 INSERT INTO mti.modele_parcours (id, code, version, libelle, definition, actif, publie_le)
 VALUES ('33333333-3333-3333-3333-333333333333', 'PARCOURS_TEST', 1, 'Parcours de test',
@@ -281,5 +292,9 @@ END $$;
 SELECT table_cible, operation, count(*) AS nb
   FROM mti.audit GROUP BY 1, 2 ORDER BY 1, 2;
 
+-- Le récapitulatif ci-dessus porte sur les traces produites par les tests :
+-- elles disparaissent avec la transaction.
+ROLLBACK;
+
 \echo ''
-\echo '✓ Tous les invariants sont vérifiés.'
+\echo '✓ Tous les invariants sont vérifiés — jeu de test annulé, base inchangée.'

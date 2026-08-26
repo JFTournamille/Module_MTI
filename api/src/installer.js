@@ -35,6 +35,19 @@ const roterMotDePasse = process.argv.includes('--nouveau-mot-de-passe')
  */
 const SORTIE = { OK: 0, CLOISONNEMENT: 1, CONFIGURATION: 2, IMPOSSIBLE: 3 }
 
+// Le code 1 est RÉSERVÉ au défaut de cloisonnement : c'est le seul sur lequel
+// l'entrypoint arrête le conteneur. Or une exception non rattrapée sort en 1
+// sous Node — un mot de passe refusé ou une migration altérée seraient donc
+// lus comme « le journal d'audit est réécrivable », et le conteneur
+// redémarrerait en boucle sur un diagnostic faux. On les reclasse.
+for (const evenement of ['unhandledRejection', 'uncaughtException']) {
+  process.on(evenement, (e) => {
+    console.error(`\n✗ interruption inattendue de l'installateur : ${e?.message ?? e}`)
+    console.error("  Le cloisonnement du journal d'audit n'est pas en cause.")
+    process.exit(SORTIE.IMPOSSIBLE)
+  })
+}
+
 /**
  * Paramètres de connexion administrateur.
  *
@@ -133,6 +146,22 @@ function lancer (script, env) {
 
 const etape = (n, titre) => console.log(`\n── ${n}. ${titre} ──`)
 
+/**
+ * Relance un script en qualifiant son échec. Un script qui sort en erreur est
+ * un défaut d'installation (code 3), jamais un défaut de cloisonnement : la
+ * base reste diagnosticable et l'application peut démarrer.
+ */
+async function lancerEtape (script, env, quoi) {
+  try {
+    return await lancer(script, env)
+  } catch (e) {
+    console.error(`\n✗ ${quoi} n'a pas abouti : ${e.message}`)
+    console.error('  La cause est dans la sortie du script, juste au-dessus.')
+    console.error("  Le cloisonnement du journal d'audit n'est pas en cause.")
+    process.exit(SORTIE.IMPOSSIBLE)
+  }
+}
+
 // Deux catégories distinctes : un défaut de cloisonnement est bloquant et met
 // en cause l'installation ; un défaut de configuration se corrige sur la base
 // installée. Les confondre rend le diagnostic trompeur.
@@ -206,7 +235,8 @@ let motDePasseGenere = false
 
 if (!verifierSeulement) {
   etape(2, 'Schéma, rôles et privilèges')
-  await lancer('migrer.js', { DATABASE_URL: urlAdminPourEnfant() })
+  await lancerEtape('migrer.js', { DATABASE_URL: urlAdminPourEnfant() },
+    'l\'application des scripts SQL')
 
   etape(3, 'Mot de passe du rôle applicatif mti_app')
 
@@ -240,11 +270,13 @@ if (!verifierSeulement) {
       ? '  nouveau mot de passe généré (l\'ancien est révoqué)'
       : '  mot de passe généré (aucun caractère à encoder dans une URL)')
   }
-  await lancer('definir-mot-de-passe.js',
-    { DATABASE_URL: urlAdminPourEnfant(), MTI_APP_PASSWORD: motDePasse })
+  await lancerEtape('definir-mot-de-passe.js',
+    { DATABASE_URL: urlAdminPourEnfant(), MTI_APP_PASSWORD: motDePasse },
+    'la définition du mot de passe de mti_app')
 
   etape(4, 'Référentiels et produits de référence')
-  await lancer('seed.js', { DATABASE_URL: urlApplicative(motDePasse) })
+  await lancerEtape('seed.js', { DATABASE_URL: urlApplicative(motDePasse) },
+    'le chargement des référentiels')
 } else if (!motDePasse) {
   console.error('\n✗ --verifier exige MTI_APP_PASSWORD pour tester le rôle applicatif.')
   process.exit(SORTIE.IMPOSSIBLE)

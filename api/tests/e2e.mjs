@@ -2,7 +2,7 @@
  * Test de bout en bout de l'API MTI.
  *
  * Prérequis : une base migrée et seedée, et le serveur démarré.
- *   export DATABASE_URL=... DEV_UTILISATEUR_ID=...
+ *   export DATABASE_URL=... DEV_UTILISATEUR_IDENTIFIANT=mdurand
  *   node src/migrer.js && node src/seed.js
  *   node src/server.js &
  *   node tests/e2e.mjs
