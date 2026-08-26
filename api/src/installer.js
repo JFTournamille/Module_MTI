@@ -35,6 +35,19 @@ const roterMotDePasse = process.argv.includes('--nouveau-mot-de-passe')
  */
 const SORTIE = { OK: 0, CLOISONNEMENT: 1, CONFIGURATION: 2, IMPOSSIBLE: 3 }
 
+// Le code 1 est RÉSERVÉ au défaut de cloisonnement : c'est le seul sur lequel
+// l'entrypoint arrête le conteneur. Or une exception non rattrapée sort en 1
+// sous Node — un mot de passe refusé ou une migration altérée seraient donc
+// lus comme « le journal d'audit est réécrivable », et le conteneur
+// redémarrerait en boucle sur un diagnostic faux. On les reclasse.
+for (const evenement of ['unhandledRejection', 'uncaughtException']) {
+  process.on(evenement, (e) => {
+    console.error(`\n✗ interruption inattendue de l'installateur : ${e?.message ?? e}`)
+    console.error("  Le cloisonnement du journal d'audit n'est pas en cause.")
+    process.exit(SORTIE.IMPOSSIBLE)
+  })
+}
+
 /**
  * Paramètres de connexion administrateur.
  *
@@ -108,6 +121,23 @@ function urlAdminPourEnfant () {
          `@${host}:${port}/${database}`
 }
 
+/**
+ * Même URL, mot de passe remplacé par un repère.
+ *
+ * L'installation au démarrage rejoue à CHAQUE déploiement, et sa sortie va
+ * dans les journaux du conteneur, que l'hébergeur conserve et expose à qui
+ * a accès à son interface. Un mot de passe fourni par l'exploitant n'a donc
+ * rien à y faire : il le connaît déjà. Seul un mot de passe *généré* doit
+ * s'afficher, faute d'autre moyen de le transmettre.
+ */
+function urlApplicativeMasquee (motDePasse) {
+  const repere = '<votre MTI_APP_PASSWORD>'
+  const encode = encodeURIComponent(motDePasse)
+  let url = urlApplicative(motDePasse)
+  if (encode !== motDePasse) url = url.replaceAll(encode, repere)
+  return url.replaceAll(motDePasse, repere)
+}
+
 /** URL applicative, à afficher en fin d'installation. */
 function urlApplicative (motDePasse) {
   const c = connexionApplicative(motDePasse)
@@ -132,6 +162,22 @@ function lancer (script, env) {
 }
 
 const etape = (n, titre) => console.log(`\n── ${n}. ${titre} ──`)
+
+/**
+ * Relance un script en qualifiant son échec. Un script qui sort en erreur est
+ * un défaut d'installation (code 3), jamais un défaut de cloisonnement : la
+ * base reste diagnosticable et l'application peut démarrer.
+ */
+async function lancerEtape (script, env, quoi) {
+  try {
+    return await lancer(script, env)
+  } catch (e) {
+    console.error(`\n✗ ${quoi} n'a pas abouti : ${e.message}`)
+    console.error('  La cause est dans la sortie du script, juste au-dessus.')
+    console.error("  Le cloisonnement du journal d'audit n'est pas en cause.")
+    process.exit(SORTIE.IMPOSSIBLE)
+  }
+}
 
 // Deux catégories distinctes : un défaut de cloisonnement est bloquant et met
 // en cause l'installation ; un défaut de configuration se corrige sur la base
@@ -206,7 +252,8 @@ let motDePasseGenere = false
 
 if (!verifierSeulement) {
   etape(2, 'Schéma, rôles et privilèges')
-  await lancer('migrer.js', { DATABASE_URL: urlAdminPourEnfant() })
+  await lancerEtape('migrer.js', { DATABASE_URL: urlAdminPourEnfant() },
+    'l\'application des scripts SQL')
 
   etape(3, 'Mot de passe du rôle applicatif mti_app')
 
@@ -240,11 +287,13 @@ if (!verifierSeulement) {
       ? '  nouveau mot de passe généré (l\'ancien est révoqué)'
       : '  mot de passe généré (aucun caractère à encoder dans une URL)')
   }
-  await lancer('definir-mot-de-passe.js',
-    { DATABASE_URL: urlAdminPourEnfant(), MTI_APP_PASSWORD: motDePasse })
+  await lancerEtape('definir-mot-de-passe.js',
+    { DATABASE_URL: urlAdminPourEnfant(), MTI_APP_PASSWORD: motDePasse },
+    'la définition du mot de passe de mti_app')
 
   etape(4, 'Référentiels et produits de référence')
-  await lancer('seed.js', { DATABASE_URL: urlApplicative(motDePasse) })
+  await lancerEtape('seed.js', { DATABASE_URL: urlApplicative(motDePasse) },
+    'le chargement des référentiels')
 } else if (!motDePasse) {
   console.error('\n✗ --verifier exige MTI_APP_PASSWORD pour tester le rôle applicatif.')
   process.exit(SORTIE.IMPOSSIBLE)
@@ -387,11 +436,17 @@ if (defautsConfiguration) {
 console.log('✓ Base opérationnelle.')
 if (!verifierSeulement) {
   console.log('\nÀ reporter dans les variables d\'environnement de l\'application CapRover :')
-  console.log('\n  DATABASE_URL=' + urlApplicative(motDePasse))
+  console.log('\n  DATABASE_URL=' + (motDePasseGenere
+    ? urlApplicative(motDePasse)
+    : urlApplicativeMasquee(motDePasse)))
   console.log('  NODE_ENV=production')
   console.log('  AUTH_MODE=oidc')
   if (motDePasseGenere) {
     console.log('\n⚠ Ce mot de passe n\'est affiché qu\'ici : le conserver dans votre')
     console.log('  gestionnaire de secrets avant de fermer ce terminal.')
+  } else {
+    console.log('\n  Mot de passe masqué : reporter celui que vous avez fourni dans')
+    console.log('  MTI_APP_PASSWORD. Il n\'est pas journalisé — ces lignes partent')
+    console.log('  dans les logs du conteneur, que l\'hébergeur conserve.')
   }
 }

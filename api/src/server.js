@@ -4,6 +4,8 @@ import { brancherAuth, verifierConfigurationAuth } from './auth.js'
 import referentiels from './routes/referentiels.js'
 import patients from './routes/patients.js'
 import dossiers from './routes/dossiers.js'
+import utilisateurs from './routes/utilisateurs.js'
+import session from './routes/session.js'
 
 const mode = verifierConfigurationAuth()
 
@@ -150,6 +152,8 @@ app.get('/api/sante', async () => {
 await app.register(referentiels)
 await app.register(patients)
 await app.register(dossiers)
+await app.register(utilisateurs)
+await app.register(session)
 
 const port = Number(process.env.PORT ?? 3000)
 
@@ -163,6 +167,12 @@ const host = process.env.HOST ?? '0.0.0.0'
 try {
   await app.listen({ port, host })
   app.log.info(`API MTI démarrée sur ${host}:${port} (auth : ${mode})`)
+  if (mode === 'dev') {
+    app.log.warn(
+      "AUTH_MODE=dev : l'opérateur est choisi depuis l'interface, sans " +
+      'authentification. Acceptable en démonstration ; la signature et le ' +
+      'double contrôle sont sans valeur probante dans cet état.')
+  }
 } catch (e) {
   app.log.error(e)
   process.exit(1)

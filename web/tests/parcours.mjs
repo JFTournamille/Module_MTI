@@ -29,6 +29,11 @@ const reponsesHS = []
 page.on('response', (r) => {
   if (r.status() >= 400) reponsesHS.push(`${r.status()} ${r.url()}`)
 })
+// Réponses d'erreur provoquées DÉLIBÉRÉMENT par une vérification : un
+// identifiant en doublon doit renvoyer 409, c'est le comportement testé. Elles
+// sont déclarées ici pour que le contrôle réseau final ne signale que les
+// échecs non voulus, au lieu de tout mélanger.
+const echecsVoulus = [/favicon\.ico/]
 
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 const ok = (m) => console.log('  ✓', m)
@@ -221,13 +226,153 @@ if (apiJoignable) {
     : ko('aucun bandeau hors-ligne alors que l\'API est absente')
 }
 
-console.log('\n14. Console du navigateur et réseau')
+// ── 14. Onglet Utilisateurs ──
+// Écrit réellement en base : le login porte un horodatage pour ne pas entrer en
+// collision d'un passage à l'autre. Le compte est désactivé en fin de groupe —
+// un compte ne se supprime pas, il est l'auteur de ce qu'il a saisi.
+console.log('\n14. Onglet Utilisateurs')
+await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+await page.waitForTimeout(500)
+
+const titre = await page.locator('.titlebar span').first().innerText()
+if (/Utilisateurs/.test(titre)) ok(`barre de titre suit l'onglet : « ${titre} »`)
+else ko(`barre de titre : ${titre}`)
+await page.locator('.dlg .body').count() === 0
+  ? ok('le panneau du scénario est retiré, pas seulement masqué')
+  : ko('le scénario reste monté sous l\'onglet Utilisateurs')
+
+const nbAvant = await page.locator('table.adm-t .ident').count()
+nbAvant >= 1 ? ok(`${nbAvant} compte(s) listé(s) depuis la base`) : ko('aucun compte listé')
+
+const login = `nav${Date.now()}`
+await page.locator('.adm-b-p', { hasText: 'Nouvel utilisateur' }).click()
+await page.waitForTimeout(250)
+await page.locator('#n-id').fill(login)
+await page.locator('#n-nom').fill('NAVIGATEUR')
+await page.locator('#n-pre').fill('Test')
+await page.locator('#n-pro').selectOption('preparateur')
+await page.locator('.adm-b-p', { hasText: 'Créer le compte' }).click()
+await page.waitForTimeout(700)
+
+const nbApres = await page.locator('table.adm-t .ident').count()
+nbApres === nbAvant + 1 ? ok(`compte ${login} créé et repris dans la liste`)
+  : ko(`${nbAvant} → ${nbApres} compte(s)`)
+const ligne = page.locator('table.adm-t tr', { hasText: login })
+const texteLigne = await ligne.innerText()
+if (/Préparateur/.test(texteLigne)) ok('profil affiché dans la ligne')
+else ko(`profil absent : ${texteLigne}`)
+
+// Un identifiant déjà pris doit produire un message, pas un échec silencieux.
+// Le 409 qui suit est voulu : on le déclare au contrôle réseau du groupe 15.
+echecsVoulus.push(/^409 .*\/api\/utilisateurs$/)
+await page.locator('.adm-b-p', { hasText: 'Nouvel utilisateur' }).click()
+await page.waitForTimeout(250)
+await page.locator('#n-id').fill(login)
+await page.locator('#n-nom').fill('DOUBLON')
+await page.locator('#n-pre').fill('Test')
+await page.locator('.adm-b-p', { hasText: 'Créer le compte' }).click()
+await page.waitForTimeout(700)
+const msg = await page.locator('.adm-msg-ko').count()
+  ? (await page.locator('.adm-msg-ko').innerText()) : ''
+if (/déjà utilisé/.test(msg)) ok('identifiant en doublon signalé à l\'écran')
+else ko(`aucun message de doublon (« ${msg} »)`)
+await page.locator('.adm-b', { hasText: 'Annuler' }).last().click()
+await page.waitForTimeout(200)
+
+await page.locator('table.adm-t tr', { hasText: login })
+  .locator('.adm-b', { hasText: 'Désactiver' }).click()
+await page.waitForTimeout(700)
+await page.locator('table.adm-t tr', { hasText: login }).count() === 0
+  ? ok('compte désactivé, retiré de la liste par défaut')
+  : ko('compte désactivé encore listé')
+
+await page.locator('.adm-bar input[type=checkbox]').check()
+await page.waitForTimeout(700)
+const ligneInactive = page.locator('table.adm-t tr', { hasText: login })
+await ligneInactive.count() === 1 && /Désactivé/.test(await ligneInactive.innerText())
+  ? ok('et consultable via « Afficher les comptes désactivés »')
+  : ko('compte désactivé introuvable')
+
+await page.locator('table.adm-t tr', { hasText: login })
+  .locator('.adm-b', { hasText: 'Réactiver' }).click()
+await page.waitForTimeout(700)
+const ligneRendue = page.locator('table.adm-t tr', { hasText: login })
+if (/Actif/.test(await ligneRendue.innerText())) ok('réactivation depuis l\'IHM')
+else ko(`réactivation sans effet : ${await ligneRendue.innerText()}`)
+await page.locator('.adm-bar input[type=checkbox]').uncheck()
+await page.waitForTimeout(500)
+
+// ── Retour au scénario : l'état du parcours ne doit pas avoir été perdu ──
+await page.locator('.onglet', { hasText: 'Scénario' }).click()
+await page.waitForTimeout(400)
+await page.locator('.proc').count() >= 12
+  ? ok('retour au scénario, processus toujours présents')
+  : ko('le scénario a perdu ses processus')
+
+// ── 15. Sélection de l'opérateur (mode démonstration) ──
+console.log('\n15. Sélection de l\'opérateur connecté')
+const selOp = page.locator('.op-sel')
+if (await selOp.count() === 0) {
+  console.log('  · sélecteur absent — l\'API n\'est pas en AUTO_MODE=dev, groupe sans objet')
+} else {
+  ok('sélecteur d\'opérateur présent dans l\'en-tête')
+  await page.locator('.demo-bandeau').count() === 1
+    ? ok('un bandeau signale le mode démonstration')
+    : ko('aucun bandeau de mode démonstration')
+
+  const noms = await page.locator('.op-sel option').allTextContents()
+  noms.length >= 2 ? ok(`${noms.length} opérateurs proposés`)
+    : ko(`${noms.length} opérateur(s) : impossible d'éprouver le changement`)
+
+  const depart = await page.locator('.op-sel option:checked').innerText()
+  const autre = noms.find((n) => n !== depart)
+  await page.selectOption('.op-sel', { label: autre })
+  await page.waitForTimeout(700)
+
+  const arrivee = await page.locator('.op-sel option:checked').innerText()
+  arrivee === autre ? ok(`opérateur changé : « ${depart.trim()} » → « ${arrivee.trim()} »`)
+    : ko(`opérateur inchangé (${arrivee})`)
+
+  // La colonne « Opérateur » de la table doit suivre : sinon le changement
+  // serait cosmétique et les saisies porteraient le nom de quelqu'un d'autre.
+  const colonne = await page.locator('.main input[readonly]').first().inputValue()
+  autre.startsWith(colonne) ? ok(`la colonne « Opérateur » suit : ${colonne}`)
+    : ko(`colonne « ${colonne} » ≠ opérateur « ${autre} »`)
+
+  // Le choix doit survivre à un rechargement : c'est ce qu'on attend d'une
+  // démonstration qu'on reprend après une pause.
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(800)
+  const apresRechargement = await page.locator('.op-sel option:checked').innerText()
+  apresRechargement === autre ? ok('le choix survit à un rechargement')
+    : ko(`après rechargement : ${apresRechargement}`)
+
+  // Revenir à l'opérateur par défaut et remettre le compte de test en veille :
+  // une suite de tests n'a pas à laisser d'opérateur derrière elle.
+  await page.selectOption('.op-sel', { label: depart })
+  await page.waitForTimeout(500)
+  await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+  await page.waitForTimeout(600)
+  await page.locator('table.adm-t tr', { hasText: login })
+    .locator('.adm-b', { hasText: 'Désactiver' }).click()
+  await page.waitForTimeout(600)
+  await page.locator('table.adm-t tr', { hasText: login }).count() === 0
+    ? ok('compte de test remis en veille, sélecteur laissé propre')
+    : ko('le compte de test reste actif')
+  await page.locator('.onglet', { hasText: 'Scénario' }).click()
+  await page.waitForTimeout(400)
+}
+
+console.log('\n16. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
-// Le favicon n'est pas fourni : sans conséquence fonctionnelle.
-const reseauHS = reponsesHS.filter((r) => !/favicon\.ico/.test(r))
+// Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
+// entrées déclarées dans `echecsVoulus` sont des erreurs que les vérifications
+// ont provoquées exprès.
+const reseauHS = reponsesHS.filter((r) => !echecsVoulus.some((m) => m.test(r)))
+const voulus = reponsesHS.length - reseauHS.length
 reseauHS.length === 0
-  ? ok(`aucune requête en échec${reponsesHS.length ? ' (hors favicon.ico)' : ''}`)
+  ? ok(`aucune requête en échec inattendue${voulus ? ` (${voulus} provoquée(s) par les tests)` : ''}`)
   : ko(`${reseauHS.length} requête(s) en échec :\n     ${reseauHS.join('\n     ')}`)
 
 await page.locator('.proc').first().click()

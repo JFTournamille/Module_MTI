@@ -2,7 +2,7 @@
  * Test de bout en bout de l'API MTI.
  *
  * Prérequis : une base migrée et seedée, et le serveur démarré.
- *   export DATABASE_URL=... DEV_UTILISATEUR_ID=...
+ *   export DATABASE_URL=... DEV_UTILISATEUR_IDENTIFIANT=mdurand
  *   node src/migrer.js && node src/seed.js
  *   node src/server.js &
  *   node tests/e2e.mjs
@@ -16,10 +16,10 @@ const base = process.env.API_URL ?? 'http://localhost:3000'
 let echec = false
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); echec = true }
-const j = async (m, url, body) => {
+const j = async (m, url, body, entetes) => {
   const r = await fetch(base + url, {
     method: m,
-    headers: body ? { 'content-type': 'application/json' } : {},
+    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(entetes ?? {}) },
     body: body ? JSON.stringify(body) : undefined
   })
   return { statut: r.status, corps: await r.json().catch(() => null) }
@@ -134,6 +134,122 @@ const maj = audit.find((e) => e.operation === 'UPDATE' && e.table_cible === 'sai
 maj && Number(maj.ancien.valeur_num) === -168.2 && Number(maj.nouveau.valeur_num) === -170
   ? ok(`correction retrouvée : ${maj.ancien.valeur_num} °C → ${maj.nouveau.valeur_num} °C par ${maj.titre} ${maj.nom}`)
   : ko('la correction du point 1.3 n\'est pas reconstituable')
+
+console.log('\n11. Gestion des comptes utilisateurs')
+const login = `etest${Date.now()}`
+r = await j('POST', '/api/utilisateurs',
+  { identifiant: login.toUpperCase(), nom: 'ESSAI', prenom: 'Camille', titre: 'Dr',
+    fonction: 'pharmacien praticien', profil: 'pharmacien' })
+r.statut === 201 && r.corps.identifiant === login && r.corps.libelle === 'Dr Camille ESSAI'
+  ? ok(`compte ${login} créé, identifiant normalisé, libellé « ${r.corps.libelle} »`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+const compteId = r.corps.id
+
+r = await j('POST', '/api/utilisateurs', { identifiant: login, nom: 'X', prenom: 'Y' })
+r.statut === 409 ? ok('identifiant déjà pris refusé (409)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: 'a b', nom: 'X', prenom: 'Y' })
+r.statut === 400 ? ok('identifiant hors format refusé (400)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: `${login}b`, nom: 'X', prenom: 'Y', profil: 'chef' })
+r.statut === 400 ? ok('profil inconnu refusé (400)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: `${login}c`, prenom: 'Y' })
+r.statut === 400 ? ok('nom manquant refusé (400)') : ko(`statut ${r.statut}`)
+
+// L'identifiant lie le compte à ses saisies : le changer les réaffecterait.
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { identifiant: 'autrechose' })
+r.statut === 400 ? ok('identifiant non modifiable (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { actif: false })
+r.statut === 400 ? ok('activation refusée hors de sa route dédiée (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { profil: 'qualite', titre: null })
+r.statut === 200 && r.corps.profil === 'qualite' && r.corps.titre === null
+  ? ok('profil et titre modifiés') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('PATCH', '/api/utilisateurs/00000000-0000-0000-0000-000000000000', { profil: 'ide' })
+r.statut === 404 ? ok('compte inconnu → 404') : ko(`statut ${r.statut}`)
+
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: false })
+r.statut === 200 && r.corps.actif === false ? ok('compte désactivé') : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/utilisateurs')
+!r.corps.some((u) => u.id === compteId)
+  ? ok('un compte désactivé sort de la liste par défaut') : ko('compte désactivé encore listé')
+r = await j('GET', '/api/utilisateurs?inactifs=oui')
+r.corps.some((u) => u.id === compteId)
+  ? ok('et reste consultable avec inactifs=oui') : ko('compte désactivé introuvable')
+
+r = await j('GET', `/api/utilisateurs?q=${login}`)
+r.corps.length === 0 ? ok('la recherche respecte le filtre d\'activité') : ko(`${r.corps.length} résultat(s)`)
+
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: true })
+r.statut === 200 && r.corps.actif === true ? ok('compte réactivé') : ko(`statut ${r.statut}`)
+
+// Se désactiver soi-même fermerait la porte de l'intérieur : plus aucun
+// opérateur pour tracer une écriture, donc plus aucune écriture possible.
+r = await j('GET', '/api/dossiers/' + dossierId)
+const moi = r.corps.dossier.cree_par
+r = await j('POST', `/api/utilisateurs/${moi}/actif`, { actif: false })
+r.statut === 409 ? ok('auto-désactivation refusée (409)') : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/profils')
+Array.isArray(r.corps) && r.corps.includes('pharmacien')
+  ? ok(`${r.corps.length} profils exposés : ${r.corps.join(', ')}`) : ko('vocabulaire des profils absent')
+
+console.log('\n12. Opérateur de la session, choisi en mode démonstration')
+r = await j('GET', '/api/session')
+r.statut === 200 && r.corps.mode === 'dev' && r.corps.selectionPossible === true
+  ? ok(`mode ${r.corps.mode}, sélection de l'opérateur permise`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r.corps.avertissement && /valeur probante/.test(r.corps.avertissement)
+  ? ok('un avertissement signale que la démonstration n\'a pas valeur probante')
+  : ko('aucun avertissement de mode démonstration')
+r.corps.operateurs.some((o) => o.id === compteId)
+  ? ok(`${r.corps.operateurs.length} opérateur(s) proposé(s) au choix`)
+  : ko('le compte de test ne figure pas parmi les opérateurs proposés')
+const enTete = r.corps.enTete
+
+// L'opérateur désigné doit être celui retenu, et surtout celui que l'audit
+// enregistre comme auteur : sinon la sélection serait cosmétique.
+r = await j('GET', '/api/session', null, { [enTete]: compteId })
+r.corps.operateur?.id === compteId
+  ? ok(`opérateur désigné retenu : ${r.corps.operateur.nom}`)
+  : ko(`opérateur retenu : ${JSON.stringify(r.corps.operateur)}`)
+
+const refOp = `DOS-OP-${Date.now()}`
+r = await j('POST', '/api/dossiers',
+  { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refOp }, { [enTete]: compteId })
+const dossierOp = r.corps?.id
+r.statut === 201 ? ok(`dossier ${refOp} créé sous l'opérateur désigné`) : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers/${dossierOp}/audit`)
+r.corps.some((e) => e.nom === 'ESSAI')
+  ? ok('l\'audit attribue la création à l\'opérateur désigné, pas au défaut')
+  : ko(`auteurs tracés : ${JSON.stringify(r.corps.map((e) => e.nom))}`)
+
+// Un opérateur inconnu ou désactivé doit être refusé explicitement, avec un
+// code que le front sait reconnaître pour remettre sa sélection à zéro.
+r = await j('GET', '/api/session', null, { [enTete]: '00000000-0000-0000-0000-000000000000' })
+r.statut === 409 && r.corps.code === 'operateur_inconnu'
+  ? ok('opérateur inconnu refusé (409, code operateur_inconnu)')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('GET', '/api/session', null, { [enTete]: 'pas-un-uuid' })
+r.statut === 409 ? ok('en-tête malformé refusé (409)') : ko(`statut ${r.statut}`)
+
+// Le compte de test est laissé désactivé : un compte actif figure dans le
+// sélecteur d'opérateur de la démonstration, et une suite de tests n'a pas à
+// peupler ce sélecteur. Il n'est pas supprimé — un compte ne s'efface pas.
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: false })
+r.statut === 200 && r.corps.actif === false
+  ? ok('compte de test laissé désactivé, sans polluer le sélecteur d\'opérateur')
+  : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/session', null, { [enTete]: compteId })
+r.statut === 409
+  ? ok('un compte désactivé cesse aussitôt d\'être désignable, sans redémarrage')
+  : ko(`statut ${r.statut} — un compte désactivé reste utilisable`)
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

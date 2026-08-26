@@ -5,13 +5,26 @@ import PanneauReception from './components/PanneauReception.vue'
 import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
+import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
 import { useParcours } from './stores/parcours.js'
+import { useSession } from './stores/session.js'
 
+const session = useSession()
 const store = useParcours()
+
+/** Onglet affiché : 'scenario' | 'utilisateurs'. */
+const onglet = ref('scenario')
+const TITRES = {
+  scenario: 'Scénario MTI — Processus chronologique',
+  utilisateurs: 'Administration — Utilisateurs'
+}
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
 
-onMounted(() => store.charger())
+onMounted(async () => {
+  await session.charger()
+  await store.charger()
+})
 onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
@@ -31,10 +44,22 @@ const blocages = computed(() => {
 <template>
   <div class="dlg">
     <div class="titlebar">
-      <span>Scénario MTI — Processus chronologique</span>
+      <span>{{ TITRES[onglet] }}</span>
       <button class="x">✕</button>
     </div>
 
+    <nav class="onglets" role="tablist" aria-label="Navigation principale">
+      <button class="onglet" :class="{ act: onglet === 'scenario' }" role="tab"
+              :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
+        Scénario
+      </button>
+      <button class="onglet" :class="{ act: onglet === 'utilisateurs' }" role="tab"
+              :aria-selected="onglet === 'utilisateurs'" @click="onglet = 'utilisateurs'">
+        Utilisateurs
+      </button>
+    </nav>
+
+    <template v-if="onglet === 'scenario'">
     <div class="hdr">
       <div class="hdr-left">
         <div class="name">
@@ -54,7 +79,19 @@ const blocages = computed(() => {
         </div>
       </div>
       <div class="op-badge">
-        Opérateur connecté<span>{{ store.operateurConnecte.nom }}</span>
+        <template v-if="session.selectionPossible">
+          <label for="op-sel">Opérateur connecté</label>
+          <select id="op-sel" class="op-sel"
+                  :value="session.operateur?.id ?? ''"
+                  @change="session.choisir($event.target.value)">
+            <option v-for="o in session.operateurs" :key="o.id" :value="o.id">
+              {{ o.nom }}{{ o.profil ? ` — ${o.profil}` : '' }}
+            </option>
+          </select>
+        </template>
+        <template v-else>
+          Opérateur connecté<span>{{ store.operateurConnecte.nom }}</span>
+        </template>
       </div>
     </div>
 
@@ -102,6 +139,10 @@ const blocages = computed(() => {
     </div>
 
     <!-- Bandeau d'état : hors-ligne et points bloquants -->
+    <div v-if="session.avertissement" class="demo-bandeau">
+      ⚠ {{ session.avertissement }}
+    </div>
+
     <div v-if="store.horsLigne || blocages.length"
          style="background:#fffbf0;border-top:1px solid #d0b060;padding:4px 14px;
                 font-size:11px;color:#7a5000;display:flex;gap:14px;flex-wrap:wrap;">
@@ -110,6 +151,9 @@ const blocages = computed(() => {
       </span>
       <span v-if="blocages.length">Validation bloquée : {{ blocages.join(' ; ') }}</span>
     </div>
+    </template>
+
+    <PanneauUtilisateurs v-else-if="onglet === 'utilisateurs'" />
   </div>
 
   <ModalePatient

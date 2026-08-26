@@ -6,11 +6,22 @@
 -- qui positionne le search_path masque les références de type non qualifiées.
 SET search_path TO public;
 
+-- Toute la suite tourne dans une transaction annulée à la fin. Trois raisons :
+--   1. les UUID du jeu de test sont figés, donc un second passage violerait
+--      les clés primaires ;
+--   2. `mti.audit` est append-only par construction — on ne peut pas effacer
+--      après coup les traces produites par les tests ;
+--   3. la suite doit pouvoir tourner sur une base installée, sans la polluer.
+-- Les tests attendus en échec sont dans des blocs PL/pgSQL avec gestionnaire
+-- d'exception, qui posent un point de sauvegarde implicite : une erreur
+-- rattrapée n'annule donc pas la transaction englobante.
+BEGIN;
+
 \echo '── Préparation du jeu de test ──'
 
 INSERT INTO mti.utilisateur (id, identifiant, nom, prenom, titre, fonction) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'mdurand', 'DURAND', 'Martin', 'M.', 'préparateur'),
-  ('22222222-2222-2222-2222-222222222222', 'jtournamille', 'TOURNAMILLE', 'Jean-François', 'Dr', 'pharmacien');
+  ('11111111-1111-1111-1111-111111111111', 'test_preparateur', 'TEST', 'Préparateur', 'M.', 'préparateur'),
+  ('22222222-2222-2222-2222-222222222222', 'test_pharmacien', 'TEST', 'Pharmacien', 'Dr', 'pharmacien');
 
 INSERT INTO mti.modele_parcours (id, code, version, libelle, definition, actif, publie_le)
 VALUES ('33333333-3333-3333-3333-333333333333', 'PARCOURS_TEST', 1, 'Parcours de test',
@@ -157,7 +168,8 @@ END $$;
 DO $$
 DECLARE v_alarmes integer;
 BEGIN
-  SELECT count(*) INTO v_alarmes FROM mti.saisie WHERE hors_seuil;
+  SELECT count(*) INTO v_alarmes FROM mti.saisie
+   WHERE hors_seuil AND dossier_processus_id = '55555555-5555-5555-5555-555555555555';
   IF v_alarmes <> 1 THEN
     RAISE EXCEPTION 'ÉCHEC : % alarme(s) au lieu de 1 (cuve 3 à -152,7 °C)', v_alarmes;
   END IF;
@@ -277,9 +289,45 @@ END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 \echo ''
-\echo '── Récapitulatif du journal d''audit ──'
+\echo '── Récapitulatif du journal d''audit (base entière, jeu de test inclus) ──'
 SELECT table_cible, operation, count(*) AS nb
   FROM mti.audit GROUP BY 1, 2 ORDER BY 1, 2;
 
+-- ═══════════════════════════════════════════════════════════════════════════
 \echo ''
-\echo '✓ Tous les invariants sont vérifiés.'
+\echo 'TEST 15 — Une écriture sur un compte utilisateur est tracée avec son auteur'
+DO $$
+DECLARE v_auteur uuid; v_avant text; v_apres text;
+BEGIN
+  -- Les comptes portent l'identité des opérateurs : leurs modifications doivent
+  -- être aussi traçables que les saisies. Le profil sert de témoin.
+  UPDATE mti.utilisateur SET profil = 'pharmacien'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+
+  SELECT utilisateur_id, ancien->>'profil', nouveau->>'profil'
+    INTO v_auteur, v_avant, v_apres
+    FROM mti.audit
+   WHERE table_cible = 'utilisateur'
+     AND cle_cible = '22222222-2222-2222-2222-222222222222'
+     AND operation = 'UPDATE'
+   ORDER BY survenu_le DESC, id DESC
+   LIMIT 1;
+
+  IF v_auteur IS NULL THEN
+    RAISE EXCEPTION 'ÉCHEC : modification de compte tracée sans auteur';
+  END IF;
+  IF v_auteur <> '11111111-1111-1111-1111-111111111111' THEN
+    RAISE EXCEPTION 'ÉCHEC : auteur inattendu (%)', v_auteur;
+  END IF;
+  IF v_apres <> 'pharmacien' OR v_avant IS NOT NULL THEN
+    RAISE EXCEPTION 'ÉCHEC : profil mal tracé (% → %)', v_avant, v_apres;
+  END IF;
+  RAISE NOTICE '  ✓ changement de profil tracé (NULL → pharmacien), auteur identifié';
+END $$;
+
+-- Les traces produites par les tests disparaissent avec la transaction ; celles
+-- déjà présentes en base restent, l'audit étant append-only par construction.
+ROLLBACK;
+
+\echo ''
+\echo '✓ Tous les invariants sont vérifiés — jeu de test annulé, base inchangée.'

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
+import { appel } from '../api.js'
+import { useSession } from './session.js'
 
 /**
  * Clé d'une saisie. Remplace intégralement les suffixes de noms de radios
@@ -60,7 +62,12 @@ export const useParcours = defineStore('parcours', () => {
     commentaire: ''
   })
 
-  const operateurConnecte = ref({ nom: 'M. Martin DURAND', identifiant: 'mdurand' })
+  /* L'opérateur n'est plus en dur : il vient de la session. Le rendre calculé
+     fait suivre la colonne « Opérateur » de la table de réception dès qu'on
+     change d'opérateur en démonstration, sans réinitialiser les saisies. */
+  const session = useSession()
+  const operateurConnecte = computed(() =>
+    session.operateur ?? { nom: '—', identifiant: '' })
 
   // ── Saisies : un dictionnaire plat, clé -> valeurs ──
   const saisies = reactive({})
@@ -85,8 +92,8 @@ export const useParcours = defineStore('parcours', () => {
     horsLigne.value = false
     try {
       const [rModele, rCatalogue] = await Promise.all([
-        fetch('/api/modeles/PARCOURS_CART_AUTOLOGUE'),
-        fetch('/api/catalogue')
+        appel('/api/modeles/PARCOURS_CART_AUTOLOGUE'),
+        appel('/api/catalogue')
       ])
       if (!rModele.ok || !rCatalogue.ok) throw new Error('API indisponible')
       modele.value = await rModele.json()
