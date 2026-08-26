@@ -29,6 +29,11 @@ const reponsesHS = []
 page.on('response', (r) => {
   if (r.status() >= 400) reponsesHS.push(`${r.status()} ${r.url()}`)
 })
+// Réponses d'erreur provoquées DÉLIBÉRÉMENT par une vérification : un
+// identifiant en doublon doit renvoyer 409, c'est le comportement testé. Elles
+// sont déclarées ici pour que le contrôle réseau final ne signale que les
+// échecs non voulus, au lieu de tout mélanger.
+const echecsVoulus = [/favicon\.ico/]
 
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 const ok = (m) => console.log('  ✓', m)
@@ -221,13 +226,90 @@ if (apiJoignable) {
     : ko('aucun bandeau hors-ligne alors que l\'API est absente')
 }
 
-console.log('\n14. Console du navigateur et réseau')
+// ── 14. Onglet Utilisateurs ──
+// Écrit réellement en base : le login porte un horodatage pour ne pas entrer en
+// collision d'un passage à l'autre. Le compte est désactivé en fin de groupe —
+// un compte ne se supprime pas, il est l'auteur de ce qu'il a saisi.
+console.log('\n14. Onglet Utilisateurs')
+await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+await page.waitForTimeout(500)
+
+const titre = await page.locator('.titlebar span').first().innerText()
+if (/Utilisateurs/.test(titre)) ok(`barre de titre suit l'onglet : « ${titre} »`)
+else ko(`barre de titre : ${titre}`)
+await page.locator('.dlg .body').count() === 0
+  ? ok('le panneau du scénario est retiré, pas seulement masqué')
+  : ko('le scénario reste monté sous l\'onglet Utilisateurs')
+
+const nbAvant = await page.locator('table.adm-t .ident').count()
+nbAvant >= 1 ? ok(`${nbAvant} compte(s) listé(s) depuis la base`) : ko('aucun compte listé')
+
+const login = `nav${Date.now()}`
+await page.locator('.adm-b-p', { hasText: 'Nouvel utilisateur' }).click()
+await page.waitForTimeout(250)
+await page.locator('#n-id').fill(login)
+await page.locator('#n-nom').fill('NAVIGATEUR')
+await page.locator('#n-pre').fill('Test')
+await page.locator('#n-pro').selectOption('preparateur')
+await page.locator('.adm-b-p', { hasText: 'Créer le compte' }).click()
+await page.waitForTimeout(700)
+
+const nbApres = await page.locator('table.adm-t .ident').count()
+nbApres === nbAvant + 1 ? ok(`compte ${login} créé et repris dans la liste`)
+  : ko(`${nbAvant} → ${nbApres} compte(s)`)
+const ligne = page.locator('table.adm-t tr', { hasText: login })
+const texteLigne = await ligne.innerText()
+if (/Préparateur/.test(texteLigne)) ok('profil affiché dans la ligne')
+else ko(`profil absent : ${texteLigne}`)
+
+// Un identifiant déjà pris doit produire un message, pas un échec silencieux.
+// Le 409 qui suit est voulu : on le déclare au contrôle réseau du groupe 15.
+echecsVoulus.push(/^409 .*\/api\/utilisateurs$/)
+await page.locator('.adm-b-p', { hasText: 'Nouvel utilisateur' }).click()
+await page.waitForTimeout(250)
+await page.locator('#n-id').fill(login)
+await page.locator('#n-nom').fill('DOUBLON')
+await page.locator('#n-pre').fill('Test')
+await page.locator('.adm-b-p', { hasText: 'Créer le compte' }).click()
+await page.waitForTimeout(700)
+const msg = await page.locator('.adm-msg-ko').count()
+  ? (await page.locator('.adm-msg-ko').innerText()) : ''
+if (/déjà utilisé/.test(msg)) ok('identifiant en doublon signalé à l\'écran')
+else ko(`aucun message de doublon (« ${msg} »)`)
+await page.locator('.adm-b', { hasText: 'Annuler' }).last().click()
+await page.waitForTimeout(200)
+
+await page.locator('table.adm-t tr', { hasText: login })
+  .locator('.adm-b', { hasText: 'Désactiver' }).click()
+await page.waitForTimeout(700)
+await page.locator('table.adm-t tr', { hasText: login }).count() === 0
+  ? ok('compte désactivé, retiré de la liste par défaut')
+  : ko('compte désactivé encore listé')
+
+await page.locator('.adm-bar input[type=checkbox]').check()
+await page.waitForTimeout(700)
+const ligneInactive = page.locator('table.adm-t tr', { hasText: login })
+await ligneInactive.count() === 1 && /Désactivé/.test(await ligneInactive.innerText())
+  ? ok('et consultable via « Afficher les comptes désactivés »')
+  : ko('compte désactivé introuvable')
+
+// ── Retour au scénario : l'état du parcours ne doit pas avoir été perdu ──
+await page.locator('.onglet', { hasText: 'Scénario' }).click()
+await page.waitForTimeout(400)
+await page.locator('.proc').count() >= 12
+  ? ok('retour au scénario, processus toujours présents')
+  : ko('le scénario a perdu ses processus')
+
+console.log('\n15. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
-// Le favicon n'est pas fourni : sans conséquence fonctionnelle.
-const reseauHS = reponsesHS.filter((r) => !/favicon\.ico/.test(r))
+// Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
+// entrées déclarées dans `echecsVoulus` sont des erreurs que les vérifications
+// ont provoquées exprès.
+const reseauHS = reponsesHS.filter((r) => !echecsVoulus.some((m) => m.test(r)))
+const voulus = reponsesHS.length - reseauHS.length
 reseauHS.length === 0
-  ? ok(`aucune requête en échec${reponsesHS.length ? ' (hors favicon.ico)' : ''}`)
+  ? ok(`aucune requête en échec inattendue${voulus ? ` (${voulus} provoquée(s) par les tests)` : ''}`)
   : ko(`${reseauHS.length} requête(s) en échec :\n     ${reseauHS.join('\n     ')}`)
 
 await page.locator('.proc').first().click()

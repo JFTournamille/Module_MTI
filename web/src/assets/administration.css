@@ -1,0 +1,64 @@
+/* Styles de l'onglet Utilisateurs.
+ *
+ * Feuille SÉPARÉE de scenario.css à dessein : ce dernier est repris verbatim de
+ * la maquette validée par les utilisateurs, on n'y touche pas. La palette est
+ * en revanche la même (#4a3880, #6045a0, #f0eeff…) pour que les deux onglets
+ * ne se ressemblent pas de loin seulement.
+ */
+
+/* ── Barre d'onglets ── */
+.onglets{background:#3a2870;display:flex;align-items:stretch;gap:2px;padding:0 10px;flex-shrink:0;}
+.onglet{background:none;border:none;color:#c0b8e8;font-family:inherit;font-size:13px;
+  padding:7px 15px;cursor:pointer;border-top:3px solid transparent;display:flex;
+  align-items:center;gap:6px;white-space:nowrap;}
+.onglet:hover{background:#4a3880;color:#fff;}
+.onglet.act{background:#f0eeff;color:#4a3880;font-weight:bold;border-top-color:#b0a0ff;}
+.onglet .compte{background:#6045a0;color:#fff;font-size:11px;border-radius:9px;padding:0 6px;}
+.onglet.act .compte{background:#4a3880;}
+
+/* ── Panneau ── */
+.adm{flex:1;overflow-y:auto;background:#fff;padding:0;}
+.adm-bar{background:#f0eeff;border-bottom:1px solid #c8b8e8;padding:9px 14px;display:flex;
+  align-items:center;gap:9px;flex-wrap:wrap;}
+.adm-bar input[type=text]{font-size:13px;padding:4px 8px;border:1px solid #a090cc;border-radius:2px;}
+.adm-bar label{font-size:13px;color:#555;display:flex;align-items:center;gap:5px;cursor:pointer;}
+.adm-h{font-size:14px;font-weight:bold;color:#4a3880;padding:9px 14px 6px;display:flex;
+  align-items:center;gap:8px;}
+.adm-h .n{font-weight:normal;font-size:12px;color:#888;}
+
+table.adm-t{width:100%;border-collapse:collapse;font-size:13px;}
+table.adm-t thead tr{background:#eee8ff;color:#4a3880;font-size:12px;}
+table.adm-t th{padding:6px 10px;text-align:left;font-weight:bold;}
+table.adm-t td{padding:7px 10px;border-bottom:1px solid #f0eeff;vertical-align:middle;}
+table.adm-t tr.inactif td{background:#f7f7f7;color:#999;}
+table.adm-t tr.inactif .ident{text-decoration:line-through;}
+.ident{font-family:'Courier New',monospace;font-size:12px;color:#4a3880;font-weight:bold;}
+
+.prof{display:inline-block;padding:2px 9px;border-radius:9px;font-size:11px;font-weight:bold;color:#fff;}
+.prof-pharmacien{background:#6045a0;}
+.prof-preparateur{background:#1565c0;}
+.prof-ide{background:#2e7d4e;}
+.prof-qualite{background:#e65100;}
+.prof-administrateur{background:#5d4037;}
+.prof-aucun{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;font-weight:normal;}
+
+.adm-b{font-family:inherit;font-size:12px;padding:3px 10px;border-radius:2px;cursor:pointer;
+  border:1px solid #c8b8e8;background:#fff;color:#4a3880;}
+.adm-b:hover{background:#f0eeff;}
+.adm-b-p{background:#4a3880;border-color:#4a3880;color:#fff;font-weight:bold;}
+.adm-b-p:hover{background:#6045a0;}
+.adm-b:disabled{opacity:.5;cursor:default;}
+
+.adm-form{background:#f8f6ff;border:1px solid #d0c0f0;border-radius:4px;margin:10px 14px 16px;
+  padding:12px 14px;}
+.adm-form-t{font-size:13px;font-weight:bold;color:#4a3880;margin-bottom:10px;}
+.adm-r{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap;}
+.adm-r>label:first-child{width:120px;flex-shrink:0;font-size:13px;color:#4a3880;font-weight:bold;}
+.adm-r input[type=text],.adm-r select{font-size:13px;padding:4px 8px;border:1px solid #a090cc;
+  border-radius:2px;min-width:210px;}
+.adm-aide{font-size:12px;color:#777;line-height:1.5;margin:-4px 0 10px 129px;}
+
+.adm-msg{margin:10px 14px;padding:8px 12px;border-radius:4px;font-size:13px;}
+.adm-msg-ko{background:#ffebee;border:1px solid #ef9a9a;color:#c62828;}
+.adm-msg-hs{background:#fff8e0;border:1px solid #e0c860;color:#7a5000;}
+.adm-vide{padding:26px;text-align:center;color:#aaa;font-size:13px;}

@@ -4,6 +4,7 @@ import { brancherAuth, verifierConfigurationAuth } from './auth.js'
 import referentiels from './routes/referentiels.js'
 import patients from './routes/patients.js'
 import dossiers from './routes/dossiers.js'
+import utilisateurs from './routes/utilisateurs.js'
 
 const mode = verifierConfigurationAuth()
 
@@ -150,6 +151,7 @@ app.get('/api/sante', async () => {
 await app.register(referentiels)
 await app.register(patients)
 await app.register(dossiers)
+await app.register(utilisateurs)
 
 const port = Number(process.env.PORT ?? 3000)
 

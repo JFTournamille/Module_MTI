@@ -145,6 +145,29 @@ signature.
 `NODE_ENV=production`. Le branchement du SSO de l'établissement
 (`AUTH_MODE=oidc`) est un préalable à toute mise en service.
 
+### Comptes et profils
+
+L'onglet *Utilisateurs* gère les comptes : création, correction d'état civil,
+attribution d'un profil, activation. Trois règles s'y appliquent, qui découlent
+de la traçabilité plutôt que de l'ergonomie :
+
+- **Aucune suppression.** Un utilisateur est l'auteur de saisies, de signatures
+  et d'événements d'audit. L'effacer priverait la traçabilité de son auteur.
+  Un compte se désactive ; il conserve ce qu'il a signé.
+- **L'identifiant est immuable** après création. C'est la clé du compte et le
+  lien avec le fournisseur d'identité : le changer réaffecterait à quelqu'un
+  d'autre des saisies déjà signées.
+- **Le dernier compte actif ne peut pas être désactivé**, ni un opérateur
+  se désactiver lui-même. Sans compte actif, plus aucune écriture ne peut être
+  tracée, donc plus aucune écriture n'est possible.
+
+`mti.utilisateur.profil` (migration `004`) porte un axe de droits distinct de
+`fonction`, qui reste un intitulé libre et descriptif. **Ce profil ne
+conditionne rien à ce stade** : le rendre agissant suppose d'abord une
+authentification réelle. En `AUTH_MODE=dev` l'opérateur est fixe — un contrôle
+de droits n'y aurait aucune valeur. Le champ est renseignable et tracé, pour que
+les profils soient déjà attribués le jour où le SSO est branché.
+
 ## Déploiement CapRover
 
 Trois apps :

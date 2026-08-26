@@ -5,9 +5,17 @@ import PanneauReception from './components/PanneauReception.vue'
 import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
+import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
 import { useParcours } from './stores/parcours.js'
 
 const store = useParcours()
+
+/** Onglet affiché : 'scenario' | 'utilisateurs'. */
+const onglet = ref('scenario')
+const TITRES = {
+  scenario: 'Scénario MTI — Processus chronologique',
+  utilisateurs: 'Administration — Utilisateurs'
+}
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
 
@@ -31,10 +39,22 @@ const blocages = computed(() => {
 <template>
   <div class="dlg">
     <div class="titlebar">
-      <span>Scénario MTI — Processus chronologique</span>
+      <span>{{ TITRES[onglet] }}</span>
       <button class="x">✕</button>
     </div>
 
+    <nav class="onglets" role="tablist" aria-label="Navigation principale">
+      <button class="onglet" :class="{ act: onglet === 'scenario' }" role="tab"
+              :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
+        Scénario
+      </button>
+      <button class="onglet" :class="{ act: onglet === 'utilisateurs' }" role="tab"
+              :aria-selected="onglet === 'utilisateurs'" @click="onglet = 'utilisateurs'">
+        Utilisateurs
+      </button>
+    </nav>
+
+    <template v-if="onglet === 'scenario'">
     <div class="hdr">
       <div class="hdr-left">
         <div class="name">
@@ -110,6 +130,9 @@ const blocages = computed(() => {
       </span>
       <span v-if="blocages.length">Validation bloquée : {{ blocages.join(' ; ') }}</span>
     </div>
+    </template>
+
+    <PanneauUtilisateurs v-else-if="onglet === 'utilisateurs'" />
   </div>
 
   <ModalePatient

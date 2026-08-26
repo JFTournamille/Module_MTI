@@ -293,6 +293,38 @@ END $$;
 SELECT table_cible, operation, count(*) AS nb
   FROM mti.audit GROUP BY 1, 2 ORDER BY 1, 2;
 
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo ''
+\echo 'TEST 15 — Une écriture sur un compte utilisateur est tracée avec son auteur'
+DO $$
+DECLARE v_auteur uuid; v_avant text; v_apres text;
+BEGIN
+  -- Les comptes portent l'identité des opérateurs : leurs modifications doivent
+  -- être aussi traçables que les saisies. Le profil sert de témoin.
+  UPDATE mti.utilisateur SET profil = 'pharmacien'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+
+  SELECT utilisateur_id, ancien->>'profil', nouveau->>'profil'
+    INTO v_auteur, v_avant, v_apres
+    FROM mti.audit
+   WHERE table_cible = 'utilisateur'
+     AND cle_cible = '22222222-2222-2222-2222-222222222222'
+     AND operation = 'UPDATE'
+   ORDER BY survenu_le DESC, id DESC
+   LIMIT 1;
+
+  IF v_auteur IS NULL THEN
+    RAISE EXCEPTION 'ÉCHEC : modification de compte tracée sans auteur';
+  END IF;
+  IF v_auteur <> '11111111-1111-1111-1111-111111111111' THEN
+    RAISE EXCEPTION 'ÉCHEC : auteur inattendu (%)', v_auteur;
+  END IF;
+  IF v_apres <> 'pharmacien' OR v_avant IS NOT NULL THEN
+    RAISE EXCEPTION 'ÉCHEC : profil mal tracé (% → %)', v_avant, v_apres;
+  END IF;
+  RAISE NOTICE '  ✓ changement de profil tracé (NULL → pharmacien), auteur identifié';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

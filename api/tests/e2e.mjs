@@ -135,5 +135,68 @@ maj && Number(maj.ancien.valeur_num) === -168.2 && Number(maj.nouveau.valeur_num
   ? ok(`correction retrouvée : ${maj.ancien.valeur_num} °C → ${maj.nouveau.valeur_num} °C par ${maj.titre} ${maj.nom}`)
   : ko('la correction du point 1.3 n\'est pas reconstituable')
 
+console.log('\n11. Gestion des comptes utilisateurs')
+const login = `etest${Date.now()}`
+r = await j('POST', '/api/utilisateurs',
+  { identifiant: login.toUpperCase(), nom: 'ESSAI', prenom: 'Camille', titre: 'Dr',
+    fonction: 'pharmacien praticien', profil: 'pharmacien' })
+r.statut === 201 && r.corps.identifiant === login && r.corps.libelle === 'Dr Camille ESSAI'
+  ? ok(`compte ${login} créé, identifiant normalisé, libellé « ${r.corps.libelle} »`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+const compteId = r.corps.id
+
+r = await j('POST', '/api/utilisateurs', { identifiant: login, nom: 'X', prenom: 'Y' })
+r.statut === 409 ? ok('identifiant déjà pris refusé (409)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: 'a b', nom: 'X', prenom: 'Y' })
+r.statut === 400 ? ok('identifiant hors format refusé (400)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: `${login}b`, nom: 'X', prenom: 'Y', profil: 'chef' })
+r.statut === 400 ? ok('profil inconnu refusé (400)') : ko(`statut ${r.statut}`)
+
+r = await j('POST', '/api/utilisateurs', { identifiant: `${login}c`, prenom: 'Y' })
+r.statut === 400 ? ok('nom manquant refusé (400)') : ko(`statut ${r.statut}`)
+
+// L'identifiant lie le compte à ses saisies : le changer les réaffecterait.
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { identifiant: 'autrechose' })
+r.statut === 400 ? ok('identifiant non modifiable (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { actif: false })
+r.statut === 400 ? ok('activation refusée hors de sa route dédiée (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/utilisateurs/${compteId}`, { profil: 'qualite', titre: null })
+r.statut === 200 && r.corps.profil === 'qualite' && r.corps.titre === null
+  ? ok('profil et titre modifiés') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('PATCH', '/api/utilisateurs/00000000-0000-0000-0000-000000000000', { profil: 'ide' })
+r.statut === 404 ? ok('compte inconnu → 404') : ko(`statut ${r.statut}`)
+
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: false })
+r.statut === 200 && r.corps.actif === false ? ok('compte désactivé') : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/utilisateurs')
+!r.corps.some((u) => u.id === compteId)
+  ? ok('un compte désactivé sort de la liste par défaut') : ko('compte désactivé encore listé')
+r = await j('GET', '/api/utilisateurs?inactifs=oui')
+r.corps.some((u) => u.id === compteId)
+  ? ok('et reste consultable avec inactifs=oui') : ko('compte désactivé introuvable')
+
+r = await j('GET', `/api/utilisateurs?q=${login}`)
+r.corps.length === 0 ? ok('la recherche respecte le filtre d\'activité') : ko(`${r.corps.length} résultat(s)`)
+
+r = await j('POST', `/api/utilisateurs/${compteId}/actif`, { actif: true })
+r.statut === 200 && r.corps.actif === true ? ok('compte réactivé') : ko(`statut ${r.statut}`)
+
+// Se désactiver soi-même fermerait la porte de l'intérieur : plus aucun
+// opérateur pour tracer une écriture, donc plus aucune écriture possible.
+r = await j('GET', '/api/dossiers/' + dossierId)
+const moi = r.corps.dossier.cree_par
+r = await j('POST', `/api/utilisateurs/${moi}/actif`, { actif: false })
+r.statut === 409 ? ok('auto-désactivation refusée (409)') : ko(`statut ${r.statut}`)
+
+r = await j('GET', '/api/profils')
+Array.isArray(r.corps) && r.corps.includes('pharmacien')
+  ? ok(`${r.corps.length} profils exposés : ${r.corps.join(', ')}`) : ko('vocabulaire des profils absent')
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)
