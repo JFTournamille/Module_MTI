@@ -45,6 +45,115 @@ export default async function dossiers (app) {
   })
 
   // ── Lecture ──────────────────────────────────────────────────────────────
+  // ── Liste des dossiers, pour le tableau de bord ──────────────────────────
+  //
+  // L'anonymat par défaut vaut ICI AUSSI, et c'est le point délicat : une liste
+  // est justement l'endroit où une identité fuit sans qu'on y pense. Le nom
+  // n'est joint que si le dossier porte un patient — préallocation explicite ou
+  // allocation à la mise en fabrication. Sinon la ligne est « en attente
+  // d'allocation », et aucune donnée identifiante ne quitte la base.
+  app.get('/api/dossiers', async (request) => {
+    const q = String(request.query.q ?? '').trim()
+    const produit = String(request.query.produit ?? '').trim()
+    const patient = String(request.query.patient ?? '').trim()
+    const statut = String(request.query.statut ?? '').trim()
+
+    const conditions = []
+    const params = []
+
+    if (produit) { params.push(produit); conditions.push(`d.produit_id = $${params.length}`) }
+    if (patient) { params.push(patient); conditions.push(`d.patient_id = $${params.length}`) }
+
+    // `attente` n'est pas un statut stocké : c'est l'absence de patient sur un
+    // dossier encore ouvert. Le calculer ici évite de dupliquer la règle côté
+    // front, où elle finirait par diverger.
+    if (statut === 'attente') conditions.push("d.patient_id IS NULL AND d.statut <> 'valide'")
+    else if (statut === 'en_cours') conditions.push("d.statut <> 'valide'")
+    else if (statut) { params.push(statut); conditions.push(`d.statut = $${params.length}`) }
+
+    if (q) {
+      params.push(`%${q}%`)
+      const n = params.length
+      // La recherche porte sur le nom du patient : c'est ce que demande
+      // l'usage (« retrouver le dossier de M. X »). Elle ne peut donc pas
+      // ignorer patient_identite — mais elle ne RENVOIE le nom que pour les
+      // dossiers qui portent déjà un patient, cf. la projection plus bas.
+      conditions.push(`(d.reference ILIKE $${n} OR d.numero_lot ILIKE $${n}
+                        OR coalesce(d.designation_produit, pr.denomination) ILIKE $${n}
+                        OR pat.reference ILIKE $${n}
+                        OR i.nom ILIKE $${n} OR i.prenom ILIKE $${n})`)
+    }
+
+    const { rows } = await requete(
+      `SELECT d.id, d.reference, d.numero_lot, d.statut, d.preallocation,
+              d.patient_id, d.cree_le, d.valide_le,
+              coalesce(d.designation_produit, pr.denomination) AS produit,
+              pr.id AS produit_id, pat.reference AS patient_reference,
+              i.nom AS patient_nom, i.prenom AS patient_prenom,
+              m.code AS code_modele, m.version AS version_modele,
+              (SELECT dp.nom FROM mti.dossier_processus dp
+                WHERE dp.dossier_id = d.id AND dp.etat <> 'valide'
+                ORDER BY dp.ordre LIMIT 1) AS etape,
+              (SELECT count(*)::int FROM mti.dossier_processus dp
+                WHERE dp.dossier_id = d.id) AS nb_processus,
+              (SELECT count(*)::int FROM mti.dossier_processus dp
+                WHERE dp.dossier_id = d.id AND dp.etat = 'valide') AS nb_valides,
+              (SELECT count(*)::int FROM mti.saisie s
+                 JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+                WHERE dp.dossier_id = d.id AND s.hors_seuil) AS nb_alarmes,
+              greatest(d.cree_le, d.valide_le,
+                (SELECT max(dp.valide_le) FROM mti.dossier_processus dp
+                  WHERE dp.dossier_id = d.id),
+                (SELECT max(s.saisi_le) FROM mti.saisie s
+                   JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+                  WHERE dp.dossier_id = d.id)) AS derniere_activite
+         FROM mti.dossier d
+         JOIN mti.modele_parcours m ON m.id = d.modele_parcours_id
+         LEFT JOIN mti.produit pr ON pr.id = d.produit_id
+         LEFT JOIN mti.patient pat ON pat.id = d.patient_id
+         LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
+        ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''}
+        ORDER BY derniere_activite DESC NULLS LAST
+        LIMIT 200`,
+      params)
+
+    return rows.map((r) => {
+      const alloue = r.patient_id !== null
+      return {
+        id: r.id,
+        reference: r.reference,
+        produit: r.produit,
+        produitId: r.produit_id,
+        numeroLot: r.numero_lot,
+        statut: r.statut,
+        /* Le statut d'affichage du tableau de bord : « en attente d'allocation »
+           n'existe pas en base, c'est l'absence de patient sur un dossier
+           ouvert. */
+        statutAffiche: r.statut === 'valide' ? 'termine' : (alloue ? 'en_cours' : 'attente'),
+        /* Un dossier validé est clos, même si tous ses processus n'ont pas été
+           validés un à un : c'est la validation du dossier qui le fige. */
+        etape: r.statut === 'valide' ? 'Parcours clos' : (r.etape ?? 'Parcours clos'),
+        nbProcessus: r.nb_processus,
+        nbValides: r.nb_valides,
+        avancement: r.nb_processus ? Math.round((r.nb_valides / r.nb_processus) * 100) : 0,
+        nbAlarmes: r.nb_alarmes,
+        codeModele: r.code_modele,
+        versionModele: r.version_modele,
+        creeLe: r.cree_le,
+        valideLe: r.valide_le,
+        derniereActivite: r.derniere_activite,
+        /* Rien d'identifiant ne sort tant que le dossier n'a pas de patient. */
+        patient: alloue
+          ? {
+              reference: r.patient_reference,
+              nom: [r.patient_nom, r.patient_prenom].filter(Boolean).join(' ') || null,
+              preallocation: r.preallocation
+            }
+          : null
+      }
+    })
+  })
+
   app.get('/api/dossiers/:id', async (request, reply) => {
     const { rows } = await requete(
       `SELECT d.*, m.code AS code_modele, m.version AS version_modele

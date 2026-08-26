@@ -251,5 +251,47 @@ r.statut === 409
   ? ok('un compte désactivé cesse aussitôt d\'être désignable, sans redémarrage')
   : ko(`statut ${r.statut} — un compte désactivé reste utilisable`)
 
+console.log('\n13. Liste des dossiers (tableau de bord)')
+r = await j('GET', '/api/dossiers')
+const liste = r.corps
+Array.isArray(liste) && liste.length >= 1
+  ? ok(`${liste.length} dossier(s) listés`) : ko(`réponse : ${JSON.stringify(r.corps)}`)
+
+const ligne = liste.find((x) => x.id === dossierId)
+ligne ? ok(`le dossier ${ref} figure dans la liste`) : ko('dossier créé absent de la liste')
+ligne?.statutAffiche === 'termine' && ligne?.etape === 'Parcours clos'
+  ? ok('un dossier validé est affiché « Parcours clos »')
+  : ko(`statut ${ligne?.statutAffiche}, étape « ${ligne?.etape} »`)
+ligne?.nbAlarmes === 1
+  ? ok(`${ligne.nbAlarmes} alarme de seuil comptée sur le dossier`)
+  : ko(`${ligne?.nbAlarmes} alarme(s) au lieu de 1`)
+typeof ligne?.avancement === 'number' && ligne.nbProcessus === 12
+  ? ok(`avancement ${ligne.avancement} % sur ${ligne.nbProcessus} processus`)
+  : ko(`avancement/processus : ${JSON.stringify([ligne?.avancement, ligne?.nbProcessus])}`)
+
+// L'anonymat vaut aussi dans une liste — c'est justement là qu'une identité
+// fuit sans qu'on y pense.
+ligne?.patient === null
+  ? ok('aucune donnée identifiante sur un dossier sans patient')
+  : ko(`patient renvoyé sur un dossier anonyme : ${JSON.stringify(ligne?.patient)}`)
+
+r = await j('GET', '/api/dossiers?statut=attente')
+r.corps.every((x) => x.patient === null && x.statut !== 'valide')
+  ? ok(`${r.corps.length} dossier(s) en attente d'allocation, tous sans patient`)
+  : ko('le filtre « attente » laisse passer des dossiers alloués ou clos')
+
+r = await j('GET', '/api/dossiers?statut=valide')
+r.corps.every((x) => x.statut === 'valide')
+  ? ok(`${r.corps.length} dossier(s) terminés, restant consultables`)
+  : ko('le filtre « valide » laisse passer des dossiers ouverts')
+
+r = await j('GET', `/api/dossiers?q=${ref}`)
+r.corps.length === 1 && r.corps[0].id === dossierId
+  ? ok('recherche par référence exacte') : ko(`${r.corps.length} résultat(s)`)
+
+r = await j('GET', '/api/dossiers?q=zzz-aucune-chance-zzz')
+r.corps.length === 0 ? ok('une recherche sans résultat renvoie une liste vide')
+  : ko(`${r.corps.length} résultat(s) inattendus`)
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)
