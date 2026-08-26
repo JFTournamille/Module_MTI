@@ -121,6 +121,23 @@ function urlAdminPourEnfant () {
          `@${host}:${port}/${database}`
 }
 
+/**
+ * Même URL, mot de passe remplacé par un repère.
+ *
+ * L'installation au démarrage rejoue à CHAQUE déploiement, et sa sortie va
+ * dans les journaux du conteneur, que l'hébergeur conserve et expose à qui
+ * a accès à son interface. Un mot de passe fourni par l'exploitant n'a donc
+ * rien à y faire : il le connaît déjà. Seul un mot de passe *généré* doit
+ * s'afficher, faute d'autre moyen de le transmettre.
+ */
+function urlApplicativeMasquee (motDePasse) {
+  const repere = '<votre MTI_APP_PASSWORD>'
+  const encode = encodeURIComponent(motDePasse)
+  let url = urlApplicative(motDePasse)
+  if (encode !== motDePasse) url = url.replaceAll(encode, repere)
+  return url.replaceAll(motDePasse, repere)
+}
+
 /** URL applicative, à afficher en fin d'installation. */
 function urlApplicative (motDePasse) {
   const c = connexionApplicative(motDePasse)
@@ -419,11 +436,17 @@ if (defautsConfiguration) {
 console.log('✓ Base opérationnelle.')
 if (!verifierSeulement) {
   console.log('\nÀ reporter dans les variables d\'environnement de l\'application CapRover :')
-  console.log('\n  DATABASE_URL=' + urlApplicative(motDePasse))
+  console.log('\n  DATABASE_URL=' + (motDePasseGenere
+    ? urlApplicative(motDePasse)
+    : urlApplicativeMasquee(motDePasse)))
   console.log('  NODE_ENV=production')
   console.log('  AUTH_MODE=oidc')
   if (motDePasseGenere) {
     console.log('\n⚠ Ce mot de passe n\'est affiché qu\'ici : le conserver dans votre')
     console.log('  gestionnaire de secrets avant de fermer ce terminal.')
+  } else {
+    console.log('\n  Mot de passe masqué : reporter celui que vous avez fourni dans')
+    console.log('  MTI_APP_PASSWORD. Il n\'est pas journalisé — ces lignes partent')
+    console.log('  dans les logs du conteneur, que l\'hébergeur conserve.')
   }
 }

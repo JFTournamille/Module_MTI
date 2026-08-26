@@ -168,7 +168,8 @@ END $$;
 DO $$
 DECLARE v_alarmes integer;
 BEGIN
-  SELECT count(*) INTO v_alarmes FROM mti.saisie WHERE hors_seuil;
+  SELECT count(*) INTO v_alarmes FROM mti.saisie
+   WHERE hors_seuil AND dossier_processus_id = '55555555-5555-5555-5555-555555555555';
   IF v_alarmes <> 1 THEN
     RAISE EXCEPTION 'ÉCHEC : % alarme(s) au lieu de 1 (cuve 3 à -152,7 °C)', v_alarmes;
   END IF;
@@ -288,12 +289,12 @@ END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 \echo ''
-\echo '── Récapitulatif du journal d''audit ──'
+\echo '── Récapitulatif du journal d''audit (base entière, jeu de test inclus) ──'
 SELECT table_cible, operation, count(*) AS nb
   FROM mti.audit GROUP BY 1, 2 ORDER BY 1, 2;
 
--- Le récapitulatif ci-dessus porte sur les traces produites par les tests :
--- elles disparaissent avec la transaction.
+-- Les traces produites par les tests disparaissent avec la transaction ; celles
+-- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;
 
 \echo ''
