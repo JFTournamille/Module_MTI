@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { appel } from '../api.js'
+import { useSession } from './session.js'
 
 /**
  * Comptes utilisateurs.
@@ -68,6 +69,11 @@ export const useUtilisateurs = defineStore('utilisateurs', () => {
         return false
       }
       await charger()
+      /* Le sélecteur d'opérateur est alimenté par la session, chargée une seule
+         fois au démarrage : sans ce rafraîchissement, un compte créé ici
+         n'apparaîtrait qu'après un rechargement de la page — et un compte
+         désactivé continuerait d'y figurer. */
+      await useSession().charger()
       return true
     } catch (e) {
       erreur.value = e.message || 'API injoignable.'

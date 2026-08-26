@@ -390,13 +390,18 @@ if (await selOp.count() === 0) {
 }
 
 // ── 16. Persistance : la saisie survit-elle à un rechargement ? ──
+//
+// Les lignes sont ciblées par leur LIBELLÉ, pas par position : un `.cfi` ou un
+// `input` pris au rang n attrape aussi bien un champ d'en-tête, et le contrôle
+// passerait alors pour la mauvaise raison.
 console.log('\n16. Persistance des saisies')
 await page.locator('.proc').first().click()
 await page.waitForTimeout(500)
 
-// Un point Oui/Non et un relevé de température hors seuil.
-await page.locator('.roi').first().check()
-await page.locator('.cfi').first().fill('-140')
+const ligneIntegrite = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
+const ligneTemp = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
+await ligneIntegrite.locator('.roi').check()
+await ligneTemp.locator('input[type=number]').fill('-140')
 await page.waitForTimeout(300)
 await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
 await page.waitForTimeout(1500)
@@ -405,24 +410,33 @@ const etat = (await page.locator('.etat-enr').innerText()).trim()
 if (/enregistré à/.test(etat)) ok(`état d'enregistrement affiché : « ${etat} »`)
 else ko(`état : « ${etat} »`)
 
+// Le produit ne doit surtout PAS avoir été touché par la saisie d'un point :
+// c'est précisément ce qu'un sélecteur pris au rang n produisait.
+const designation = await page.locator('.ch-hdr .cfi').inputValue()
+designation === '-140' ? ko('la température a atterri dans la désignation produit')
+  : ok(`la saisie d'un point ne touche pas l'en-tête (désignation : « ${designation} »)`)
+
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(1500)
 await allerAuScenario()
 await page.locator('.vide-dossier').count() === 0
   ? ok('le dossier ouvert est retrouvé après rechargement')
   : ko('le dossier ouvert est perdu au rechargement')
-await page.locator('.roi').first().isChecked()
+
+const ligneIntegrite2 = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
+const ligneTemp2 = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
+await ligneIntegrite2.locator('.roi').isChecked()
   ? ok('la réponse Oui/Non revient de la base')
   : ko('la réponse Oui/Non est perdue')
-const tempRelue = await page.locator('.cfi').first().inputValue()
+const tempRelue = await ligneTemp2.locator('input[type=number]').inputValue()
 tempRelue === '-140' ? ok(`le relevé revient de la base : ${tempRelue} °C`)
   : ko(`relevé relu : « ${tempRelue} » au lieu de -140`)
 
-// L'alarme est figée côté serveur : elle doit être là au rechargement, sans
-// que le front ait à la recalculer pour l'avoir juste.
-await page.locator('.calm').count() >= 1
-  ? ok('l\'alarme hors seuil est restituée')
-  : ko('aucune alarme affichée pour −140 °C sous un seuil de −150 °C')
+// L'alarme est figée côté serveur : elle doit être là au rechargement, sans que
+// le front ait à la recalculer pour l'avoir juste.
+await ligneTemp2.locator('.calm').count() === 1
+  ? ok('l\'alarme hors seuil est restituée sur la bonne ligne')
+  : ko('aucune alarme sur la ligne SMART PACK I pour −140 °C')
 
 // Un processus ajouté depuis le catalogue doit être persisté, sinon ses saisies
 // n'auraient nulle part où aller.
