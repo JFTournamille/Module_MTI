@@ -1,0 +1,2090 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Maquette MTI v12 — Tableau de bord, scénario, configuration</title>
+<!--
+  Maquette Dialog MTI v12 — reprise de scenario_mti_dialog_v11.html.
+  Palette et ergonomie identiques à v11 (validées par les utilisateurs) ;
+  seules les tailles de police ont été augmentées, via les variables --fs-*.
+  Apports issus du CR de réunion du 26/06/2026 :
+   - tableau de bord MTI (liste, recherche par produit / par patient, démarrage)
+   - processus commande dédiés MTI avant la réception
+   - étape conditionnante de rattachement patient / prescription
+   - double validation 1 ou 2 personnes
+   - regroupement d'étapes par kit
+   - n° de série par exemplaire, en complément du n° de lot
+   - commentaire libre par ligne, affiché en bulle
+   - indépendance chronologique de certains processus
+   - décongélation et réception des poches sorties du workflow fabrication
+   - onglets de configuration d'un point de contrôle et d'un processus
+  Fichier autonome : aucune dépendance réseau, les icônes sont des SVG inline.
+-->
+<style>
+:root{
+ /* Échelle typographique — v11 tournait autour de 10 à 13 px, jugé trop petit
+    à l'usage. Tout est décalé d'environ +2 px sans toucher aux couleurs. */
+ --fs-xs:12px; --fs-sm:13px; --fs-md:14.5px; --fs-lg:15.5px; --fs-xl:17px;
+ /* Couleurs reprises verbatim de v11 */
+ --vio-fonce:#2e2060; --vio:#4a3880; --vio-clair:#6045a0;
+ --vio-bord:#8878c8; --vio-sep:#3a2a7a; --vio-hover:#3d2e82; --vio-act:#5040a0;
+ --vio-txt:#c0b0ff; --vio-txt2:#c0b0f0; --vio-lila:#9f80ff;
+ --fond:#f8f6ff; --bande:#f5f2ff; --bande-bord:#ddd8ff;
+ --tete-tbl:#eee8ff; --ligne:#f0eeff; --pied:#f0eeff; --pied-bord:#c8b8e8;
+ --vert:#2e7d4e; --vert-ok:#e8f5e9; --vert-bord:#a5d6a7; --vert-txt:#2e7d32;
+ --vert-done:#1a4028; --vert-vif:#4caf50; --vert-ligne:#f0f9f0;
+ --orange-fond:#fff3e0; --orange-bord:#e0a030; --orange-txt:#7a4f00;
+ --gris:#888; --gris-clair:#aaa;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#e8e4f4;padding:14px;font-family:Arial,Helvetica,sans-serif;}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+/* ---- icônes ---- */
+.ic{display:inline-block;width:1.05em;height:1.05em;vertical-align:-0.16em;flex-shrink:0;}
+.ic svg{width:100%;height:100%;display:block;}
+
+/* ---- coque ---- */
+#root{position:relative;font-family:Arial,Helvetica,sans-serif;font-size:var(--fs-md);
+ border:1.5px solid var(--vio-bord);border-radius:6px;overflow:hidden;background:var(--fond);
+ max-width:1320px;margin:0 auto;}
+#ui{display:flex;flex-direction:column;height:min(880px,calc(100vh - 60px));min-height:640px;}
+
+/* ---- barre de titre + onglets hauts ---- */
+.tb{background:var(--vio);color:#fff;padding:9px 16px;display:flex;align-items:center;gap:11px;flex-shrink:0;}
+.tb-ttl{font-weight:500;font-size:var(--fs-lg);}
+.tb-sub{font-size:var(--fs-sm);color:var(--vio-txt);}
+.tb-site{margin-left:auto;text-align:right;font-size:var(--fs-sm);color:var(--vio-txt);line-height:1.7;}
+.nav{background:var(--vio-sep);display:flex;align-items:stretch;gap:2px;padding:0 10px;flex-shrink:0;}
+.nav-b{background:none;border:none;color:var(--vio-txt);font-family:inherit;font-size:var(--fs-md);
+ padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:7px;
+ border-top:3px solid transparent;border-radius:0;white-space:nowrap;}
+.nav-b:hover{background:var(--vio-hover);color:#fff;}
+.nav-b.act{background:var(--fond);color:var(--vio);font-weight:500;border-top-color:var(--vio-lila);}
+.nav-b .pill{background:var(--vio-clair);color:#fff;font-size:var(--fs-xs);border-radius:9px;padding:0 7px;}
+.nav-b.act .pill{background:var(--vio);color:#fff;}
+.nav-sep{width:1px;background:var(--vio-hover);margin:7px 8px;}
+
+/* ---- vues ---- */
+.vue{display:none;flex:1;overflow:hidden;flex-direction:column;}
+.vue.on{display:flex;}
+
+/* ---- bandeau patient du scénario ---- */
+.pbar{background:var(--vio);color:#fff;padding:8px 16px;display:flex;align-items:center;gap:11px;
+ min-height:52px;flex-shrink:0;border-top:1px solid var(--vio-sep);}
+.pbar-id{font-size:var(--fs-md);color:var(--vio-txt);}
+.pbar-id strong{color:#fff;}
+.attente{font-style:italic;color:var(--vio-txt2);}
+
+/* ---- colonne des processus ---- */
+.side{width:268px;background:var(--vio-fonce);display:flex;flex-direction:column;flex-shrink:0;}
+.side-h{font-size:var(--fs-xs);color:#8878c0;font-weight:bold;letter-spacing:.4px;text-transform:uppercase;
+ padding:9px 13px 5px;}
+.p-si{padding:8px 9px 8px 13px;cursor:pointer;border-bottom:1px solid var(--vio-sep);display:flex;align-items:center;gap:7px;}
+.p-si:hover:not(.p-lk){background:var(--vio-hover);}
+.p-si.p-act{background:var(--vio-act);border-left:3px solid var(--vio-lila);padding-left:10px;}
+.p-si.p-done{background:var(--vert-done);border-left:3px solid var(--vert-vif);padding-left:10px;}
+.p-si.p-lk{opacity:.42;cursor:default;}
+.p-nm{font-size:var(--fs-sm);color:#fff;line-height:1.3;}
+.p-sub{font-size:var(--fs-xs);color:#6050a0;margin-top:1px;}
+.p-sub.ok{color:#80cc90;}
+.p-eic{opacity:0;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:2px;
+ padding:2px 6px;cursor:pointer;font-size:var(--fs-sm);flex-shrink:0;line-height:1;}
+.p-si:hover .p-eic{opacity:1;}
+.side-f{padding:9px 11px;border-top:1px solid var(--vio-sep);flex-shrink:0;}
+.side-add{width:100%;background:rgba(255,255,255,.1);color:var(--vio-txt2);border:1px dashed var(--vio-clair);
+ border-radius:3px;padding:7px;font-size:var(--fs-sm);font-family:inherit;cursor:pointer;
+ display:flex;align-items:center;justify-content:center;gap:5px;}
+.side-add:hover{background:var(--vio-hover);color:#fff;}
+
+/* ---- panneau principal ---- */
+.main{flex:1;overflow-y:auto;background:#fff;}
+.main-h{padding:10px 16px 8px;border-bottom:1px solid var(--bande-bord);display:flex;align-items:center;
+ gap:9px;flex-wrap:wrap;}
+.main-h .t{font-weight:500;color:var(--vio);font-size:var(--fs-xl);}
+.bande{background:var(--bande);color:var(--vio);font-weight:500;font-size:var(--fs-md);
+ padding:7px 12px;border-bottom:1px solid var(--bande-bord);display:flex;align-items:center;gap:7px;}
+.bande .n{margin-left:auto;font-weight:400;font-size:var(--fs-sm);color:var(--gris);}
+.encart{background:#f5f0ff;border:1px solid #d0c0f0;border-radius:4px;margin:12px 16px;padding:11px 14px;}
+.encart-t{font-size:var(--fs-md);font-weight:500;color:var(--vio);margin-bottom:8px;display:flex;
+ align-items:center;gap:6px;}
+.vide{padding:30px;text-align:center;color:var(--gris-clair);font-size:var(--fs-md);}
+.verrou{margin:26px 22px;padding:20px;background:#f5f5f5;border:1px dashed #bbb;border-radius:4px;
+ text-align:center;color:#999;font-size:var(--fs-md);line-height:1.6;}
+.bandeau-ok{margin:10px 16px;padding:9px 14px;background:var(--vert-ok);border:1px solid var(--vert-bord);
+ border-radius:4px;color:var(--vert-txt);font-size:var(--fs-md);display:flex;align-items:center;gap:7px;}
+
+/* ---- tableaux ---- */
+table.tbl{width:100%;border-collapse:collapse;font-size:var(--fs-md);}
+table.tbl thead tr{background:var(--tete-tbl);color:var(--vio);font-size:var(--fs-sm);}
+table.tbl th{padding:6px 9px;text-align:left;font-weight:500;}
+table.tbl th.c{text-align:center;}
+table.tbl td{padding:7px 9px;border-bottom:1px solid var(--ligne);vertical-align:middle;}
+table.tbl td.c{text-align:center;}
+.chkr.dr{background:var(--vert-ligne);}
+.chkr:hover{background:#faf8ff;}
+.chkr.dr:hover{background:#eaf5ea;}
+.lbl-p{color:#222;line-height:1.35;}
+.lbl-s{font-size:var(--fs-sm);color:var(--gris);margin-top:2px;}
+.meta{font-size:var(--fs-sm);color:var(--gris-clair);white-space:nowrap;}
+.etoile{cursor:pointer;font-size:var(--fs-lg);line-height:1;background:none;border:none;padding:0;}
+
+/* ---- pastilles ---- */
+.btp{display:inline-block;padding:2px 9px;border-radius:9px;font-size:var(--fs-xs);font-weight:500;color:#fff;
+ white-space:nowrap;}
+.bt-ouinon{background:var(--vio-clair);}.bt-photo{background:var(--vert);}.bt-valeur{background:#1565c0;}
+.bt-timer{background:#e65100;}.bt-texte{background:#5d4037;}.bt-auto{background:#546e7a;}
+.bt-date{background:#8e24aa;}
+.tag{display:inline-flex;align-items:center;gap:4px;border-radius:9px;padding:1px 8px;
+ font-size:var(--fs-xs);font-weight:500;white-space:nowrap;}
+.tag-dup{background:var(--orange-fond);border:1px solid var(--orange-bord);color:var(--orange-txt);}
+.tag-ser{background:var(--orange-fond);border:1px solid var(--orange-bord);color:var(--orange-txt);}
+.tag-dbl{background:#e8e4ff;border:1px solid #b0a0e0;color:var(--vio);}
+.tag-kit{background:var(--bande);border:1px solid var(--bande-bord);color:var(--vio);}
+.tag-indep{background:var(--vert-ok);border:1px solid var(--vert-bord);color:var(--vert-txt);}
+.tag-ext{background:#eceff1;border:1px solid #b0bec5;color:#455a64;}
+.tag-code{background:#e8e4ff;color:var(--vio);font-style:italic;padding:2px 9px;border-radius:9px;
+ font-size:var(--fs-xs);}
+.tag-ref{background:var(--orange-fond);color:var(--orange-txt);font-style:italic;padding:2px 9px;
+ border-radius:9px;font-size:var(--fs-xs);}
+.tag-alerte{background:#ffebee;border:1px solid #ef9a9a;color:#c62828;}
+
+/* ---- contrôles ---- */
+.btn{font-family:inherit;font-size:var(--fs-md);padding:5px 14px;border-radius:3px;cursor:pointer;
+ display:inline-flex;align-items:center;gap:6px;}
+.btn-p{background:var(--vio);border:none;color:#fff;font-weight:500;}
+.btn-p:hover{background:var(--vio-clair);}
+.btn-s{background:#fff;border:1px solid var(--pied-bord);color:var(--vio);}
+.btn-s:hover{background:var(--bande);}
+.btn-g{background:#e8e8e8;border:1px solid #bbb;color:#444;}
+.btn-v{background:var(--vert);border:none;color:#fff;font-weight:500;}
+.btn-v:hover{background:#25663f;}
+.btn-off{background:#e0e0e0;border:none;color:#999;cursor:default;font-weight:500;}
+.btn-done{background:#c8e6c9;border:none;color:var(--vert-txt);cursor:default;font-weight:500;}
+.btn-xs{font-size:var(--fs-sm);padding:3px 9px;}
+.ctl-b{font-size:var(--fs-sm);padding:3px 10px;border:1px solid var(--pied-bord);background:#fff;
+ border-radius:2px;cursor:pointer;font-family:inherit;}
+.ctl-b:hover{background:var(--bande);}
+.ctl-b.on{background:var(--vio);color:#fff;border-color:var(--vio);}
+.ctl-b.no.on{background:#c62828;border-color:#c62828;}
+.ctl-t{background:#fff3f0;border-color:#e65100;color:#e65100;}
+input[type=text],input[type=date],input[type=number],select,textarea{
+ font-family:inherit;font-size:var(--fs-sm);padding:4px 8px;border:1px solid var(--pied-bord);
+ border-radius:2px;background:#fff;color:#222;}
+input[type=text]:focus,select:focus,textarea:focus{outline:2px solid var(--vio-lila);outline-offset:-1px;}
+input[type=checkbox],input[type=radio]{accent-color:var(--vio);width:15px;height:15px;cursor:pointer;}
+label{font-size:var(--fs-sm);color:#555;}
+.lbl-f{font-size:var(--fs-sm);color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;}
+.hors-seuil{background:#ffebee;border-color:#c62828!important;color:#c62828;font-weight:bold;}
+
+/* ---- bulle de commentaire ---- */
+.cmt{background:none;border:none;cursor:pointer;padding:2px;line-height:1;color:#c8b8e8;}
+.cmt.plein{color:var(--vio-clair);}
+.cmt:hover{color:var(--vio);}
+.bulle{position:relative;}
+.bulle:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 7px);
+ transform:translateX(-50%);background:var(--vio-fonce);color:#fff;font-size:var(--fs-sm);font-weight:400;
+ padding:7px 11px;border-radius:4px;white-space:pre-wrap;width:max-content;max-width:320px;z-index:40;
+ box-shadow:0 3px 10px rgba(30,20,70,.35);text-align:left;line-height:1.45;}
+.bulle:hover::before{content:'';position:absolute;left:50%;bottom:calc(100% + 2px);transform:translateX(-50%);
+ border:5px solid transparent;border-top-color:var(--vio-fonce);z-index:41;}
+.cmt-zone{background:var(--bande);border-bottom:1px solid var(--bande-bord);}
+.cmt-zone td{padding:9px 14px;}
+
+/* ---- exemplaires ---- */
+.ex-zone{background:#fffbf3;}
+.ex-zone td{padding:5px 9px 5px 34px;border-bottom:1px solid #f6ecdc;font-size:var(--fs-sm);}
+.ex-n{color:var(--orange-txt);font-weight:500;white-space:nowrap;}
+
+/* ---- pied ---- */
+.pied{background:var(--pied);border-top:1.5px solid var(--pied-bord);padding:9px 16px;display:flex;
+ align-items:center;gap:9px;flex-shrink:0;flex-wrap:wrap;}
+.pied-i{flex:1;font-size:var(--fs-sm);color:var(--gris);min-width:180px;}
+
+/* ---- tableau de bord ---- */
+.db-bar{background:var(--bande);border-bottom:1px solid var(--bande-bord);padding:11px 16px;display:flex;
+ align-items:center;gap:9px;flex-wrap:wrap;flex-shrink:0;}
+.db-bar .rech{position:relative;display:flex;align-items:center;}
+.db-bar .rech .ic{position:absolute;left:9px;color:var(--vio-clair);}
+.db-bar .rech input{padding-left:32px;width:356px;font-size:var(--fs-md);}
+.tuiles{display:flex;gap:11px;padding:13px 16px 4px;flex-wrap:wrap;flex-shrink:0;}
+.tuile{flex:1;min-width:158px;background:#fff;border:1px solid var(--pied-bord);border-radius:5px;
+ padding:11px 14px;cursor:pointer;border-left:4px solid var(--vio-clair);}
+.tuile:hover{background:var(--bande);}
+.tuile.on{background:var(--bande);border-left-color:var(--vio-lila);box-shadow:inset 0 0 0 1px var(--vio-bord);}
+.tuile .v{font-size:26px;font-weight:500;color:var(--vio);line-height:1.15;}
+.tuile .l{font-size:var(--fs-sm);color:var(--gris);margin-top:2px;}
+.tuile.att{border-left-color:var(--orange-bord);}
+.tuile.fin{border-left-color:var(--vert-vif);}
+.tuile.alr{border-left-color:#c62828;}
+.tuile.alr .v{color:#c62828;}
+.db-tbl{padding:9px 16px 16px;overflow-y:auto;flex:1;}
+tr.dossier{cursor:pointer;}
+tr.dossier:hover{background:var(--bande);}
+tr.dossier.fini{background:var(--vert-ligne);}
+tr.dossier.fini:hover{background:#eaf5ea;}
+.jauge{width:104px;height:8px;background:#ece8f8;border-radius:4px;overflow:hidden;display:inline-block;
+ vertical-align:middle;}
+.jauge i{display:block;height:100%;background:var(--vio-clair);}
+tr.dossier.fini .jauge i{background:var(--vert-vif);}
+.mono{font-family:'Courier New',monospace;font-size:var(--fs-sm);color:var(--vio);font-weight:bold;
+ white-space:nowrap;}
+
+/* ---- configuration ---- */
+.cfg{display:flex;flex:1;overflow:hidden;}
+.cfg-l{width:300px;border-right:1px solid var(--bande-bord);overflow-y:auto;flex-shrink:0;background:var(--fond);}
+.cfg-r{flex:1;overflow-y:auto;background:#fff;}
+.cfg-grp{padding:8px 12px 4px;font-size:var(--fs-xs);font-weight:500;color:var(--vio-bord);
+ text-transform:uppercase;letter-spacing:.5px;background:var(--fond);}
+.ci{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--ligne);display:flex;flex-direction:column;gap:2px;}
+.ci:hover{background:#f2edff;}
+.ci.cis{background:#ede8ff;border-left:3px solid var(--vio-clair);padding-left:9px;}
+.ci .n{font-size:var(--fs-md);color:#222;}
+.ci.cis .n{color:var(--vio);font-weight:500;}
+.ci .d{font-size:var(--fs-sm);color:var(--gris);}
+.form{padding:14px 18px;}
+.form-r{display:flex;align-items:center;gap:11px;margin-bottom:12px;flex-wrap:wrap;}
+.form-r>label:first-child{width:186px;flex-shrink:0;font-weight:500;color:var(--vio);font-size:var(--fs-md);}
+.form-r input[type=text],.form-r select{min-width:250px;font-size:var(--fs-md);}
+.form-h{font-size:var(--fs-lg);font-weight:500;color:var(--vio);margin:4px 0 14px;padding-bottom:7px;
+ border-bottom:1px solid var(--bande-bord);display:flex;align-items:center;gap:7px;}
+.aide{font-size:var(--fs-sm);color:var(--gris);line-height:1.5;margin:-6px 0 12px 197px;}
+.apercu{background:var(--fond);border:1px solid var(--bande-bord);border-radius:4px;margin-top:16px;overflow:hidden;}
+.apercu-t{background:var(--bande);color:var(--vio);font-size:var(--fs-sm);font-weight:500;padding:6px 12px;
+ border-bottom:1px solid var(--bande-bord);}
+
+/* ---- modales ---- */
+.ov{display:none;position:absolute;inset:0;background:rgba(30,20,70,.62);z-index:20;
+ align-items:center;justify-content:center;padding:16px;}
+.ov.on{display:flex;}
+.dlg{background:#fff;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;
+ border:1px solid var(--vio-bord);max-height:100%;}
+.dlg-h{background:var(--vio);color:#fff;padding:11px 16px;display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.dlg-h span{font-weight:500;font-size:var(--fs-lg);flex:1;}
+.dlg-x{background:rgba(255,255,255,.2);border:none;color:#fff;padding:3px 11px;border-radius:3px;
+ cursor:pointer;font-size:var(--fs-md);font-family:inherit;}
+.dlg-b{flex:1;overflow:hidden;display:flex;}
+.dlg-f{background:var(--pied);border-top:1px solid var(--pied-bord);padding:9px 16px;display:flex;
+ align-items:center;gap:9px;flex-shrink:0;}
+.dlg-f .i{flex:1;font-size:var(--fs-sm);color:var(--gris);}
+.pm-tabs{width:186px;background:var(--vio-fonce);display:flex;flex-direction:column;flex-shrink:0;}
+.pm-tb{padding:11px 15px;font-size:var(--fs-md);cursor:pointer;border:none;background:none;text-align:left;
+ width:100%;border-left:3px solid transparent;color:var(--vio-txt2);font-family:inherit;
+ display:flex;align-items:center;gap:7px;}
+.pm-tb:hover{background:var(--vio-hover);color:#fff;}
+.pm-tb.act{background:rgba(255,255,255,.12);color:#fff;border-left-color:var(--vio-lila);}
+.pm-nw{padding:9px 12px 11px;border-bottom:1px solid var(--vio-sep);}
+.pm-nw div{font-size:var(--fs-xs);color:#9080c0;margin-bottom:4px;}
+.pm-nw input{width:100%;font-size:var(--fs-sm);border:1px solid var(--vio-clair);background:#1e1550;color:#fff;}
+.pm-ct{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.ed-bar{background:#f5f0ff;border-bottom:1px solid #d0c0f0;padding:9px 14px;display:flex;align-items:center;
+ gap:9px;flex-wrap:wrap;flex-shrink:0;}
+.ed-sel{display:none;background:#fff8e0;border-bottom:1px solid var(--orange-bord);padding:6px 14px;
+ align-items:center;gap:8px;font-size:var(--fs-sm);flex-shrink:0;}
+.ed-sel.on{display:flex;}
+.ed-scroll{overflow-y:auto;flex:1;}
+</style>
+</head>
+<body>
+<h2 class="sr-only">Gestionnaire de scénario MTI/CAR-T — tableau de bord, suivi de processus, points de contrôle, configuration</h2>
+
+<div id="root">
+ <div id="ui">
+
+  <!-- ================= barre de titre ================= -->
+  <div class="tb">
+   <span class="ic" id="ic-dna" aria-hidden="true"></span>
+   <div style="flex:1;">
+    <div class="tb-ttl">Module MTI / CAR-T — Chimio V5</div>
+    <div class="tb-sub">Médicaments de thérapie innovante — traçabilité BPP</div>
+   </div>
+   <div class="tb-site">
+    <div>Site : CHU Exemple — PUI</div>
+    <div>Opérateur : <strong style="color:#fff;">J. DUPONT</strong> (pharmacien)</div>
+   </div>
+  </div>
+
+  <!-- ================= onglets hauts ================= -->
+  <nav class="nav" role="tablist" aria-label="Navigation principale">
+   <button class="nav-b act" id="nav-dash" role="tab" onclick="allerA('dash')">
+    <span class="ic" data-ic="grid" aria-hidden="true"></span> Tableau de bord MTI
+    <span class="pill" id="pill-dash">0</span>
+   </button>
+   <button class="nav-b" id="nav-scen" role="tab" onclick="allerA('scen')">
+    <span class="ic" data-ic="list" aria-hidden="true"></span> Scénario en cours
+   </button>
+   <div class="nav-sep" aria-hidden="true"></div>
+   <button class="nav-b" id="nav-cfgpt" role="tab" onclick="allerA('cfgpt')">
+    <span class="ic" data-ic="settings" aria-hidden="true"></span> Config. point de contrôle
+   </button>
+   <button class="nav-b" id="nav-cfgpr" role="tab" onclick="allerA('cfgpr')">
+    <span class="ic" data-ic="settings" aria-hidden="true"></span> Config. processus
+   </button>
+  </nav>
+
+  <!-- ================= VUE 1 — tableau de bord ================= -->
+  <section class="vue on" id="vue-dash" role="tabpanel" aria-labelledby="nav-dash">
+   <div class="db-bar">
+    <div class="rech">
+     <span class="ic" data-ic="search" aria-hidden="true"></span>
+     <input type="text" id="db-q" oninput="rDash()" placeholder="Patient, produit, n° de lot, n° de dossier…" aria-label="Recherche"/>
+    </div>
+    <label for="db-prod">Produit :</label>
+    <select id="db-prod" onchange="rDash()"></select>
+    <label for="db-pat">Patient :</label>
+    <select id="db-pat" onchange="rDash()"></select>
+    <button class="btn btn-s btn-xs" onclick="razDash()">Réinitialiser</button>
+    <button class="btn btn-p" style="margin-left:auto;" onclick="ouvrirNouveau()">
+     <span class="ic" data-ic="play" aria-hidden="true"></span> Démarrer un scénario MTI
+    </button>
+   </div>
+   <div class="tuiles" id="db-tuiles"></div>
+   <div class="db-tbl" id="db-tbl"></div>
+  </section>
+
+  <!-- ================= VUE 2 — scénario ================= -->
+  <section class="vue" id="vue-scen" role="tabpanel" aria-labelledby="nav-scen">
+   <div class="pbar">
+    <span class="ic" data-ic="file" aria-hidden="true"></span>
+    <div style="flex:1;">
+     <div style="font-weight:500;font-size:var(--fs-lg);" id="sc-ttl">—</div>
+     <div class="pbar-id" id="sc-pat"></div>
+    </div>
+    <div style="text-align:right;font-size:var(--fs-sm);color:var(--vio-txt);line-height:1.7;">
+     <div id="sc-presc"></div>
+     <div id="sc-ord"></div>
+    </div>
+    <button class="btn btn-s btn-xs" onclick="allerA('dash')">
+     <span class="ic" data-ic="back" aria-hidden="true"></span> Tableau de bord
+    </button>
+   </div>
+   <div style="display:flex;flex:1;overflow:hidden;">
+    <div class="side">
+     <div class="side-h">Processus du parcours</div>
+     <div id="sidelist" style="overflow-y:auto;flex:1;"></div>
+     <div class="side-f">
+      <button class="side-add" onclick="ouvrirPM('add',-1)">
+       <span class="ic" data-ic="plus" aria-hidden="true"></span> Ajouter un processus
+      </button>
+     </div>
+    </div>
+    <div class="main" id="mainpanel"></div>
+   </div>
+   <div class="pied">
+    <div class="pied-i" id="finfo"></div>
+    <button class="btn btn-s" id="modbtn" onclick="ouvrirPM('edit',sel)">
+     <span class="ic" data-ic="pencil" aria-hidden="true"></span> Modifier le processus
+    </button>
+    <button class="btn" id="valbtn" onclick="doVal()"></button>
+   </div>
+  </section>
+
+  <!-- ================= VUE 3 — configuration d'un point de contrôle ================= -->
+  <section class="vue" id="vue-cfgpt" role="tabpanel" aria-labelledby="nav-cfgpt">
+   <div class="cfg">
+    <div class="cfg-l" id="cfgpt-liste"></div>
+    <div class="cfg-r" id="cfgpt-form"></div>
+   </div>
+  </section>
+
+  <!-- ================= VUE 4 — configuration d'un processus ================= -->
+  <section class="vue" id="vue-cfgpr" role="tabpanel" aria-labelledby="nav-cfgpr">
+   <div class="cfg">
+    <div class="cfg-l" id="cfgpr-liste"></div>
+    <div class="cfg-r" id="cfgpr-form"></div>
+   </div>
+  </section>
+
+ </div>
+
+ <!-- ================= modale : éditeur de processus ================= -->
+ <div class="ov" id="pmov">
+  <div class="dlg" style="width:880px;max-width:100%;height:560px;">
+   <div class="dlg-h">
+    <span class="ic" data-ic="pencil" aria-hidden="true"></span>
+    <span id="pm-ttl"></span>
+    <button class="dlg-x" onclick="fermerPM()" aria-label="Fermer">✕</button>
+   </div>
+   <div class="dlg-b">
+    <div class="pm-tabs">
+     <div class="pm-nw" id="pm-nw">
+      <div>Nom du processus</div>
+      <input id="pm-nm" type="text" placeholder="Nom…" aria-label="Nom du processus"/>
+     </div>
+     <button id="tl-btn" class="pm-tb act" onclick="swTab('lib')">
+      <span class="ic" data-ic="books" aria-hidden="true"></span> Bibliothèque</button>
+     <button id="te-btn" class="pm-tb" onclick="swTab('edit')">
+      <span class="ic" data-ic="pencil" aria-hidden="true"></span> Éditeur</button>
+     <div style="padding:11px 12px;border-top:1px solid var(--vio-sep);margin-top:auto;">
+      <label class="lbl-f" style="color:var(--vio-txt2);">
+       <input type="checkbox" id="pm-indep" onchange="pmIndep(this.checked)"/>
+       Réalisable indépendamment
+      </label>
+      <div style="font-size:var(--fs-xs);color:#9080c0;margin-top:5px;line-height:1.4;">
+       Le processus n'attend pas la validation du précédent.
+      </div>
+     </div>
+    </div>
+    <div class="pm-ct" id="pm-ct"></div>
+   </div>
+   <div class="dlg-f">
+    <span class="i" id="pm-fi"></span>
+    <button class="btn btn-g" onclick="fermerPM()">Annuler</button>
+    <button class="btn btn-p" id="pm-ok" onclick="pmConfirm()"></button>
+   </div>
+  </div>
+ </div>
+
+ <!-- ================= modale : démarrer un scénario ================= -->
+ <div class="ov" id="nvov">
+  <div class="dlg" style="width:760px;max-width:100%;">
+   <div class="dlg-h">
+    <span class="ic" data-ic="play" aria-hidden="true"></span>
+    <span>Démarrer un scénario MTI</span>
+    <button class="dlg-x" onclick="fermerNouveau()" aria-label="Fermer">✕</button>
+   </div>
+   <div class="dlg-b" style="display:block;overflow-y:auto;max-height:60vh;">
+    <div class="form" id="nv-form"></div>
+   </div>
+   <div class="dlg-f">
+    <span class="i" id="nv-fi">Le rattachement patient / prescription est facultatif à ce stade.</span>
+    <button class="btn btn-g" onclick="fermerNouveau()">Annuler</button>
+    <button class="btn btn-p" onclick="creerDossier()">
+     <span class="ic" data-ic="plus" aria-hidden="true"></span> Créer et ouvrir le scénario
+    </button>
+   </div>
+  </div>
+ </div>
+
+ <!-- ================= modale : double validation ================= -->
+ <div class="ov" id="dvov">
+  <div class="dlg" style="width:720px;max-width:100%;">
+   <div class="dlg-h">
+    <span class="ic" data-ic="users" aria-hidden="true"></span>
+    <span>Double validation — 2<sup>e</sup> personne</span>
+    <button class="dlg-x" onclick="fermerDV()" aria-label="Fermer">✕</button>
+   </div>
+   <div class="dlg-b" style="display:block;overflow-y:auto;max-height:60vh;">
+    <div class="form" id="dv-form"></div>
+   </div>
+   <div class="dlg-f">
+    <span class="i">La 2<sup>e</sup> personne valide l'ensemble du processus, avec identification nominative.</span>
+    <button class="btn btn-g" onclick="fermerDV()">Annuler</button>
+    <button class="btn btn-v" onclick="confirmerDV()">
+     <span class="ic" data-ic="check" aria-hidden="true"></span> Contresigner le processus
+    </button>
+   </div>
+  </div>
+ </div>
+
+</div>
+
+<script>
+/* =====================================================================
+   1. Icônes — SVG inline, aucune dépendance réseau.
+   ===================================================================== */
+const ICO={
+ dna:'M4 3c0 8 16 9 16 18M20 3c0 8-16 9-16 18M7 6h4M13 18h4M6.4 10h4M13.6 14h4',
+ grid:'M4 4h7v7H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 13h7v7H4z',
+ list:'M4 7h9M4 12h9M4 17h6M16 15.5l2 2 3.5-4.5',
+ settings:'M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1',
+ search:'M10.5 17a6.5 6.5 0 100-13 6.5 6.5 0 000 13zM15.3 15.3L21 21',
+ play:'M8 4.5l12 7.5-12 7.5z',
+ check:'M4.5 12.5l5 5L20 7',
+ x:'M6 6l12 12M18 6L6 18',
+ lock:'M5.5 11h13v9.5h-13zM8.5 11V8a3.5 3.5 0 017 0v3',
+ circle:'M12 20a8 8 0 100-16 8 8 0 000 16z',
+ pencil:'M4 20h4.2L20.5 7.7l-4.2-4.2L4 15.8z',
+ plus:'M12 5v14M5 12h14',
+ camera:'M3.5 8h3.2l2-2.2h6.6l2 2.2h3.2v11.5h-17zM12 17.3a3.6 3.6 0 100-7.2 3.6 3.6 0 000 7.2z',
+ user:'M12 11.6a3.7 3.7 0 100-7.4 3.7 3.7 0 000 7.4zM4.8 20.5c0-3.8 3.2-5.9 7.2-5.9s7.2 2.1 7.2 5.9',
+ users:'M9.4 11a3.4 3.4 0 100-6.8 3.4 3.4 0 000 6.8zM2.6 20.5c0-3.6 3-5.6 6.8-5.6s6.8 2 6.8 5.6M17 4.6a3.4 3.4 0 010 6.6M19 14.9c2.2.6 3.4 2.4 3.4 5.6',
+ userplus:'M9.6 11.6a3.7 3.7 0 100-7.4 3.7 3.7 0 000 7.4zM2.4 20.5c0-3.8 3.2-5.9 7.2-5.9 1.4 0 2.7.3 3.8.8M18.5 13v6M15.5 16h6',
+ link:'M9 15l6-6M8.6 11.4l-2.1 2.1a3.6 3.6 0 105.1 5.1l2.1-2.1M15.4 12.6l2.1-2.1a3.6 3.6 0 10-5.1-5.1l-2.1 2.1',
+ clock:'M12 20a8 8 0 100-16 8 8 0 000 16zM12 7.2v5.1l3.6 2.4',
+ note:'M4.5 4.5h15v10.5H9.5L4.5 20z',
+ alert:'M12 3.8l8.6 15.7H3.4zM12 9.8v4.1M12 16.8h.02',
+ chev:'M9.5 5l7 7-7 7',
+ pkg:'M12 3l8.2 4.6v8.8L12 21l-8.2-4.6V7.6zM3.8 7.6l8.2 4.6 8.2-4.6M12 12.2V21',
+ copy:'M8.5 8.5h11v11h-11zM5.5 15.5V4.5h11',
+ books:'M4.5 4.5h5v15h-5zM11 4.5h5v15h-5zM17.6 5.6l3.4.9-3 13.6-3.4-.9z',
+ file:'M6 3h8.5L19 7.5V21H6zM14 3v5h5M9 12.5h7M9 16.5h7',
+ back:'M19.5 12H5M11 5.5L4.5 12l6.5 6.5',
+ temp:'M10 14.2V6.2a2 2 0 014 0v8a4 4 0 11-4 0z',
+ trash:'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13.5h9L17.5 7',
+ star:'M12 3.3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 17.1l-5.4 3-1.1-6.1L1 9.7l6.1-.8z',
+ flame:'M12 21c3.6 0 6-2.4 6-5.6 0-4.3-4-5.9-3.2-11.4-3 1.4-5 4.4-5 7 0 1.4-1 2-1.8 1.2-.6-.6-.8-1.6-.8-2.4C5.6 11.6 6 13 6 15.4 6 18.6 8.4 21 12 21z',
+ truck:'M2.5 6.5h11v10h-11zM13.5 10h4l3.5 3.5v3h-7.5M6.5 20a2 2 0 100-4 2 2 0 000 4zM17.5 20a2 2 0 100-4 2 2 0 000 4z',
+ cart:'M3 4.5h2.4l2.6 10h9.4l2.1-7.2H6.6M9.5 20a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2zM17 20a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2z',
+ cal:'M4.5 6h15v14h-15zM4.5 10.5h15M8.5 3.5v4M15.5 3.5v4',
+ flask:'M9 3.5h6v4l4.5 10a2.5 2.5 0 01-2.3 3.5H6.8A2.5 2.5 0 014.5 17.5l4.5-10zM6.6 13.5h10.8',
+ dl:'M12 4v10M7.5 10L12 14.5 16.5 10M5 19.5h14'
+};
+function ico(n,style){
+ const d=ICO[n]||ICO.circle;
+ const fill=(n==='play'||n==='star')?'currentColor':'none';
+ return '<span class="ic" style="'+(style||'')+'" aria-hidden="true"><svg viewBox="0 0 24 24" fill="'+fill+
+  '" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+d+'"/></svg></span>';
+}
+function poserIcones(racine){
+ (racine||document).querySelectorAll('.ic[data-ic]').forEach(e=>{
+  e.innerHTML=ico(e.dataset.ic).replace(/^<span[^>]*>|<\/span>$/g,'');
+ });
+ const dna=document.getElementById('ic-dna');
+ if(dna&&!dna.innerHTML) dna.innerHTML=ico('dna','font-size:24px').replace(/^<span[^>]*>|<\/span>$/g,'');
+}
+
+/* =====================================================================
+   2. Référentiels
+   ===================================================================== */
+const TYPES={'Oui/Non':'bt-ouinon','Photo':'bt-photo','Valeur °C':'bt-valeur','Minuteur':'bt-timer',
+ 'Texte':'bt-texte','Date':'bt-date','Auto':'bt-auto'};
+const TKEYS=Object.keys(TYPES);
+
+const PRODUITS=[
+ {c:'KYMRIAH',n:'Kymriah® — tisagenlecleucel',ind:'LAL-B / LBDGC'},
+ {c:'YESCARTA',n:'Yescarta® — axicabtagene ciloleucel',ind:'LBDGC / LF'},
+ {c:'TECARTUS',n:'Tecartus® — brexucabtagene autoleucel',ind:'LCM'},
+ {c:'CARVYKTI',n:'Carvykti® — ciltacabtagene autoleucel',ind:'Myélome'},
+ {c:'ABECMA',n:'Abecma® — idecabtagene vicleucel',ind:'Myélome'},
+];
+const NOMPROD=c=>(PRODUITS.find(p=>p.c===c)||{n:'—'}).n;
+const COURTPROD=c=>{const p=PRODUITS.find(x=>x.c===c);return p?p.n.split(' — ')[0]:'—';};
+
+/* Patients fictifs. Rappel : le module ne constitue pas de référentiel
+   patients, l'annuaire de référence reste le SIH (ou Pharma®/CHIMIO®).
+   Ici, simple simulation de la recherche dans cet annuaire. */
+const PATIENTS=[
+ {id:'PAT1',nom:'DUPONT Jean',ddn:'14/02/1965',ipp:'IPP 4415-2207',svc:'Hématologie 4B',prescriptions:[
+   {id:'PR11',ref:'PRESC-2026-0871',lib:'LBDGC — Yescarta® 2e ligne',prod:'YESCARTA',dt:'12/06/2026',med:'Dr A. Runel',st:'En cours'},
+   {id:'PR12',ref:'PRESC-2026-0902',lib:'Lymphodéplétion Flu/Cy — J-5 à J-3',prod:null,dt:'20/06/2026',med:'Dr A. Runel',st:'En cours'}]},
+ {id:'PAT2',nom:'MARTIN Sophie',ddn:'03/09/1972',ipp:'IPP 4418-6631',svc:'Hématologie 4A',prescriptions:[
+   {id:'PR21',ref:'PRESC-2026-0844',lib:'Myélome R/R — Carvykti® 4e ligne',prod:'CARVYKTI',dt:'02/06/2026',med:'Dr E. Wolff',st:'En cours'}]},
+ {id:'PAT3',nom:'BERNARD Pierre',ddn:'22/11/1958',ipp:'IPP 4402-1188',svc:'Hématologie 3B',prescriptions:[
+   {id:'PR31',ref:'PRESC-2026-0790',lib:'LAL-B — Kymriah®',prod:'KYMRIAH',dt:'26/05/2026',med:'Dr M. Vasseur',st:'En cours'},
+   {id:'PR32',ref:'PRESC-2026-0913',lib:'Bilan pré-aphérèse',prod:null,dt:'22/06/2026',med:'Dr M. Vasseur',st:'En cours'}]},
+ {id:'PAT4',nom:'LEROY Amina',ddn:'07/05/1980',ipp:'IPP 4421-3390',svc:'Hématologie 4B',prescriptions:[
+   {id:'PR41',ref:'PRESC-2026-0928',lib:'LCM — Tecartus®',prod:'TECARTUS',dt:'23/06/2026',med:'Dr C. Pernot',st:'En cours'}]},
+];
+const PAT=id=>PATIENTS.find(p=>p.id===id)||null;
+function PRESC(id){for(const p of PATIENTS){const r=p.prescriptions.find(x=>x.id===id);if(r)return r;}return null;}
+
+const OPERATEURS=['DUPONT J. — pharmacien','WOLFF E. — pharmacien','VASSEUR M. — pharmacien',
+ 'PINTURAUD M. — préparateur','CARVALHO M. — préparateur','GRAND A. — interne en pharmacie'];
+
+/* =====================================================================
+   3. Modèle de parcours
+   Le numéro d'un point n'est pas stocké : il est recalculé au rendu, pour
+   qu'un ajout ou une suppression ne laisse pas de trou dans la numérotation.
+   ===================================================================== */
+function pt(lbl,type,o){
+ return Object.assign({lbl,type,sub:'',obl:true,dbl:false,ex:false,ser:false,nEx:1,
+  kit:null,seuil:null,cmt:'',fait:false,val:null},o||{});
+}
+
+const MODELE=[
+ {code:'ACCES',nm:"Demande d'accès au traitement",ic:'file',indep:true,gab:'std',secs:[
+  {t:'Décision et autorisation',items:[
+   pt('Décision de RCP tracée au dossier','Oui/Non'),
+   pt('Date de la RCP','Date'),
+   pt('Éligibilité au protocole vérifiée','Oui/Non',{dbl:true}),
+   pt("Accord de prise en charge / autorisation d'accès",'Oui/Non'),
+   pt('Compte rendu de RCP joint au dossier','Photo',{obl:false}),
+  ]}]},
+
+ /* Processus commande dédié MTI (CR § 2) — placé avant la réception. */
+ {code:'COMMANDE',nm:'Commande MTI (processus dédié)',ic:'cart',gab:'std',secs:[
+  {t:'Jalons cliniques',items:[
+   pt("Date d'aphérèse",'Date',{obl:false,sub:'Si applicable — produit autologue'}),
+   pt('Date de lymphodéplétion','Date',{obl:false,sub:'Si applicable'}),
+   pt('Date de réception prévue du produit','Date'),
+   pt('Créneau réservé au planning de réception','Oui/Non',
+    {obl:false,sub:'Planning de réception — attendu en phase 2'}),
+  ]},
+  {t:'Commande fabricant',items:[
+   pt('N° de commande fabricant','Texte'),
+   pt('Créneau de fabrication confirmé par le fabricant','Oui/Non'),
+   pt('Accusé de commande archivé','Photo',{obl:false}),
+   pt('Transmission au pharmacien référent','Auto'),
+  ]}]},
+
+ {code:'APHERESE',nm:'Aphérèse / leucaphérèse',ic:'flask',gab:'std',secs:[
+  {t:'Prélèvement',items:[
+   pt('Aphérèse réalisée conformément au protocole','Oui/Non'),
+   pt('Date et heure de fin de prélèvement','Auto'),
+   pt('Poche de cellules identifiée','Texte',{ex:true,ser:true,nEx:2,
+    sub:'N° de lot et n° de série relevés par exemplaire'}),
+   pt('Température avant expédition — seuil < −150 °C','Valeur °C',{seuil:-150,dbl:true}),
+   pt("Bordereau d'expédition vers le fabricant",'Photo',{obl:false}),
+  ]}]},
+
+ /* Étape conditionnante : rattachement patient + prescription en cours.
+    Réalisable avant la réception, ou pas du tout — le dossier reste alors
+    en attente d'allocation. */
+ {code:'RATTACHEMENT',nm:'Rattachement patient / prescription',ic:'link',indep:true,
+  gab:'rattachement',secs:[
+  {t:'Contrôles de cohérence',items:[
+   pt('Concordance produit prescrit / produit du dossier','Oui/Non',{dbl:true}),
+   pt('Prescription en cours de validité','Oui/Non'),
+   pt('Rattachement enregistré (patient, prescription, produit)','Auto'),
+  ]}]},
+
+ {code:'RECEPTION',nm:'Réception du matériel de leucaphérèse',ic:'truck',gab:'reception',secs:[
+  {t:'Identification du produit',items:[
+   pt('Concordance étiquetage produit / bon de livraison','Oui/Non',{dbl:true}),
+   pt('Intégrité du conteneur de transport','Oui/Non',{dbl:true}),
+   pt('Scan code-barres produit','Auto',{ex:true,ser:true,nEx:1}),
+   pt('N° de lot produit noté','Texte'),
+  ]},
+  {t:'Conditions de transport',items:[
+   pt('Température transport SMART PACK I — seuil < −150 °C','Valeur °C',
+    {seuil:-150,dbl:true,sub:"Relever la valeur affichée sur l'enregistreur"}),
+   pt('Température transport SMART PACK II — seuil < −150 °C','Valeur °C',
+    {obl:false,seuil:-150,sub:'Si second enregistreur présent'}),
+   pt('Alarme température déclenchée durant le transport','Oui/Non'),
+   pt('Photo du conteneur à la réception','Photo',{obl:false}),
+   pt('Bon de retour remis au transporteur','Oui/Non'),
+  ]},
+  /* Regroupement d'étapes par kit (CR § 3.2). */
+  {t:'Contrôle qualité à réception',
+   kits:[{id:'K1',nm:'Kit CQ CD4 / CD8',comp:'1 boîte = 3 tubes CD4 + 2 tubes CD8'}],items:[
+   pt('Tube CD4 — intégrité et étiquetage','Oui/Non',{kit:'K1',ex:true,ser:true,nEx:3}),
+   pt('Tube CD8 — intégrité et étiquetage','Oui/Non',{kit:'K1',ex:true,ser:true,nEx:2}),
+   pt('Nombre de tubes conforme au bordereau','Oui/Non',{kit:'K1',dbl:true}),
+   pt('Envoi des tubes au laboratoire de contrôle qualité','Auto'),
+  ]},
+  {t:'Stockage azote',items:[
+   pt('Température cuve azote (relevé)','Valeur °C',{seuil:-150}),
+   pt('Photo jauge niveau azote','Photo',{obl:false}),
+   pt('Vérification alarme cuve active','Oui/Non'),
+   pt('Emplacement en cuve noté','Texte'),
+   pt('Entrée en stock logiciel PUI','Auto'),
+  ]},
+  {t:'Documentation',items:[
+   pt('Rapport de réception complété','Oui/Non'),
+   pt('Transmission au pharmacien référent','Auto'),
+  ]}]},
+
+ {code:'STOCKAGE',nm:'Stockage azote — recontrôle',ic:'temp',indep:true,gab:'std',secs:[
+  {t:'Recontrôle de la cuve',items:[
+   pt('Température cuve azote (relevé)','Valeur °C',{seuil:-150,ex:true,nEx:2,
+    sub:'Un relevé par cuve utilisée'}),
+   pt('Photo jauge niveau azote','Photo',{obl:false}),
+   pt('Vérification alarme cuve active','Oui/Non'),
+   pt('Registre de stockage émargé','Auto'),
+  ]}]},
+
+ {code:'PRESCRIPTION',nm:'Prescription médicale',ic:'file',gab:'std',secs:[
+  {t:'Prescription',items:[
+   pt('Conformité de la prescription au protocole','Oui/Non'),
+   pt('Vérification identité patient','Oui/Non',{dbl:true}),
+   pt('Date de lymphodéplétion confirmée','Date'),
+   pt('Prescription signée par le prescripteur','Auto'),
+  ]}]},
+
+ {code:'VALIDATION',nm:'Validation pharmaceutique',ic:'check',gab:'std',secs:[
+  {t:'Analyse pharmaceutique',items:[
+   pt('Analyse pharmaceutique réalisée','Oui/Non',{dbl:true}),
+   pt('Contrôle de la lymphodéplétion et des interactions','Oui/Non'),
+   pt('Commentaire pharmacien','Texte',{obl:false}),
+   pt('Validation enregistrée','Auto'),
+  ]}]},
+
+ {code:'FABRICATION',nm:'Mise en fabrication — allocation patient',ic:'flask',gab:'allocation',secs:[
+  {t:'Allocation et lancement',items:[
+   pt('Allocation nominative du produit au patient','Oui/Non',{dbl:true}),
+   pt('Vérification du dossier de fabrication','Oui/Non'),
+   pt("N° d'ordonnancier attribué",'Auto'),
+   pt('Date / heure de lancement','Auto'),
+  ]}]},
+
+ {code:'FAB_EXT',nm:'Fabrication (fabricant)',ic:'pkg',ext:true,gab:'std',secs:[
+  {t:'Libération par le fabricant',items:[
+   pt("Certificat d'analyse reçu",'Oui/Non'),
+   pt('Certificat de conformité (personne qualifiée) reçu','Oui/Non',{dbl:true}),
+   pt('Date de libération fabricant','Date'),
+   pt('Documents archivés au dossier','Photo',{obl:false}),
+  ]}]},
+
+ /* CR § 5.2 — la réception des poches ne doit pas être enfouie dans le
+    workflow de fabrication : processus de premier niveau, indépendant. */
+ {code:'RECEPTION_POCHES',nm:'Réception des poches',ic:'truck',indep:true,gab:'reception2',secs:[
+  {t:'Réception du dry shipper',items:[
+   pt('Intégrité du dry shipper','Oui/Non',{dbl:true}),
+   pt('Température de transport — seuil < −150 °C','Valeur °C',{seuil:-150,dbl:true}),
+   pt("Durée de transport dans les limites d'autonomie",'Oui/Non'),
+   pt("Photo du conteneur avant ouverture",'Photo',{obl:false}),
+  ]},
+  {t:'Poches reçues',
+   kits:[{id:'K2',nm:'Kit produit fini',comp:'1 dry shipper = 2 poches de produit + 1 poche témoin'}],items:[
+   pt('Poche de produit — étiquetage nominatif','Oui/Non',{kit:'K2',ex:true,ser:true,nEx:2,dbl:true}),
+   pt('Poche témoin — présence et étiquetage','Oui/Non',{kit:'K2',ex:true,ser:true,nEx:1}),
+   pt('Nombre de poches conforme au certificat de libération','Oui/Non',{kit:'K2',dbl:true}),
+  ]},
+  {t:'Mise en cuve',items:[
+   pt('Transfert immédiat en cuve azote','Oui/Non'),
+   pt('Emplacement en cuve noté','Texte'),
+   pt('Entrée en stock logiciel PUI','Auto'),
+  ]}]},
+
+ /* CR § 5.2 — décongélation sortie du workflow de fabrication. */
+ {code:'DECONGELATION',nm:'Décongélation',ic:'flame',indep:true,gab:'std',secs:[
+  {t:'Décongélation',items:[
+   pt('Contrôle identité patient avant décongélation','Oui/Non',{dbl:true}),
+   pt('Démarrage minuteur de décongélation','Minuteur',{ex:true,nEx:2}),
+   pt('Température du bain-marie','Valeur °C'),
+   pt("Contrôle visuel de l'aspect du produit",'Oui/Non',{ex:true,nEx:2}),
+   pt('Photo du produit décongelé','Photo',{obl:false,ex:true,nEx:2}),
+   pt('Heure de fin de décongélation','Auto'),
+  ]}]},
+
+ {code:'DISPENSATION',nm:'Dispensation',ic:'file',gab:'std',secs:[
+  {t:'Dispensation',items:[
+   pt('Concordance étiquette de dispensation / prescription','Oui/Non',{dbl:true}),
+   pt('Délai avant administration respecté','Oui/Non'),
+   pt('Signature du pharmacien','Auto'),
+  ]}]},
+
+ {code:'TRANSPORT',nm:'Transport vers le service',ic:'truck',gab:'std',secs:[
+  {t:'Acheminement',items:[
+   pt('Conteneur de transport interne conforme','Oui/Non'),
+   pt('Heure de départ de la PUI','Auto'),
+   pt("Remise en main propre à l'IDE référent",'Texte'),
+  ]}]},
+
+ {code:'ADMINISTRATION',nm:'Administration',ic:'user',gab:'std',secs:[
+  {t:'Administration au patient',items:[
+   pt('Contrôle identité patient (bracelet)','Oui/Non',{dbl:true}),
+   pt('Concordance prescription / produit','Oui/Non',{dbl:true}),
+   pt('Prémédication administrée','Oui/Non'),
+   pt("Heure de début d'administration",'Auto'),
+   pt('Poche vide conservée pour traçabilité','Oui/Non'),
+  ]}]},
+
+ {code:'SUIVI',nm:'Suivi post-administration',ic:'clock',indep:true,gab:'std',secs:[
+  {t:'Surveillance',items:[
+   pt('Surveillance du syndrome de relargage cytokinique — grade','Texte'),
+   pt('Surveillance de la neurotoxicité (ICANS) — grade','Texte'),
+   pt('Déclaration au registre national','Oui/Non'),
+   pt('Clôture du dossier de traçabilité','Auto'),
+  ]}]},
+];
+
+/* Index du processus qui impose l'identité patient : la mise en fabrication. */
+const IDX_ALLOCATION=MODELE.findIndex(p=>p.gab==='allocation');
+
+/* =====================================================================
+   4. Dossiers MTI — matière du tableau de bord
+   ===================================================================== */
+/* Patients de dossiers clos, pour que la recherche par patient ait du grain. */
+PATIENTS.push(
+ {id:'PAT5',nom:'GARCIA Luis',ddn:'19/03/1969',ipp:'IPP 4390-7742',svc:'Hématologie 3B',prescriptions:[
+   {id:'PR51',ref:'PRESC-2026-0612',lib:'LBDGC — Yescarta®',prod:'YESCARTA',dt:'03/04/2026',med:'Dr C. Metz',st:'Terminée'}]},
+ {id:'PAT6',nom:'NGUYEN Thi',ddn:'11/08/1976',ipp:'IPP 4395-2013',svc:'Hématologie 4A',prescriptions:[
+   {id:'PR61',ref:'PRESC-2026-0655',lib:'Myélome — Abecma®',prod:'ABECMA',dt:'21/04/2026',med:'Dr M. Pinturaud',st:'Terminée'}]}
+);
+
+let DOSSIERS=[
+ {id:'MTI-2026-0042',prod:'KYMRIAH',lot:'LOT-KY-2606-A',pat:null,presc:null,av:4,fin:false,maj:'26/06 09:14',alerte:false},
+ {id:'MTI-2026-0041',prod:'YESCARTA',lot:'LOT-YE-2506-C',pat:'PAT1',presc:'PR11',av:8,fin:false,maj:'26/06 08:02',alerte:false},
+ {id:'MTI-2026-0040',prod:'TECARTUS',lot:'—',pat:null,presc:null,av:1,fin:false,maj:'25/06 17:40',alerte:false},
+ {id:'MTI-2026-0039',prod:'CARVYKTI',lot:'LOT-CA-2406-B',pat:'PAT2',presc:'PR21',av:11,fin:false,maj:'25/06 15:22',alerte:true},
+ {id:'MTI-2026-0037',prod:'KYMRIAH',lot:'LOT-KY-2306-D',pat:'PAT3',presc:'PR31',av:14,fin:false,maj:'24/06 11:05',alerte:false},
+ {id:'MTI-2026-0035',prod:'TECARTUS',lot:'LOT-TE-2306-A',pat:'PAT4',presc:'PR41',av:3,fin:false,maj:'23/06 16:48',alerte:false},
+ {id:'MTI-2026-0022',prod:'YESCARTA',lot:'LOT-YE-1405-F',pat:'PAT5',presc:'PR51',av:16,fin:true,maj:'14/05 10:30',alerte:false},
+ {id:'MTI-2026-0018',prod:'ABECMA',lot:'LOT-AB-0205-A',pat:'PAT6',presc:'PR61',av:16,fin:true,maj:'02/05 14:12',alerte:false},
+];
+
+/* Construit l'état des processus d'un dossier à partir de son avancement.
+   Un processus indépendant (CR § 5.1) n'est jamais verrouillé : il peut être
+   réalisé sans attendre la validation du processus qui le précède. */
+function construireProc(d){
+ const now=new Date();
+ return MODELE.map((m,i)=>{
+  const p=JSON.parse(JSON.stringify(m));
+  p.n=i+1;
+  p.done=d.fin||i<d.av;
+  p.st=p.done?'done':(i===d.av?'active':'pending');
+  p.lk=!p.done&&i>d.av&&!m.indep;
+  p.dt=p.done?dtDecalee(now,(d.av-i)+(d.fin?2:0)):null;
+  p.dv=null;
+  if(p.done){
+   p.secs.forEach(s=>s.items.forEach(it=>{
+    it.fait=true;
+    it.op=OPERATEURS[(i+it.lbl.length)%OPERATEURS.length].split(' — ')[0];
+    it.h=hDecalee(i,it.lbl.length);
+   }));
+   if(p.secs.some(s=>s.items.some(it=>it.dbl))) p.dv=OPERATEURS[(i+1)%OPERATEURS.length];
+  }
+  return p;
+ });
+}
+function dtDecalee(base,jours){
+ const d=new Date(base.getTime()-Math.max(0,jours)*86400000);
+ return d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+}
+function hDecalee(a,b){
+ const m=(8*60+((a*37+b*13)%600));
+ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+}
+function nbPoints(procs){return procs.reduce((a,p)=>a+p.secs.reduce((x,s)=>x+s.items.length,0),0);}
+
+/* =====================================================================
+   5. État de l'application
+   ===================================================================== */
+let vueAct='dash';
+let dos=null;        /* dossier ouvert */
+let P=[];            /* processus du dossier ouvert */
+let sel=0;
+let filtreStatut='tous';
+
+/* =====================================================================
+   6. Navigation
+   ===================================================================== */
+function allerA(v){
+ vueAct=v;
+ [['dash','vue-dash','nav-dash'],['scen','vue-scen','nav-scen'],
+  ['cfgpt','vue-cfgpt','nav-cfgpt'],['cfgpr','vue-cfgpr','nav-cfgpr']].forEach(([k,vid,nid])=>{
+  document.getElementById(vid).classList.toggle('on',k===v);
+  document.getElementById(nid).classList.toggle('act',k===v);
+ });
+ if(v==='dash') rDash();
+ if(v==='scen'){ if(!dos) ouvrirDossier(DOSSIERS[0].id); else rScen(); }
+ if(v==='cfgpt') rCfgPt();
+ if(v==='cfgpr') rCfgPr();
+}
+
+/* =====================================================================
+   7. Tableau de bord MTI
+   ===================================================================== */
+function libPatient(d){
+ /* Tant que le produit n'est pas alloué, on n'affiche pas de nom de patient :
+    le dossier est « en attente d'allocation ». */
+ if(!d.pat) return {txt:"En attente d'allocation",att:true};
+ const p=PAT(d.pat);
+ const alloue=d.fin||d.av>IDX_ALLOCATION;
+ return {txt:p.nom+' — '+p.ddn,att:false,suffixe:alloue?'alloué':'préalloué'};
+}
+function statutDossier(d){
+ if(d.fin) return {code:'termine',lib:'Terminé',cls:'tag-indep'};
+ if(!d.pat) return {code:'attente',lib:"En attente d'allocation",cls:'tag-dup'};
+ return {code:'en_cours',lib:'En cours',cls:'tag-dbl'};
+}
+function razDash(){
+ document.getElementById('db-q').value='';
+ document.getElementById('db-prod').value='';
+ document.getElementById('db-pat').value='';
+ filtreStatut='tous';
+ rDash();
+}
+function filtrer(){
+ const q=(document.getElementById('db-q').value||'').trim().toLowerCase();
+ const fp=document.getElementById('db-prod').value;
+ const fa=document.getElementById('db-pat').value;
+ return DOSSIERS.filter(d=>{
+  const st=statutDossier(d).code;
+  if(filtreStatut==='en_cours'&&d.fin) return false;
+  if(filtreStatut==='attente'&&st!=='attente') return false;
+  if(filtreStatut==='termine'&&!d.fin) return false;
+  if(filtreStatut==='alerte'&&!d.alerte) return false;
+  if(fp&&d.prod!==fp) return false;
+  if(fa&&d.pat!==fa) return false;
+  if(q){
+   const p=d.pat?PAT(d.pat):null;
+   const pr=d.presc?PRESC(d.presc):null;
+   const foin=[d.id,d.lot,NOMPROD(d.prod),p?p.nom:'',p?p.ipp:'',pr?pr.ref:'',pr?pr.lib:'',
+    MODELE[Math.min(d.av,MODELE.length-1)].nm].join(' ').toLowerCase();
+   if(!foin.includes(q)) return false;
+  }
+  return true;
+ });
+}
+function rDash(){
+ /* Sélecteurs de recherche — remplis une seule fois. */
+ const sp=document.getElementById('db-prod');
+ if(!sp.options.length){
+  sp.innerHTML='<option value="">Tous les produits</option>'+
+   PRODUITS.map(p=>`<option value="${p.c}">${COURTPROD(p.c)}</option>`).join('');
+  const sa=document.getElementById('db-pat');
+  sa.innerHTML='<option value="">Tous les patients</option>'+
+   PATIENTS.map(p=>`<option value="${p.id}">${p.nom}</option>`).join('');
+ }
+ const tot=DOSSIERS.length;
+ const nEnCours=DOSSIERS.filter(d=>!d.fin).length;
+ const nAtt=DOSSIERS.filter(d=>statutDossier(d).code==='attente').length;
+ const nFin=DOSSIERS.filter(d=>d.fin).length;
+ const nAl=DOSSIERS.filter(d=>d.alerte).length;
+ document.getElementById('pill-dash').textContent=nEnCours;
+ const tu=[['tous','',nEnCours+' / '+tot,'Scénarios en cours'],
+  ['attente','att',nAtt,"En attente d'allocation"],
+  ['termine','fin',nFin,'Terminés — consultables'],
+  ['alerte','alr',nAl,'Alertes de seuil']];
+ document.getElementById('db-tuiles').innerHTML=tu.map(([k,c,v,l])=>
+  `<div class="tuile ${c} ${filtreStatut===k?'on':''}" onclick="filtreStatut='${k}';rDash()"
+    role="button" tabindex="0"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+
+ const list=filtrer();
+ let h=`<table class="tbl"><thead><tr>
+  <th>N° dossier</th><th>Produit</th><th>N° de lot</th><th>Patient</th><th>Prescription</th>
+  <th>Étape en cours</th><th class="c">Avancement</th><th class="c">Statut</th>
+  <th class="c">Dernière MAJ</th><th></th></tr></thead><tbody>`;
+ if(!list.length){
+  h+=`<tr><td colspan="10" class="vide">${ico('search','font-size:22px;display:block;margin:0 auto 8px')}
+   Aucun dossier ne correspond à la recherche.</td></tr>`;
+ }
+ list.forEach(d=>{
+  const st=statutDossier(d);
+  const lp=libPatient(d);
+  const pr=d.presc?PRESC(d.presc):null;
+  const etape=d.fin?'Parcours clos':MODELE[Math.min(d.av,MODELE.length-1)].nm;
+  const pct=Math.round((d.fin?MODELE.length:d.av)/MODELE.length*100);
+  h+=`<tr class="dossier ${d.fin?'fini':''}" onclick="ouvrirDossier('${d.id}')" tabindex="0">
+   <td class="mono">${d.id}${d.alerte?' '+ico('alert','color:#c62828'):''}</td>
+   <td>${COURTPROD(d.prod)}</td>
+   <td class="meta">${d.lot}</td>
+   <td>${lp.att?`<span class="attente" style="color:var(--orange-txt);">${lp.txt}</span>`
+     :`${lp.txt} <span class="meta">(${lp.suffixe})</span>`}</td>
+   <td class="meta">${pr?pr.ref:'—'}</td>
+   <td>${etape}</td>
+   <td class="c" style="white-space:nowrap;"><span class="jauge"><i style="width:${pct}%"></i></span>
+    <span class="meta"> ${pct}%</span></td>
+   <td class="c"><span class="tag ${st.cls}">${st.lib}</span></td>
+   <td class="c meta">${d.maj}</td>
+   <td class="c">${ico('chev','color:var(--vio-bord)')}</td></tr>`;
+ });
+ h+='</tbody></table>';
+ h+=`<div style="padding:11px 2px;font-size:var(--fs-sm);color:var(--gris);">
+  ${list.length} dossier(s) affiché(s) sur ${tot}. Un dossier terminé reste consultable en lecture seule.</div>`;
+ document.getElementById('db-tbl').innerHTML=h;
+}
+
+function ouvrirDossier(id){
+ dos=DOSSIERS.find(d=>d.id===id);
+ P=construireProc(dos);
+ sel=dos.fin?0:Math.min(dos.av,P.length-1);
+ allerA('scen');
+}
+
+/* =====================================================================
+   8. Vue scénario — colonne des processus
+   ===================================================================== */
+function stIco(p){
+ if(p.st==='done') return ico('check','color:var(--vert-vif);font-size:16px');
+ if(p.st==='active') return ico('play','color:#a080ff;font-size:14px');
+ if(p.lk) return ico('lock','color:#6050a0;font-size:14px');
+ return ico('circle','color:#6050a0;font-size:14px');
+}
+function rSide(){
+ document.getElementById('sidelist').innerHTML=P.map((p,i)=>{
+  const cls='p-si'+(i===sel?' p-act':p.st==='done'?' p-done':p.lk?' p-lk':'');
+  let sub='';
+  if(p.st==='done') sub=`<div class="p-sub ok">${p.dt}</div>`;
+  else if(p.lk) sub='<div class="p-sub">Verrouillé</div>';
+  else if(p.indep&&p.st!=='active') sub='<div class="p-sub" style="color:#80cc90;">Indépendant</div>';
+  else if(p.ext) sub='<div class="p-sub">Processus externe</div>';
+  const clk=p.lk?'':`onclick="selP(${i})"`;
+  const eic=!p.lk?`<button class="p-eic" onclick="event.stopPropagation();ouvrirPM('edit',${i})"
+   title="Modifier ${p.nm}" aria-label="Modifier ${p.nm}">${ico('pencil')}</button>`:'';
+  return `<div class="${cls}" ${clk} tabindex="0">
+   <span style="min-width:20px;text-align:center;">${stIco(p)}</span>
+   <div style="flex:1;min-width:0;"><div class="p-nm">${p.n}. ${p.nm}</div>${sub}</div>${eic}</div>`;
+ }).join('');
+}
+
+/* =====================================================================
+   9. Bandeau d'en-tête du scénario
+   ===================================================================== */
+function rEntete(){
+ document.getElementById('sc-ttl').textContent=dos.id+' — '+COURTPROD(dos.prod);
+ const pe=document.getElementById('sc-pat');
+ const lp=libPatient(dos);
+ if(lp.att){
+  /* Pas de nom de patient tant que le produit n'est pas alloué. */
+  pe.innerHTML=`<span class="attente">${ico('userplus')} En attente d'allocation</span>`;
+ } else {
+  pe.innerHTML=`${ico('user')} <strong>${lp.txt}</strong>
+   <span style="color:var(--vio-txt);">(${lp.suffixe})</span>
+   <span style="color:var(--vio-txt);"> — ${PAT(dos.pat).svc}</span>`;
+ }
+ const pr=dos.presc?PRESC(dos.presc):null;
+ document.getElementById('sc-presc').innerHTML=pr
+  ? `Prescription : <strong style="color:#fff;">${pr.ref}</strong>`
+  : '<span style="font-style:italic;">Aucune prescription rattachée</span>';
+ document.getElementById('sc-ord').innerHTML=(dos.fin||dos.av>IDX_ALLOCATION)
+  ? 'N° ord. : <strong style="color:#fff;">'+dos.id.replace('MTI-','')+'</strong>' : '';
+}
+
+/* =====================================================================
+   10. Encarts de rattachement / préallocation / allocation
+   ===================================================================== */
+let rechPat='';
+function encartRattachement(){
+ const pr=dos.presc?PRESC(dos.presc):null;
+ /* Le rattachement se modifie jusqu'à la mise en fabrication. Passée
+    l'allocation, il est figé : le dossier porte une identité opposable. */
+ const fige=dos.fin||dos.av>IDX_ALLOCATION;
+ let h=`<div class="encart">
+  <div class="encart-t">${ico('link')} Rattachement patient / prescription</div>
+  <div style="font-size:var(--fs-sm);color:#555;line-height:1.55;margin-bottom:11px;">
+   Le rattachement est <strong>facultatif</strong> jusqu'à la mise en fabrication : un dossier peut
+   avancer sans patient ni prescription, ou porter les deux dès la commande. Il devient
+   <strong>obligatoire</strong> à l'étape « ${MODELE[IDX_ALLOCATION].nm} », puis figé.
+   L'annuaire de référence reste le SIH — ce module ne constitue pas de référentiel patients.
+  </div>`;
+ if(dos.pat){
+  const p=PAT(dos.pat);
+  h+=`<div style="background:var(--vert-ok);border:1px solid var(--vert-bord);border-radius:4px;
+   padding:11px 13px;margin-bottom:11px;">
+   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    ${ico('user','color:var(--vert-txt)')}
+    <strong style="color:var(--vert-txt);font-size:var(--fs-lg);">${p.nom}</strong>
+    <span class="meta">${p.ddn} · ${p.ipp} · ${p.svc}</span>
+    ${fige
+     ?`<span class="tag tag-indep" style="margin-left:auto;">${ico('lock')} Alloué — rattachement figé</span>`
+     :`<button class="btn btn-s btn-xs" style="margin-left:auto;" onclick="detacher()">
+       ${ico('trash')} Détacher</button>`}
+   </div>
+   <div style="margin-top:9px;font-size:var(--fs-sm);color:#333;">
+    ${pr?`Prescription rattachée : <strong>${pr.ref}</strong> — ${pr.lib}
+      <span class="meta">(${pr.med}, ${pr.dt})</span>`
+     :'<span style="color:var(--orange-txt);font-style:italic;">Aucune prescription rattachée</span>'}
+   </div></div>`;
+  /* Prescriptions en cours du patient rattaché. */
+  h+=`<div style="font-size:var(--fs-sm);font-weight:500;color:var(--vio);margin-bottom:6px;">
+   Prescriptions en cours de ${p.nom}</div>
+   <table class="tbl" style="border:1px solid var(--bande-bord);"><thead><tr>
+   <th style="width:34px;"></th><th>Référence</th><th>Protocole / libellé</th><th>Produit</th>
+   <th>Prescripteur</th><th>Date</th><th class="c">Statut</th></tr></thead><tbody>`;
+  p.prescriptions.forEach(x=>{
+   const coherent=!x.prod||x.prod===dos.prod;
+   h+=`<tr ${fige?'':`style="cursor:pointer;" onclick="choisirPresc('${x.id}')"`}>
+    <td class="c"><input type="radio" name="presc" ${dos.presc===x.id?'checked':''}
+     ${fige?'disabled':`onclick="event.stopPropagation();choisirPresc('${x.id}')"`}/></td>
+    <td class="mono">${x.ref}</td><td>${x.lib}</td>
+    <td>${x.prod?COURTPROD(x.prod):'—'}
+     ${x.prod&&!coherent?`<span class="tag tag-alerte" style="margin-left:5px;">
+      ${ico('alert')} produit différent du dossier</span>`:''}</td>
+    <td class="meta">${x.med}</td><td class="meta">${x.dt}</td>
+    <td class="c"><span class="tag ${x.st==='En cours'?'tag-dbl':'tag-indep'}">${x.st}</span></td></tr>`;
+  });
+  h+='</tbody></table>';
+ } else if(fige){
+  h+=`<div class="encart" style="margin:0;border-color:#ef9a9a;background:#ffebee;">
+   ${ico('alert','color:#c62828')} <span style="font-size:var(--fs-sm);color:#c62828;">
+   Dossier clos sans rattachement.</span></div>`;
+ } else {
+  /* Recherche dans l'annuaire — simulation d'un appel au SIH. Seul le tableau
+     de résultats est re-rendu à la frappe, pour ne pas perdre le curseur. */
+  h+=`<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px;">
+   <label for="rp">Rechercher un patient :</label>
+   <input type="text" id="rp" value="${rechPat.replace(/"/g,'&quot;')}"
+    placeholder="Nom, IPP ou date de naissance…" style="width:290px;"
+    oninput="rechPat=this.value;majRechPat()"/>
+   <span class="meta">Source : annuaire du SIH</span></div>
+   <div id="rp-res">${tableauRecherche()}</div>`;
+ }
+ h+='</div>';
+ return h;
+}
+function tableauRecherche(){
+ const q=rechPat.trim().toLowerCase();
+ const res=PATIENTS.filter(p=>!q||[p.nom,p.ipp,p.ddn].join(' ').toLowerCase().includes(q));
+ let h=`<table class="tbl" style="border:1px solid var(--bande-bord);"><thead><tr>
+  <th>Patient</th><th>Naissance</th><th>IPP</th><th>Unité</th>
+  <th class="c">Prescriptions en cours</th><th></th></tr></thead><tbody>`;
+ if(!res.length) h+='<tr><td colspan="6" class="vide">Aucun patient trouvé.</td></tr>';
+ res.forEach(p=>{
+  const nEnCours=p.prescriptions.filter(x=>x.st==='En cours').length;
+  h+=`<tr class="pat-res" style="cursor:pointer;" onclick="rattacher('${p.id}')">
+   <td><strong>${p.nom}</strong></td><td class="meta">${p.ddn}</td>
+   <td class="meta">${p.ipp}</td><td class="meta">${p.svc}</td>
+   <td class="c">${nEnCours}</td>
+   <td class="c"><button class="btn btn-s btn-xs" onclick="event.stopPropagation();rattacher('${p.id}')">
+    ${ico('link')} Rattacher</button></td></tr>`;
+ });
+ return h+'</tbody></table>';
+}
+function majRechPat(){
+ const el=document.getElementById('rp-res');
+ if(!el) return;
+ el.innerHTML=tableauRecherche();
+ poserIcones(el);
+}
+function rattacher(id){
+ dos.pat=id;
+ const p=PAT(id);
+ /* Préselection de la prescription en cours dont le produit correspond au dossier. */
+ const c=p.prescriptions.find(x=>x.prod===dos.prod&&x.st==='En cours');
+ dos.presc=c?c.id:null;
+ rechPat='';
+ rScen();
+}
+function choisirPresc(id){dos.presc=(dos.presc===id?null:id);rScen();}
+function detacher(){
+ if(dos.av>IDX_ALLOCATION){
+  alert("Le produit est alloué depuis la mise en fabrication : le rattachement ne peut plus être retiré.");
+  return;
+ }
+ dos.pat=null;dos.presc=null;rScen();
+}
+
+function encartPreallocation(){
+ const lp=libPatient(dos);
+ if(dos.pat) return `<div class="encart" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;">
+  ${ico('userplus','color:var(--vio)')}
+  <span style="font-size:var(--fs-md);"><strong>Préallocation active</strong> — ${lp.txt}
+  ${dos.presc?' · '+PRESC(dos.presc).ref:''}</span>
+  <button class="btn btn-s btn-xs" style="margin-left:auto;" onclick="allerAuProc('RATTACHEMENT')">
+   ${ico('pencil')} Modifier le rattachement</button></div>`;
+ return `<div class="encart" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;">
+  ${ico('userplus','color:var(--orange-txt)')}
+  <span style="font-size:var(--fs-md);"><strong style="color:var(--orange-txt);">En attente d'allocation</strong>
+  — la réception peut être enregistrée sans patient ni prescription.</span>
+  <button class="btn btn-s btn-xs" style="margin-left:auto;" onclick="allerAuProc('RATTACHEMENT')">
+   ${ico('link')} Rattacher un patient / une prescription</button></div>`;
+}
+function encartAllocation(){
+ if(dos.pat){
+  const pr=dos.presc?PRESC(dos.presc):null;
+  return `<div class="bandeau-ok">${ico('user')}
+   <span>Produit alloué à <strong>${PAT(dos.pat).nom}</strong>
+   ${pr?' — prescription '+pr.ref:''}. L'identité patient est requise à partir de cette étape.</span></div>`;
+ }
+ return `<div class="encart" style="border-color:#ef9a9a;background:#ffebee;">
+  <div class="encart-t" style="color:#c62828;">${ico('alert')} Allocation obligatoire</div>
+  <div style="font-size:var(--fs-sm);color:#555;line-height:1.55;">
+   La mise en fabrication impose l'identité du patient : le dossier ne peut pas être validé
+   en attente d'allocation.</div>
+  <button class="btn btn-p btn-xs" style="margin-top:10px;" onclick="allerAuProc('RATTACHEMENT')">
+   ${ico('link')} Rattacher le patient et la prescription</button></div>`;
+}
+function allerAuProc(code){const i=P.findIndex(p=>p.code===code);if(i>=0)selP(i);}
+
+/* =====================================================================
+   11. Tableau des points de contrôle
+   ===================================================================== */
+const cmtOuv=new Set();   /* commentaires dépliés */
+const exOuv=new Set();    /* blocs « exemplaires » dépliés */
+const cle=(si,pi)=>sel+'|'+si+'|'+pi;
+const itm=(si,pi)=>P[sel].secs[si].items[pi];
+
+function numeroter(p){let k=0;p.secs.forEach(s=>s.items.forEach(it=>{it._n=p.n+'.'+(++k);}));}
+
+/* Une seule horloge alimente tous les minuteurs affichés — pas un setInterval
+   par ligne, qui survivrait aux re-rendus. */
+setInterval(()=>{
+ document.querySelectorAll('[data-t0]').forEach(e=>{
+  const s=Math.floor((Date.now()-Number(e.dataset.t0))/1000);
+  e.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+ });
+},1000);
+
+function ctlCell(it,si,pi,ex){
+ if(it.fait&&ex===null) return '<span style="color:var(--vert-txt);font-weight:bold;">✔</span>';
+ const k=cle(si,pi)+(ex===null?'':'|'+ex);
+ const v=(ex===null)?it.val:(it.exVals&&it.exVals[ex]?it.exVals[ex].val:null);
+ switch(it.type){
+  case 'Auto':
+   return '<span class="meta">automatique</span>';
+  case 'Oui/Non':
+   return `<span style="display:inline-flex;gap:5px;">
+    <button class="ctl-b ${v==='oui'?'on':''}" onclick="majON(${si},${pi},${ex===null?'null':ex},'oui')">Oui</button>
+    <button class="ctl-b no ${v==='non'?'on':''}" onclick="majON(${si},${pi},${ex===null?'null':ex},'non')">Non</button>
+    </span>`;
+  case 'Photo':
+   return `<button class="ctl-b" onclick="majON(${si},${pi},${ex===null?'null':ex},'photo')">
+    ${ico('camera')} ${v==='photo'?'1 photo':'Photo'}</button>`;
+  case 'Minuteur':
+   if(it.t0&&ex===null) return `<span class="tag tag-dup">${ico('clock')}
+    <span data-t0="${it.t0}">00:00</span></span>`;
+   return `<button class="ctl-b ctl-t" onclick="lancerMinuteur(${si},${pi})">
+    ${ico('play')} Démarrer</button>`;
+  case 'Valeur °C': {
+   const hs=v!==null&&v!==''&&it.seuil!==null&&parseFloat(String(v).replace(',','.'))>it.seuil;
+   return `<span style="display:inline-flex;align-items:center;gap:6px;">
+    <input type="text" value="${v===null?'':v}" placeholder="− °C" style="width:82px;"
+     class="${hs?'hors-seuil':''}" oninput="majValeur(this,${si},${pi},${ex===null?'null':ex})"/>
+    <span class="tag tag-alerte" id="hs-${k.replace(/\|/g,'-')}"
+     style="display:${hs?'inline-flex':'none'};">${ico('alert')} hors seuil</span></span>`;
+  }
+  case 'Date':
+   return `<input type="date" value="${v||''}" onchange="majTexte(this,${si},${pi},${ex===null?'null':ex})"/>`;
+  default:
+   return `<input type="text" value="${(v||'').replace(/"/g,'&quot;')}" placeholder="Saisir…"
+    style="width:150px;" oninput="majTexte(this,${si},${pi},${ex===null?'null':ex})"/>`;
+ }
+}
+
+function exVal(it,e){
+ if(!it.exVals) it.exVals=[];
+ if(!it.exVals[e]) it.exVals[e]={lot:'',serie:'',val:null};
+ return it.exVals[e];
+}
+function majON(si,pi,ex,v){
+ const it=itm(si,pi);
+ if(ex===null) it.val=(it.val===v?null:v); else {const x=exVal(it,ex);x.val=(x.val===v?null:v);}
+ rMain();
+}
+function majValeur(el,si,pi,ex){
+ const it=itm(si,pi);
+ if(ex===null) it.val=el.value; else exVal(it,ex).val=el.value;
+ const hs=it.seuil!==null&&el.value!==''&&parseFloat(el.value.replace(',','.'))>it.seuil;
+ el.classList.toggle('hors-seuil',hs);
+ const w=document.getElementById('hs-'+(cle(si,pi)+(ex===null?'':'|'+ex)).replace(/\|/g,'-'));
+ if(w) w.style.display=hs?'inline-flex':'none';
+}
+function majTexte(el,si,pi,ex){
+ const it=itm(si,pi);
+ if(ex===null) it.val=el.value; else exVal(it,ex).val=el.value;
+}
+function majExChamp(el,si,pi,ex,champ){exVal(itm(si,pi),ex)[champ]=el.value;}
+function lancerMinuteur(si,pi){itm(si,pi).t0=Date.now();rMain();}
+function basculeObl(si,pi){const it=itm(si,pi);it.obl=!it.obl;rMain();}
+function basculeCmt(si,pi){const k=cle(si,pi);cmtOuv.has(k)?cmtOuv.delete(k):cmtOuv.add(k);rMain();}
+function basculeEx(si,pi){const k=cle(si,pi);exOuv.has(k)?exOuv.delete(k):exOuv.add(k);rMain();}
+function majCmt(el,si,pi){itm(si,pi).cmt=el.value;}
+function fermerCmt(si,pi){cmtOuv.delete(cle(si,pi));rMain();}
+function effacerCmt(si,pi){itm(si,pi).cmt='';cmtOuv.delete(cle(si,pi));rMain();}
+function majNEx(el,si,pi){
+ const n=Math.max(1,Math.min(12,parseInt(el.value||'1',10)));
+ itm(si,pi).nEx=n;rMain();
+}
+function majSer(el,si,pi){itm(si,pi).ser=el.checked;rMain();}
+
+function rSection(p,s,si,done){
+ const kits=s.kits||[];
+ let h=`<div class="bande">${ico('list')} ${s.t}<span class="n">${s.items.length} point(s)${
+  kits.length?' · '+kits.length+' kit(s)':''}</span></div>`;
+ h+=`<table class="tbl"><thead><tr>
+  <th class="c" style="width:30px;" title="Obligatoire">★</th>
+  <th style="width:46px;">N°</th><th>Point de contrôle</th>
+  <th class="c" style="width:92px;">Type</th>
+  <th style="width:190px;">Action / Valeur</th>
+  <th class="c" style="width:38px;" title="Commentaire libre">${ico('note')}</th>
+  <th class="c" style="width:62px;">Heure</th>
+  <th style="width:96px;">Opérateur</th></tr></thead><tbody>`;
+ let kitEnCours=null;
+ s.items.forEach((it,pi)=>{
+  /* En-tête de kit : les étapes propres à chaque composant restent regroupées. */
+  if(it.kit&&it.kit!==kitEnCours){
+   const k=kits.find(x=>x.id===it.kit);
+   kitEnCours=it.kit;
+   if(k) h+=`<tr style="background:var(--bande);"><td></td><td colspan="7"
+    style="padding:7px 9px;border-bottom:1px solid var(--bande-bord);">
+    <span class="tag tag-kit">${ico('pkg')} Kit</span>
+    <strong style="color:var(--vio);margin-left:6px;">${k.nm}</strong>
+    <span class="meta"> — ${k.comp}</span></td></tr>`;
+  }
+  if(!it.kit) kitEnCours=null;
+  const k=cle(si,pi);
+  const ind=it.kit?'padding-left:26px;':'';
+  let badges='';
+  if(it.dbl) badges+=`<span class="tag tag-dbl bulle"
+   data-tip="Point soumis à double validation : contresigné par une 2e personne identifiée.">
+   ${ico('users')} 2 pers.</span> `;
+  if(it.ex) badges+=`<span class="tag tag-dup" style="cursor:pointer;"
+   onclick="basculeEx(${si},${pi})" title="Détail des exemplaires">
+   ${ico('copy')} ×${it.nEx}</span> `;
+  if(it.ex&&it.ser) badges+=`<span class="tag tag-ser bulle"
+   data-tip="Un n° de série est enregistré par exemplaire, en complément du n° de lot.">
+   ${ico('pkg')} n° série</span> `;
+  const aCmt=(it.cmt||'').trim().length>0;
+  h+=`<tr class="chkr${done?' dr':''}">
+   <td class="c"><button class="etoile" onclick="basculeObl(${si},${pi})"
+    title="${it.obl?'Obligatoire':'Optionnel'}" aria-label="Basculer obligatoire"
+    style="color:${it.obl?'var(--vio)':'#ccc'};">${it.obl?'★':'☆'}</button></td>
+   <td class="meta">${it._n}</td>
+   <td style="${ind}"><div class="lbl-p">${it.lbl}</div>
+    ${it.sub?`<div class="lbl-s">${it.sub}</div>`:''}
+    <div style="margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">${badges}</div></td>
+   <td class="c"><span class="btp ${TYPES[it.type]||'bt-auto'}">${it.type}</span></td>
+   <td>${ctlCell(it,si,pi,null)}</td>
+   <td class="c">${aCmt
+    ?`<button class="cmt plein bulle" data-tip="${it.cmt.replace(/"/g,'&quot;')}"
+       onclick="basculeCmt(${si},${pi})" aria-label="Commentaire">${ico('note')}</button>`
+    :`<button class="cmt" onclick="basculeCmt(${si},${pi})" title="Ajouter un commentaire"
+       aria-label="Ajouter un commentaire">${ico('note')}</button>`}</td>
+   <td class="c meta">${it.fait?it.h:''}</td>
+   <td class="meta">${it.fait?it.op:''}</td></tr>`;
+
+  if(cmtOuv.has(k)){
+   h+=`<tr class="cmt-zone"><td></td><td colspan="7">
+    <div style="font-size:var(--fs-sm);color:var(--vio);font-weight:500;margin-bottom:5px;">
+     Commentaire libre — affiché en bulle sur la ligne</div>
+    <textarea rows="2" style="width:100%;font-size:var(--fs-sm);"
+     oninput="majCmt(this,${si},${pi})"
+     placeholder="Observation, écart, précision…">${it.cmt||''}</textarea>
+    <div style="margin-top:7px;display:flex;gap:7px;">
+     <button class="btn btn-p btn-xs" onclick="fermerCmt(${si},${pi})">Enregistrer</button>
+     <button class="btn btn-g btn-xs" onclick="effacerCmt(${si},${pi})">Effacer</button></div>
+    </td></tr>`;
+  }
+  if(it.ex&&exOuv.has(k)){
+   h+=`<tr class="ex-zone"><td></td><td colspan="7">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+     <label class="lbl-f">Nombre d'exemplaires
+      <input type="number" min="1" max="12" value="${it.nEx}" style="width:62px;"
+       oninput="majNEx(this,${si},${pi})"/></label>
+     <label class="lbl-f"><input type="checkbox" ${it.ser?'checked':''}
+      onchange="majSer(this,${si},${pi})"/>
+      Enregistrer un n° de série par exemplaire, en complément du n° de lot</label>
+    </div></td></tr>`;
+   for(let e=0;e<it.nEx;e++){
+    const x=exVal(it,e);
+    h+=`<tr class="ex-zone"><td></td><td class="ex-n">${e+1}/${it.nEx}</td>
+     <td colspan="2"><span style="display:inline-flex;gap:12px;flex-wrap:wrap;">
+      <label class="lbl-f">N° de lot
+       <input type="text" value="${x.lot.replace(/"/g,'&quot;')}" style="width:130px;"
+        oninput="majExChamp(this,${si},${pi},${e},'lot')"/></label>
+      ${it.ser?`<label class="lbl-f">N° de série
+       <input type="text" value="${x.serie.replace(/"/g,'&quot;')}" style="width:130px;"
+        oninput="majExChamp(this,${si},${pi},${e},'serie')"/></label>`:''}
+     </span></td>
+     <td>${ctlCell(it,si,pi,e)}</td><td colspan="3"></td></tr>`;
+   }
+  }
+ });
+ h+='</tbody></table>';
+ return h;
+}
+
+/* =====================================================================
+   12. Double validation (CR § 3.1)
+   La 2e personne valide l'ensemble du processus, avec identification
+   nominative et rappel des points soumis à double validation.
+   ===================================================================== */
+function pointsDbl(p){
+ const r=[];
+ p.secs.forEach(s=>s.items.forEach(it=>{if(it.dbl)r.push(it);}));
+ return r;
+}
+function blocDV(p){
+ const pts=pointsDbl(p);
+ if(!pts.length) return `<div class="encart" style="display:flex;align-items:center;gap:8px;">
+  ${ico('user','color:var(--vio)')}<span style="font-size:var(--fs-sm);color:#555;">
+  Aucun point de ce processus n'est soumis à double validation — validation par
+  <strong>1 personne</strong>.</span></div>`;
+ if(p.dv) return `<div class="bandeau-ok">${ico('users')}
+  <span>Processus contresigné par <strong>${p.dv}</strong> —
+  ${pts.length} point(s) en double validation.</span></div>`;
+ return `<div class="encart">
+  <div class="encart-t">${ico('users')} Double validation requise — 2<sup>e</sup> personne</div>
+  <div style="font-size:var(--fs-sm);color:#555;line-height:1.55;margin-bottom:9px;">
+   ${pts.length} point(s) de ce processus doivent être contresignés. La 2<sup>e</sup> personne valide
+   l'ensemble du processus de façon globale, avec identification nominative.</div>
+  <ul style="margin:0 0 11px 20px;font-size:var(--fs-sm);color:#333;line-height:1.7;">
+   ${pts.map(it=>`<li>${it._n} — ${it.lbl}</li>`).join('')}</ul>
+  <button class="btn btn-p btn-xs" onclick="ouvrirDV()">
+   ${ico('users')} Contresigner (2<sup>e</sup> personne)</button></div>`;
+}
+function ouvrirDV(){
+ const p=P[sel];
+ const pts=pointsDbl(p);
+ document.getElementById('dv-form').innerHTML=`
+  <div class="form-h">${ico('users')} ${p.n}. ${p.nm}</div>
+  <div style="font-size:var(--fs-md);color:#333;line-height:1.6;margin-bottom:14px;">
+   Rappel des points soumis à double validation :</div>
+  <table class="tbl" style="border:1px solid var(--bande-bord);margin-bottom:16px;"><thead><tr>
+   <th style="width:52px;">N°</th><th>Point de contrôle</th><th class="c" style="width:110px;">1<sup>re</sup> personne</th>
+   </tr></thead><tbody>
+   ${pts.map(it=>`<tr><td class="meta">${it._n}</td><td>${it.lbl}</td>
+    <td class="c meta">${it.fait?it.op:'DUPONT J.'}</td></tr>`).join('')}
+   </tbody></table>
+  <div class="form-r"><label for="dv-op">2<sup>e</sup> personne :</label>
+   <select id="dv-op">${OPERATEURS.filter(o=>!o.startsWith('DUPONT'))
+    .map(o=>`<option>${o}</option>`).join('')}</select></div>
+  <div class="form-r"><label for="dv-cmt">Commentaire :</label>
+   <input type="text" id="dv-cmt" style="width:330px;" placeholder="Facultatif"/></div>
+  <div style="font-size:var(--fs-sm);color:var(--gris);line-height:1.5;margin-top:6px;">
+   Dans l'application, ce geste suppose deux identités authentifiées distinctes —
+   la maquette se limite à un choix nominatif.</div>`;
+ document.getElementById('dvov').classList.add('on');
+ poserIcones();
+}
+function fermerDV(){document.getElementById('dvov').classList.remove('on');}
+function confirmerDV(){
+ P[sel].dv=document.getElementById('dv-op').value;
+ fermerDV();rMain();updFoot();
+}
+
+/* =====================================================================
+   13. Panneau principal
+   ===================================================================== */
+function rMain(){
+ const p=P[sel];
+ numeroter(p);
+ const done=p.done;
+ let h=`<div class="main-h">
+  <span class="t">${p.n}. ${p.nm}</span>
+  ${p.indep?`<span class="tag tag-indep bulle"
+   data-tip="Réalisable sans attendre la validation du processus précédent.">
+   ${ico('link')} Indépendant</span>`:''}
+  ${p.ext?`<span class="tag tag-ext">${ico('pkg')} Processus externe</span>`:''}
+  ${done?`<span class="tag tag-indep" style="margin-left:auto;">${ico('check')} Validé ${p.dt}</span>`:''}
+ </div>`;
+
+ if(p.lk){
+  h+=`<div class="verrou">${ico('lock','font-size:24px;display:block;margin:0 auto 10px')}
+   Ce processus est verrouillé.<br>Validez le processus précédent pour le débloquer.<br>
+   <span style="font-size:var(--fs-sm);">Un processus déclaré « indépendant » n'est jamais verrouillé.</span></div>`;
+  document.getElementById('mainpanel').innerHTML=h;
+  poserIcones(document.getElementById('mainpanel'));
+  return;
+ }
+ if(done) h+=`<div class="bandeau-ok">${ico('check')}
+  <span>Processus validé le ${p.dt}${p.dv?' — contresigné par '+p.dv:''}.
+  ${dos.fin?'Dossier clos : consultation en lecture seule.':''}</span></div>`;
+
+ if(p.gab==='rattachement') h+=encartRattachement();
+ else if(p.gab==='reception'||p.gab==='reception2') h+=encartPreallocation();
+ else if(p.gab==='allocation') h+=encartAllocation();
+
+ if(p.secs.length){
+  p.secs.forEach((s,si)=>{h+=rSection(p,s,si,done);});
+  if(!done) h+=blocDV(p);
+ } else {
+  h+=`<div class="vide">${ico('list','font-size:24px;display:block;margin:0 auto 10px')}
+   Aucun point de contrôle.<br>
+   <button class="btn btn-p btn-xs" style="margin-top:11px;" onclick="ouvrirPM('edit',${sel})">
+    Configurer via l'éditeur</button></div>`;
+ }
+ document.getElementById('mainpanel').innerHTML=h;
+ poserIcones(document.getElementById('mainpanel'));
+}
+
+/* =====================================================================
+   14. Pied de page du scénario et validation
+   ===================================================================== */
+function updFoot(){
+ const p=P[sel],vb=document.getElementById('valbtn'),fi=document.getElementById('finfo');
+ const mb=document.getElementById('modbtn');
+ const n=p.secs.reduce((a,s)=>a+s.items.length,0);
+ const nObl=p.secs.reduce((a,s)=>a+s.items.filter(i=>i.obl).length,0);
+ const nDbl=pointsDbl(p).length;
+ mb.style.display=(p.done||dos.fin)?'none':'inline-flex';
+ if(p.done||dos.fin){
+  vb.className='btn btn-done';
+  vb.innerHTML=ico('check')+' Déjà validé';
+  fi.textContent=dos.fin?'Dossier clos le '+dos.maj+' — lecture seule.':'Validé le '+p.dt;
+ } else if(p.lk){
+  vb.className='btn btn-off';vb.textContent='Verrouillé';
+  fi.textContent='Processus verrouillé.';
+ } else {
+  vb.className='btn btn-v';
+  vb.innerHTML=ico('check')+' Valider ce processus';
+  fi.textContent=`${n} point(s) de contrôle · ${nObl} obligatoire(s) · ${nDbl} en double validation`
+   +(p.indep?' · processus indépendant':'');
+ }
+}
+function selP(i){sel=i;rSide();rMain();updFoot();}
+function rScen(){rEntete();rSide();rMain();updFoot();}
+
+function doVal(){
+ const p=P[sel];
+ if(p.done||p.lk||dos.fin) return;
+ if(p.gab==='allocation'&&!dos.pat){
+  alert("Mise en fabrication : l'identité du patient est obligatoire.\n"
+   +"Rattachez un patient et une prescription avant de valider.");
+  return;
+ }
+ if(pointsDbl(p).length&&!p.dv){
+  alert("Ce processus comporte des points en double validation.\n"
+   +"La contresignature par une 2e personne est requise avant validation.");
+  return;
+ }
+ const manquants=[];
+ p.secs.forEach(s=>s.items.forEach(it=>{
+  if(!it.obl||it.type==='Auto') return;
+  const vide=(it.type==='Minuteur')?!it.t0:(it.val===null||it.val===undefined||it.val==='');
+  if(vide) manquants.push(it._n);
+ }));
+ if(manquants.length&&!confirm(manquants.length+" point(s) obligatoire(s) non renseigné(s) : "
+  +manquants.join(', ')+".\nValider quand même ?")) return;
+
+ p.done=true;
+ const n=new Date();
+ p.dt=n.toLocaleDateString('fr-FR')+' '+n.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ p.secs.forEach(s=>s.items.forEach(it=>{
+  it.fait=true;
+  it.h=n.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  it.op='DUPONT J.';
+ }));
+ /* L'avancement du dossier est le premier processus non terminé : un processus
+    indépendant validé en avance ne fait donc pas sauter les précédents. */
+ const i0=P.findIndex(x=>!x.done);
+ dos.av=i0<0?P.length:i0;
+ if(i0<0) dos.fin=true;
+ P.forEach((x,i)=>{
+  if(x.done){x.st='done';x.lk=false;}
+  else{x.st=(i===dos.av?'active':'pending');x.lk=(i>dos.av&&!x.indep);}
+ });
+ dos.maj=n.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '
+  +n.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ if(dos.av<P.length) sel=dos.av;
+ rScen();
+}
+
+/* =====================================================================
+   15. Démarrage d'un scénario MTI depuis le tableau de bord
+   ===================================================================== */
+const MODELES_PARCOURS=[
+ {c:'CART_AUTO',n:'Parcours CAR-T autologue (référence)'},
+ {c:'CART_ALLO',n:'Parcours CAR-T allogénique'},
+ {c:'TG_INVIVO',n:'Thérapie génique in vivo'},
+];
+let nvRattacher=false;
+function ouvrirNouveau(){nvRattacher=false;rNouveau();document.getElementById('nvov').classList.add('on');}
+function fermerNouveau(){document.getElementById('nvov').classList.remove('on');}
+function rNouveau(){
+ const pid=document.getElementById('nv-pat')?document.getElementById('nv-pat').value:'';
+ const p=pid?PAT(pid):null;
+ document.getElementById('nv-form').innerHTML=`
+  <div class="form-h">${ico('play')} Nouveau dossier MTI</div>
+  <div class="form-r"><label for="nv-mod">Modèle de parcours :</label>
+   <select id="nv-mod">${MODELES_PARCOURS.map(m=>`<option value="${m.c}">${m.n}</option>`).join('')}</select></div>
+  <div class="aide">${MODELE.length} processus, ${nbPoints(MODELE)} points de contrôle.
+   La définition du modèle est recopiée dans le dossier à sa création : une évolution
+   ultérieure du modèle ne modifie pas les dossiers déjà ouverts.</div>
+  <div class="form-r"><label for="nv-prod">Produit :</label>
+   <select id="nv-prod">${PRODUITS.map(x=>`<option value="${x.c}">${x.n} — ${x.ind}</option>`).join('')}</select></div>
+  <div class="form-r"><label for="nv-lot">N° de lot (si connu) :</label>
+   <input type="text" id="nv-lot" placeholder="Laisser vide si non reçu"/></div>
+  <div class="form-h" style="margin-top:20px;">${ico('link')} Rattachement</div>
+  <div class="form-r" style="align-items:flex-start;">
+   <label>Patient / prescription :</label>
+   <div style="display:flex;flex-direction:column;gap:9px;">
+    <label class="lbl-f"><input type="radio" name="nvr" ${nvRattacher?'':'checked'}
+     onchange="nvRattacher=false;rNouveau()"/>
+     Laisser le dossier <strong>en attente d'allocation</strong></label>
+    <label class="lbl-f"><input type="radio" name="nvr" ${nvRattacher?'checked':''}
+     onchange="nvRattacher=true;rNouveau()"/>
+     Rattacher dès maintenant un patient et une prescription en cours</label>
+   </div></div>
+  ${nvRattacher?`
+   <div class="form-r"><label for="nv-pat">Patient :</label>
+    <select id="nv-pat" onchange="rNouveau()">
+     <option value="">— Sélectionner —</option>
+     ${PATIENTS.map(x=>`<option value="${x.id}" ${pid===x.id?'selected':''}>
+      ${x.nom} · ${x.ddn} · ${x.ipp}</option>`).join('')}</select></div>
+   <div class="form-r"><label for="nv-presc">Prescription en cours :</label>
+    <select id="nv-presc" ${p?'':'disabled'}>
+     ${p?p.prescriptions.filter(x=>x.st==='En cours').map(x=>
+       `<option value="${x.id}">${x.ref} — ${x.lib}</option>`).join('')
+      :'<option value="">Sélectionnez d\'abord un patient</option>'}</select></div>
+   ${p&&!p.prescriptions.some(x=>x.st==='En cours')
+     ?'<div class="aide" style="color:var(--orange-txt);">Ce patient n\'a aucune prescription en cours.</div>':''}
+  `:`<div class="aide">Le dossier restera anonyme : aucune donnée identifiante n'est enregistrée
+   avant la préallocation ou la mise en fabrication.</div>`}`;
+ poserIcones();
+}
+function creerDossier(){
+ const prod=document.getElementById('nv-prod').value;
+ const lot=(document.getElementById('nv-lot').value||'').trim()||'—';
+ let pat=null,presc=null;
+ if(nvRattacher){
+  pat=document.getElementById('nv-pat').value||null;
+  const sp=document.getElementById('nv-presc');
+  presc=(pat&&sp&&sp.value)?sp.value:null;
+  if(!pat){document.getElementById('nv-fi').textContent='Sélectionnez un patient ou laissez le dossier en attente d\'allocation.';return;}
+ }
+ const num=Math.max(...DOSSIERS.map(d=>parseInt(d.id.split('-')[2],10)))+1;
+ const n=new Date();
+ const d={id:'MTI-2026-'+String(num).padStart(4,'0'),prod,lot,pat,presc,av:0,fin:false,
+  maj:n.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '
+   +n.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),alerte:false};
+ DOSSIERS.unshift(d);
+ fermerNouveau();
+ ouvrirDossier(d.id);
+}
+
+/* =====================================================================
+   16. Éditeur de sections et de points — partagé par la modale et l'onglet
+       « Config. processus »
+   ===================================================================== */
+const ETAPES_CODEES={commande:'Commande MTI',entree:'Entrée en stock',prescription:'Prescription',
+ validation:'Validation pharmaceutique',lancement:'Lancement fiche de fabrication',
+ preparation:'Préparation en cours',dispense:'Dispensé',reception:'Réception service',
+ administration:'Administration'};
+const ETAPES_LIBRES={libre:'Référentiel indépendant (hors étape codée)'};
+const DECL={ACCES:'libre',COMMANDE:'commande',APHERESE:'libre',RATTACHEMENT:'prescription',
+ RECEPTION:'entree',STOCKAGE:'libre',PRESCRIPTION:'prescription',VALIDATION:'validation',
+ FABRICATION:'lancement',FAB_EXT:'libre',RECEPTION_POCHES:'reception',DECONGELATION:'libre',
+ DISPENSATION:'dispense',TRANSPORT:'libre',ADMINISTRATION:'administration',SUIVI:'libre'};
+MODELE.forEach(p=>{p.decl=DECL[p.code]||'libre';});
+
+let edSecs=null, edRedraw=()=>{};
+function edCible(secs,redraw){edSecs=secs;edRedraw=redraw;}
+function edMaj(si,pi,champ,val){
+ const it=edSecs[si].items[pi];
+ it[champ]=val;
+ if(champ==='ex'&&!val){it.ser=false;}
+ if(champ==='nEx') it.nEx=Math.max(1,Math.min(12,parseInt(val||'1',10)));
+ edRedraw();
+}
+function edMajTexte(si,pi,champ,val){edSecs[si].items[pi][champ]=val;}
+function edMajSecTitre(si,val){edSecs[si].t=val;}
+function edAddPoint(si){
+ edSecs[si].items.push(pt('Nouveau point de contrôle','Oui/Non',{obl:false}));
+ edRedraw();
+}
+function edDelPoint(si,pi){edSecs[si].items.splice(pi,1);edRedraw();}
+function edMonte(si,pi){
+ if(pi<=0) return;
+ const a=edSecs[si].items;[a[pi-1],a[pi]]=[a[pi],a[pi-1]];edRedraw();
+}
+function edAddSec(){edSecs.push({t:'Nouvelle section',kits:[],items:[]});edRedraw();}
+function edDelSec(si){if(confirm('Supprimer la section « '+edSecs[si].t+' » ?')){edSecs.splice(si,1);edRedraw();}}
+function edAddKit(si){
+ const s=edSecs[si];
+ if(!s.kits) s.kits=[];
+ s.kits.push({id:'K'+(s.kits.length+1)+'_'+si,nm:'Nouveau kit',comp:'Composition du kit'});
+ edRedraw();
+}
+function edMajKit(si,ki,champ,val){edSecs[si].kits[ki][champ]=val;}
+function edDelKit(si,ki){
+ const s=edSecs[si],id=s.kits[ki].id;
+ s.items.forEach(it=>{if(it.kit===id) it.kit=null;});
+ s.kits.splice(ki,1);edRedraw();
+}
+
+function rendreEditeur(){
+ if(!edSecs) return '';
+ let h='';
+ edSecs.forEach((s,si)=>{
+  const kits=s.kits||[];
+  h+=`<div class="bande" style="gap:9px;">
+   ${ico('list')}
+   <input type="text" value="${s.t.replace(/"/g,'&quot;')}" style="width:270px;font-weight:500;"
+    oninput="edMajSecTitre(${si},this.value)" aria-label="Titre de la section"/>
+   <span class="n">${s.items.length} point(s)</span>
+   <button class="btn btn-s btn-xs" onclick="edAddKit(${si})">${ico('pkg')} Kit</button>
+   <button class="btn btn-s btn-xs" onclick="edAddPoint(${si})">${ico('plus')} Point</button>
+   <button class="btn btn-g btn-xs" onclick="edDelSec(${si})">${ico('trash')}</button></div>`;
+  kits.forEach((k,ki)=>{
+   h+=`<div style="background:#fffbf3;border-bottom:1px solid #f6ecdc;padding:7px 12px;
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span class="tag tag-kit">${ico('pkg')} Kit</span>
+    <input type="text" value="${k.nm.replace(/"/g,'&quot;')}" style="width:190px;"
+     oninput="edMajKit(${si},${ki},'nm',this.value)" aria-label="Nom du kit"/>
+    <input type="text" value="${k.comp.replace(/"/g,'&quot;')}" style="width:330px;"
+     oninput="edMajKit(${si},${ki},'comp',this.value)" aria-label="Composition du kit"/>
+    <button class="btn btn-g btn-xs" onclick="edDelKit(${si},${ki})">${ico('trash')}</button></div>`;
+  });
+  h+=`<table class="tbl"><thead><tr>
+   <th style="width:40px;"></th><th>Point de contrôle</th>
+   <th class="c" style="width:112px;">Type</th>
+   <th class="c" style="width:56px;" title="Obligatoire">Obl.</th>
+   <th class="c" style="width:96px;" title="Nombre de personnes">Valid.</th>
+   <th class="c" style="width:118px;" title="Exemplaires">Exempl.</th>
+   <th class="c" style="width:78px;" title="N° de série par exemplaire">N° série</th>
+   ${kits.length?'<th class="c" style="width:118px;">Kit</th>':''}
+   <th class="c" style="width:64px;"></th></tr></thead><tbody>`;
+  if(!s.items.length) h+=`<tr><td colspan="${kits.length?9:8}" class="vide"
+   style="padding:16px;">Section vide.</td></tr>`;
+  s.items.forEach((it,pi)=>{
+   h+=`<tr style="border-bottom:1px solid var(--ligne);">
+    <td class="c meta">${pi+1}</td>
+    <td><input type="text" value="${it.lbl.replace(/"/g,'&quot;')}" style="width:100%;"
+      oninput="edMajTexte(${si},${pi},'lbl',this.value)" aria-label="Libellé"/>
+     <input type="text" value="${(it.sub||'').replace(/"/g,'&quot;')}" style="width:100%;margin-top:4px;
+      font-size:var(--fs-xs);color:var(--gris);" placeholder="Sous-libellé (facultatif)"
+      oninput="edMajTexte(${si},${pi},'sub',this.value)" aria-label="Sous-libellé"/></td>
+    <td class="c"><select onchange="edMaj(${si},${pi},'type',this.value)">
+     ${TKEYS.map(k=>`<option${it.type===k?' selected':''}>${k}</option>`).join('')}</select>
+     ${it.type==='Valeur °C'?`<input type="text" value="${it.seuil===null?'':it.seuil}"
+      placeholder="seuil" style="width:70px;margin-top:4px;"
+      oninput="edMajTexte(${si},${pi},'seuil',this.value===''?null:parseFloat(this.value))"
+      aria-label="Seuil"/>`:''}</td>
+    <td class="c"><input type="checkbox" ${it.obl?'checked':''}
+     onchange="edMaj(${si},${pi},'obl',this.checked)" aria-label="Obligatoire"/></td>
+    <td class="c"><select onchange="edMaj(${si},${pi},'dbl',this.value==='2')">
+     <option value="1"${it.dbl?'':' selected'}>1 pers.</option>
+     <option value="2"${it.dbl?' selected':''}>2 pers.</option></select></td>
+    <td class="c"><label class="lbl-f" style="justify-content:center;">
+      <input type="checkbox" ${it.ex?'checked':''} onchange="edMaj(${si},${pi},'ex',this.checked)"
+       aria-label="Exemplaires"/>
+      ${it.ex?`<input type="number" min="1" max="12" value="${it.nEx}" style="width:56px;"
+       oninput="edMaj(${si},${pi},'nEx',this.value)" aria-label="Nombre d'exemplaires"/>`:'×N'}
+     </label></td>
+    <td class="c"><input type="checkbox" ${it.ser?'checked':''} ${it.ex?'':'disabled'}
+     onchange="edMaj(${si},${pi},'ser',this.checked)" aria-label="N° de série par exemplaire"/></td>
+    ${kits.length?`<td class="c"><select onchange="edMaj(${si},${pi},'kit',this.value||null)">
+      <option value="">— hors kit —</option>
+      ${kits.map(k=>`<option value="${k.id}"${it.kit===k.id?' selected':''}>${k.nm}</option>`).join('')}
+     </select></td>`:''}
+    <td class="c">
+     <button class="btn btn-s btn-xs" onclick="edMonte(${si},${pi})" title="Monter"
+      aria-label="Monter">▲</button>
+     <button class="btn btn-g btn-xs" onclick="edDelPoint(${si},${pi})" title="Supprimer"
+      aria-label="Supprimer">${ico('trash')}</button></td></tr>`;
+  });
+  h+='</tbody></table>';
+ });
+ h+=`<div style="padding:13px 14px;">
+  <button class="btn btn-s" onclick="edAddSec()">${ico('plus')} Ajouter une section</button></div>`;
+ return h;
+}
+
+/* =====================================================================
+   17. Onglet « Config. point de contrôle »
+   ===================================================================== */
+let cfgPt={p:4,s:0,i:0};
+function rCfgPt(){
+ let h='';
+ MODELE.forEach((p,pi)=>{
+  h+=`<div class="cfg-grp">${p.n||pi+1}. ${p.nm}</div>`;
+  p.secs.forEach((s,si)=>s.items.forEach((it,ii)=>{
+   const on=cfgPt.p===pi&&cfgPt.s===si&&cfgPt.i===ii;
+   h+=`<div class="ci${on?' cis':''}" onclick="cfgPt={p:${pi},s:${si},i:${ii}};rCfgPt()" tabindex="0">
+    <span class="n">${it.lbl}</span>
+    <span class="d">${s.t} · ${it.type}${it.dbl?' · 2 pers.':''}${it.ex?' · ×'+it.nEx:''}${
+     it.kit?' · kit':''}</span></div>`;
+  }));
+ });
+ document.getElementById('cfgpt-liste').innerHTML=h;
+
+ const p=MODELE[cfgPt.p],s=p.secs[cfgPt.s],it=s.items[cfgPt.i];
+ const kits=s.kits||[];
+ document.getElementById('cfgpt-form').innerHTML=`
+  <div class="form">
+   <div class="form-h">${ico('settings')} Configuration d'un point de contrôle</div>
+   <div class="aide" style="margin:0 0 16px 0;">
+    Processus <strong>${p.n||cfgPt.p+1}. ${p.nm}</strong> · section <strong>${s.t}</strong>.
+    Une modification porte sur le <strong>modèle</strong> : les dossiers déjà ouverts conservent
+    la définition figée à leur création.</div>
+
+   <div class="form-r"><label for="c-lbl">Libellé :</label>
+    <input type="text" id="c-lbl" value="${it.lbl.replace(/"/g,'&quot;')}" style="width:440px;"
+     oninput="cfgSet('lbl',this.value)"/></div>
+   <div class="form-r"><label for="c-sub">Sous-libellé :</label>
+    <input type="text" id="c-sub" value="${(it.sub||'').replace(/"/g,'&quot;')}" style="width:440px;"
+     placeholder="Consigne affichée sous le libellé" oninput="cfgSet('sub',this.value)"/></div>
+   <div class="form-r"><label for="c-type">Type de saisie :</label>
+    <select id="c-type" onchange="cfgSet('type',this.value,true)">
+     ${TKEYS.map(k=>`<option${it.type===k?' selected':''}>${k}</option>`).join('')}</select>
+    <span class="btp ${TYPES[it.type]}">${it.type}</span></div>
+   ${it.type==='Valeur °C'?`
+   <div class="form-r"><label for="c-seuil">Seuil d'alarme (°C) :</label>
+    <input type="text" id="c-seuil" value="${it.seuil===null?'':it.seuil}" style="width:110px;"
+     oninput="cfgSet('seuil',this.value===''?null:parseFloat(this.value),true)"/>
+    <span class="meta">Une valeur supérieure au seuil déclenche l'alarme, figée à l'enregistrement.</span>
+   </div>`:''}
+   <div class="form-r"><label>Obligatoire :</label>
+    <label class="lbl-f"><input type="checkbox" ${it.obl?'checked':''}
+     onchange="cfgSet('obl',this.checked,true)"/> Point obligatoire par défaut</label>
+    <span class="meta">L'opérateur peut le basculer ligne par ligne (bouton ★).</span></div>
+
+   <div class="form-h" style="margin-top:22px;">${ico('users')} Validation</div>
+   <div class="form-r"><label for="c-dbl">Nombre de personnes :</label>
+    <select id="c-dbl" onchange="cfgSet('dbl',this.value==='2',true)">
+     <option value="1"${it.dbl?'':' selected'}>1 personne (défaut)</option>
+     <option value="2"${it.dbl?' selected':''}>2 personnes — double validation</option></select></div>
+   <div class="aide">En double validation, la 2<sup>e</sup> personne contresigne l'ensemble du processus,
+    avec identification nominative et rappel des points concernés.</div>
+
+   <div class="form-h" style="margin-top:22px;">${ico('copy')} Exemplaires et identification</div>
+   <div class="form-r"><label>Exemplaires :</label>
+    <label class="lbl-f"><input type="checkbox" ${it.ex?'checked':''}
+     onchange="cfgSet('ex',this.checked,true)"/> Dupliquer la ligne par exemplaire</label>
+    ${it.ex?`<input type="number" min="1" max="12" value="${it.nEx}" style="width:66px;"
+     oninput="cfgSet('nEx',Math.max(1,Math.min(12,parseInt(this.value||'1',10))),true)"/>
+     <span class="meta">exemplaire(s) par défaut</span>`:''}</div>
+   <div class="form-r"><label>N° de série :</label>
+    <label class="lbl-f"><input type="checkbox" ${it.ser?'checked':''} ${it.ex?'':'disabled'}
+     onchange="cfgSet('ser',this.checked,true)"/>
+     Enregistrer un n° de série par exemplaire, en complément du n° de lot</label></div>
+   ${kits.length?`
+   <div class="form-r"><label for="c-kit">Rattachement à un kit :</label>
+    <select id="c-kit" onchange="cfgSet('kit',this.value||null,true)">
+     <option value="">— hors kit —</option>
+     ${kits.map(k=>`<option value="${k.id}"${it.kit===k.id?' selected':''}>${k.nm} (${k.comp})</option>`).join('')}
+    </select></div>`:`<div class="aide">Aucun kit défini sur cette section — un kit se crée depuis
+     l'onglet « Config. processus ».</div>`}
+   <div class="form-r"><label for="c-cmt">Commentaire libre :</label>
+    <input type="text" id="c-cmt" value="${(it.cmt||'').replace(/"/g,'&quot;')}" style="width:440px;"
+     placeholder="Pré-rempli, modifiable par l'opérateur — affiché en bulle"
+     oninput="cfgSet('cmt',this.value)"/></div>
+
+   <div class="apercu">
+    <div class="apercu-t">Aperçu de la ligne telle qu'elle apparaîtra à l'opérateur</div>
+    <div id="c-apercu">${apercuPoint(it,kits)}</div>
+   </div>
+  </div>`;
+ poserIcones();
+}
+function cfgSet(champ,val,redraw){
+ const it=MODELE[cfgPt.p].secs[cfgPt.s].items[cfgPt.i];
+ it[champ]=val;
+ if(champ==='ex'&&!val) it.ser=false;
+ /* Un changement de structure (type, exemplaires, kit) reconstruit le
+    formulaire ; une simple frappe ne rafraîchit que l'aperçu, sinon le
+    champ en cours de saisie perdrait le curseur. */
+ if(redraw){rCfgPt();return;}
+ majApercu();
+}
+function majApercu(){
+ const s=MODELE[cfgPt.p].secs[cfgPt.s],it=s.items[cfgPt.i];
+ const el=document.getElementById('c-apercu');
+ if(el){el.innerHTML=apercuPoint(it,s.kits||[]);poserIcones(el);}
+ const li=document.querySelector('#cfgpt-liste .ci.cis .n');
+ if(li) li.textContent=it.lbl;
+}
+function apercuPoint(it,kits){
+ const k=it.kit?(kits||[]).find(x=>x.id===it.kit):null;
+ let badges=it.dbl?`<span class="tag tag-dbl">${ico('users')} 2 pers.</span> `:'';
+ if(it.ex) badges+=`<span class="tag tag-dup">${ico('copy')} ×${it.nEx}</span> `;
+ if(it.ex&&it.ser) badges+=`<span class="tag tag-ser">${ico('pkg')} n° série</span> `;
+ if(k) badges+=`<span class="tag tag-kit">${ico('pkg')} ${k.nm}</span> `;
+ return `<table class="tbl"><tbody><tr class="chkr">
+  <td class="c" style="width:30px;color:${it.obl?'var(--vio)':'#ccc'};font-size:var(--fs-lg);">
+   ${it.obl?'★':'☆'}</td>
+  <td><div class="lbl-p">${it.lbl}</div>${it.sub?`<div class="lbl-s">${it.sub}</div>`:''}
+   <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;">${badges}</div></td>
+  <td class="c" style="width:92px;"><span class="btp ${TYPES[it.type]}">${it.type}</span></td>
+  <td style="width:190px;">${ctlApercu(it)}</td>
+  <td class="c" style="width:38px;">${(it.cmt||'').trim()
+   ?`<span class="cmt plein bulle" data-tip="${it.cmt.replace(/"/g,'&quot;')}">${ico('note')}</span>`
+   :`<span class="cmt">${ico('note')}</span>`}</td>
+  </tr></tbody></table>`;
+}
+function ctlApercu(it){
+ switch(it.type){
+  case 'Auto':return '<span class="meta">automatique</span>';
+  case 'Oui/Non':return '<span style="display:inline-flex;gap:5px;"><span class="ctl-b">Oui</span><span class="ctl-b">Non</span></span>';
+  case 'Photo':return `<span class="ctl-b">${ico('camera')} Photo</span>`;
+  case 'Minuteur':return `<span class="ctl-b ctl-t">${ico('play')} Démarrer</span>`;
+  case 'Valeur °C':return `<input type="text" placeholder="− °C" style="width:82px;" disabled/>`
+   +(it.seuil!==null?` <span class="meta">seuil ${it.seuil} °C</span>`:'');
+  case 'Date':return '<input type="date" disabled/>';
+  default:return '<input type="text" placeholder="Saisir…" style="width:150px;" disabled/>';
+ }
+}
+
+/* =====================================================================
+   18. Onglet « Config. processus »
+   ===================================================================== */
+let cfgPr=4;
+function rCfgPr(){
+ let h='';
+ MODELE.forEach((p,pi)=>{
+  const on=cfgPr===pi;
+  const n=p.secs.reduce((a,s)=>a+s.items.length,0);
+  h+=`<div class="ci${on?' cis':''}" onclick="cfgPr=${pi};rCfgPr()" tabindex="0">
+   <span class="n">${pi+1}. ${p.nm}</span>
+   <span class="d">${p.secs.length} section(s) · ${n} point(s)${p.indep?' · indépendant':''}${
+    p.ext?' · externe':''}</span></div>`;
+ });
+ h+=`<div style="padding:11px;"><button class="side-add" style="border-color:var(--vio-bord);
+  color:var(--vio);background:#fff;" onclick="cfgAddProc()">${ico('plus')} Ajouter un processus</button></div>`;
+ document.getElementById('cfgpr-liste').innerHTML=h;
+
+ const p=MODELE[cfgPr];
+ edCible(p.secs,rCfgPr);
+ const decl=p.decl in ETAPES_CODEES;
+ document.getElementById('cfgpr-form').innerHTML=`
+  <div class="form" style="padding-bottom:0;">
+   <div class="form-h">${ico('settings')} Configuration d'un processus</div>
+   <div class="form-r"><label for="cp-nm">Nom du processus :</label>
+    <input type="text" id="cp-nm" value="${p.nm.replace(/"/g,'&quot;')}" style="width:400px;"
+     oninput="MODELE[cfgPr].nm=this.value"/></div>
+   <div class="form-r"><label for="cp-decl">Déclenchement :</label>
+    <select id="cp-decl" onchange="MODELE[cfgPr].decl=this.value;rCfgPr()">
+     <optgroup label="── Étapes codées (système)">
+      ${Object.entries(ETAPES_CODEES).map(([k,v])=>
+       `<option value="${k}"${p.decl===k?' selected':''}>${v}</option>`).join('')}</optgroup>
+     <optgroup label="── Référentiel indépendant">
+      ${Object.entries(ETAPES_LIBRES).map(([k,v])=>
+       `<option value="${k}"${p.decl===k?' selected':''}>${v}</option>`).join('')}</optgroup>
+    </select>
+    <span class="${decl?'tag-code':'tag-ref'}">${decl?'Étape codée':'Référentiel indépendant'}</span></div>
+   <div class="form-r"><label>Chronologie :</label>
+    <label class="lbl-f"><input type="checkbox" ${p.indep?'checked':''}
+     onchange="MODELE[cfgPr].indep=this.checked;rCfgPr()"/>
+     Réalisable indépendamment — n'attend pas la validation du processus précédent</label></div>
+   <div class="form-r"><label>Réalisation :</label>
+    <label class="lbl-f"><input type="checkbox" ${p.ext?'checked':''}
+     onchange="MODELE[cfgPr].ext=this.checked;rCfgPr()"/>
+     Processus externe (réalisé par le fabricant)</label></div>
+   <div class="aide" style="margin-left:197px;">${p.secs.length} section(s),
+    ${p.secs.reduce((a,s)=>a+s.items.length,0)} point(s) de contrôle.</div>
+  </div>
+  <div style="border-top:1px solid var(--bande-bord);margin-top:8px;">${rendreEditeur()}</div>`;
+ poserIcones();
+}
+function cfgAddProc(){
+ MODELE.push({code:'NOUVEAU_'+(MODELE.length+1),nm:'Nouveau processus',ic:'list',
+  indep:false,ext:false,gab:'std',decl:'libre',
+  secs:[{t:'Section 1',kits:[],items:[pt('Nouveau point de contrôle','Oui/Non',{obl:false})]}]});
+ cfgPr=MODELE.length-1;
+ rCfgPr();
+}
+
+/* =====================================================================
+   19. Modale d'édition d'un processus du dossier (bibliothèque + éditeur)
+   ===================================================================== */
+const EXTRAS=[
+ {code:'CQ_INTER',nm:'Contrôle qualité intermédiaire',ic:'flask',indep:true,ext:false,gab:'std',decl:'libre',secs:[
+  {t:'Contrôle qualité',kits:[],items:[
+   pt('Aspect macroscopique conforme','Oui/Non'),
+   pt('Température relevée','Valeur °C',{seuil:-150}),
+   pt('Signature de libération intermédiaire','Auto',{dbl:true}),
+   pt('Photo de documentation','Photo',{obl:false}),
+  ]}]},
+ {code:'NON_CONF',nm:'Non-conformité / déviation',ic:'alert',indep:true,ext:false,gab:'std',decl:'libre',secs:[
+  {t:'Gestion de la déviation',kits:[],items:[
+   pt("Description de l'incident",'Texte'),
+   pt('Impact produit évalué','Oui/Non',{dbl:true}),
+   pt('Déclaration au référent qualité','Oui/Non'),
+   pt('Décision de libération / rejet','Oui/Non',{dbl:true}),
+  ]}]},
+ {code:'TRANSP_INT',nm:'Transport interne',ic:'truck',indep:true,ext:false,gab:'std',decl:'libre',secs:[
+  {t:'Transfert intra-établissement',kits:[],items:[
+   pt('Conteneur de transport conforme','Oui/Non'),
+   pt('Température au départ','Valeur °C',{seuil:-150}),
+   pt("Température à l'arrivée",'Valeur °C',{seuil:-150}),
+   pt('Heure de remise','Auto'),
+  ]}]},
+];
+const CATALOGUE=[
+ {g:'Commande & amont',codes:['ACCES','COMMANDE','APHERESE']},
+ {g:'Rattachement',codes:['RATTACHEMENT']},
+ {g:'Réception / stockage',codes:['RECEPTION','STOCKAGE','RECEPTION_POCHES']},
+ {g:'Circuit du médicament',codes:['PRESCRIPTION','VALIDATION','FABRICATION','FAB_EXT','DISPENSATION']},
+ {g:'Administration',codes:['DECONGELATION','TRANSPORT','ADMINISTRATION','SUIVI']},
+ {g:'Processus complémentaires',codes:['CQ_INTER','NON_CONF','TRANSP_INT']},
+];
+const modeleDe=c=>MODELE.find(p=>p.code===c)||EXTRAS.find(p=>p.code===c);
+
+let pmMode='add',pmEI=-1,pmTab='lib',pmSel=null,pmIndepV=false,pmSecs=null;
+function copie(x){return JSON.parse(JSON.stringify(x));}
+
+function ouvrirPM(mode,idx){
+ pmMode=mode;pmEI=idx;pmSel=null;
+ document.getElementById('pm-ok').textContent=mode==='edit'?'Enregistrer':'Ajouter ce processus';
+ document.getElementById('pm-ttl').textContent=mode==='edit'
+  ? 'Modifier : '+P[idx].nm : 'Ajouter un processus au dossier';
+ document.getElementById('pm-fi').textContent='';
+ if(mode==='edit'){
+  const p=P[idx];
+  document.getElementById('pm-nm').value=p.nm;
+  pmIndepV=!!p.indep;
+  pmSecs=copie(p.secs);
+  swTab('edit');
+ } else {
+  document.getElementById('pm-nm').value='';
+  pmIndepV=true;
+  pmSecs=[{t:'Section 1',kits:[],items:[]}];
+  swTab('lib');
+ }
+ document.getElementById('pm-indep').checked=pmIndepV;
+ document.getElementById('pmov').classList.add('on');
+ poserIcones();
+}
+function fermerPM(){document.getElementById('pmov').classList.remove('on');}
+function pmIndep(v){pmIndepV=v;}
+function swTab(t){
+ pmTab=t;
+ document.getElementById('tl-btn').className='pm-tb'+(t==='lib'?' act':'');
+ document.getElementById('te-btn').className='pm-tb'+(t==='edit'?' act':'');
+ if(t==='lib') rLibPanel(); else rEditPanel();
+}
+function rLibPanel(){
+ let h='<div style="display:flex;height:100%;overflow:hidden;">';
+ h+='<div style="width:250px;border-right:1px solid var(--ligne);overflow-y:auto;flex-shrink:0;">';
+ CATALOGUE.forEach((g,gi)=>{
+  h+=`<div class="cfg-grp">${g.g}</div>`;
+  g.codes.forEach((c,ii)=>{
+   const m=modeleDe(c);if(!m)return;
+   const on=pmSel&&pmSel.gi===gi&&pmSel.ii===ii;
+   const n=m.secs.reduce((a,s)=>a+s.items.length,0);
+   h+=`<div class="ci${on?' cis':''}" onclick="pmChoisir(${gi},${ii})" tabindex="0">
+    <span class="n">${m.nm}</span>
+    <span class="d">${n} point(s)${m.indep?' · indépendant':''}${m.ext?' · externe':''}</span></div>`;
+  });
+ });
+ h+='</div><div style="flex:1;overflow-y:auto;">';
+ if(pmSel){
+  const m=modeleDe(CATALOGUE[pmSel.gi].codes[pmSel.ii]);
+  h+=`<div style="padding:13px 14px 0;">
+   <div style="font-weight:500;color:var(--vio);font-size:var(--fs-lg);">${m.nm}</div>
+   <div class="meta" style="margin:5px 0 11px;">Déclencheur : <em>${
+    ETAPES_CODEES[m.decl]||ETAPES_LIBRES[m.decl]||m.decl}</em>
+    ${m.indep?' · réalisable indépendamment':''}</div></div>`;
+  m.secs.forEach((s,si)=>{
+   h+=`<div class="bande">${ico('list')} ${s.t}<span class="n">${s.items.length} point(s)</span></div>`;
+   h+='<table class="tbl"><tbody>';
+   s.items.forEach(it=>{
+    h+=`<tr class="chkr"><td>${it.lbl}${it.sub?`<div class="lbl-s">${it.sub}</div>`:''}</td>
+     <td class="c" style="width:96px;"><span class="btp ${TYPES[it.type]}">${it.type}</span></td>
+     <td class="c" style="width:130px;">${it.dbl?`<span class="tag tag-dbl">2 pers.</span> `:''}${
+      it.ex?`<span class="tag tag-dup">×${it.nEx}</span>`:''}</td></tr>`;
+   });
+   h+='</tbody></table>';
+  });
+ } else {
+  h+=`<div class="vide" style="padding:40px;">${ico('books','font-size:26px;display:block;margin:0 auto 10px')}
+   Sélectionnez un modèle de processus dans la bibliothèque.</div>`;
+ }
+ h+='</div></div>';
+ document.getElementById('pm-ct').innerHTML=h;
+ poserIcones(document.getElementById('pm-ct'));
+}
+function pmChoisir(gi,ii){
+ pmSel={gi,ii};
+ const m=modeleDe(CATALOGUE[gi].codes[ii]);
+ document.getElementById('pm-nm').value=m.nm;
+ pmSecs=copie(m.secs);
+ pmIndepV=!!m.indep;
+ document.getElementById('pm-indep').checked=pmIndepV;
+ document.getElementById('pm-fi').textContent='Modèle : '+m.nm;
+ rLibPanel();
+}
+function rEditPanel(){
+ edCible(pmSecs,rEditPanel);
+ const n=pmSecs.reduce((a,s)=>a+s.items.length,0);
+ document.getElementById('pm-ct').innerHTML=`
+  <div class="ed-bar">
+   ${ico('pencil','color:var(--vio)')}
+   <span style="font-size:var(--fs-sm);color:var(--vio);font-weight:500;">
+    Éditeur de points de contrôle</span>
+   <span class="meta">${pmSecs.length} section(s) · ${n} point(s)</span>
+   <span class="meta" style="margin-left:auto;">Les modifications portent sur ce dossier,
+    pas sur le modèle de référence.</span>
+  </div>
+  <div class="ed-scroll">${rendreEditeur()}</div>`;
+ poserIcones(document.getElementById('pm-ct'));
+}
+function pmConfirm(){
+ const nm=(document.getElementById('pm-nm').value||'').trim();
+ if(pmMode==='add'&&pmTab==='lib'&&!pmSel){
+  document.getElementById('pm-fi').textContent='Sélectionnez un modèle dans la bibliothèque.';
+  return;
+ }
+ const nom=nm||'Nouveau processus';
+ if(pmMode==='edit'){
+  const p=P[pmEI];
+  p.nm=nom;p.indep=pmIndepV;p.secs=copie(pmSecs);
+  if(p.lk&&pmIndepV) p.lk=false;
+  fermerPM();rScen();
+ } else {
+  const src=pmSel?modeleDe(CATALOGUE[pmSel.gi].codes[pmSel.ii]):null;
+  P.push({code:'AJOUT_'+(P.length+1),nm:nom,ic:src?src.ic:'list',indep:pmIndepV,
+   ext:src?!!src.ext:false,gab:'std',decl:src?src.decl:'libre',
+   secs:copie(pmSecs),n:P.length+1,done:false,st:'pending',lk:!pmIndepV,dt:null,dv:null});
+  P.forEach((p,i)=>p.n=i+1);
+  fermerPM();rScen();
+ }
+}
+
+/* =====================================================================
+   20. Démarrage
+   ===================================================================== */
+poserIcones();
+dos=DOSSIERS[0];
+P=construireProc(dos);
+sel=dos.av;
+allerA('dash');
+</script>
+</body>
+</html>
