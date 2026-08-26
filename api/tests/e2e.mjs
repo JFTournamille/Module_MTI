@@ -56,9 +56,17 @@ const reception = r.corps.processus.find((p) => p.gabarit === 'reception')
 reception
   ? ok(`réception trouvée au rang ${reception.ordre}, état « ${reception.etat} »`)
   : ko('processus de réception introuvable')
-reception.definition.sections.length === 6
-  ? ok('définition figée dans le dossier (6 sections)')
-  : ko(`${reception.definition.sections?.length} sections`)
+/* Le nombre de sections vient du modèle actif : ce qui compte n'est pas qu'il
+   y en ait six, c'est que le dossier porte une COPIE fidèle de la définition —
+   c'est elle qui le rend relisible après évolution du référentiel. */
+const sectionsModele = (await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')).corps
+  .processus.find((p) => p.gabarit === 'reception').sections
+reception.definition.sections.length === sectionsModele.length
+  ? ok(`définition figée dans le dossier (${sectionsModele.length} sections, copie du modèle)`)
+  : ko(`${reception.definition.sections?.length} sections au lieu de ${sectionsModele.length}`)
+JSON.stringify(reception.definition.sections) === JSON.stringify(sectionsModele)
+  ? ok('la copie est fidèle, point par point')
+  : ko('la définition figée diffère du modèle dont elle est issue')
 
 console.log('\n3. Validation de type sur les saisies')
 r = await j('PUT', `/api/processus/${reception.id}/saisies`,
@@ -491,6 +499,98 @@ const versions = [...new Set(r.corps.map((d) => d.versionModele))].sort()
 versions.length >= 1
   ? ok(`versions de modèle en service dans les dossiers : v${versions.join(', v')}`)
   : ko('aucune version de modèle rapportée')
+
+console.log('\n18. Commentaire, n° de série, kits et contresignature')
+const refK = `DOS-KIT-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refK })
+const dossierK = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierK}`)
+const procK = r.corps.processus.find((p) => p.gabarit === 'reception')
+
+// Le kit vient du modèle : composition et compte propre à chaque composant.
+const secKit = procK.definition.sections.find((sc) => (sc.kits ?? []).length)
+secKit ? ok(`section « ${secKit.titre} » porte ${secKit.kits.length} kit(s)`)
+  : ko('aucune section ne déclare de kit')
+const compo = secKit?.kits?.[0]?.composition ?? ''
+if (/CD4/.test(compo) && /CD8/.test(compo)) ok(`composition : ${compo}`)
+else ko(`composition : ${JSON.stringify(secKit?.kits?.[0])}`)
+const tubes = secKit.points.filter((pt) => pt.kit === secKit.kits[0].id && pt.exemplaires)
+tubes.length === 2 && tubes[0].exemplaires === 3 && tubes[1].exemplaires === 2
+  ? ok(`exemplaires propres au point : ${tubes.map((t) => t.exemplaires).join(' et ')}`)
+  : ko(`exemplaires : ${JSON.stringify(tubes.map((t) => t.exemplaires))}`)
+
+const iKit = procK.definition.sections.indexOf(secKit)
+r = await j('PUT', `/api/processus/${procK.id}/saisies`, { saisies: [
+  { sectionIndex: iKit, pointIndex: 0, pointNum: '7.1', pointType: 'ouinon', exemplaire: 1,
+    obligatoire: true, reponse: 'oui', numeroSerie: 'CD4-000117',
+    commentaire: 'Étiquette décollée, tube intègre.' },
+  { sectionIndex: iKit, pointIndex: 0, pointNum: '7.1', pointType: 'ouinon', exemplaire: 2,
+    obligatoire: true, reponse: 'oui', numeroSerie: 'CD4-000118' },
+  { sectionIndex: iKit, pointIndex: 1, pointNum: '7.2', pointType: 'ouinon', exemplaire: 1,
+    obligatoire: true, reponse: 'oui', numeroSerie: '   ' }
+] })
+r.statut === 200 ? ok('saisies avec n° de série et commentaire enregistrées') : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers/${dossierK}`)
+const parEx = (ex) => r.corps.saisies.find(
+  (sa) => sa.point_num === '7.1' && sa.exemplaire === ex)
+parEx(1)?.numero_serie === 'CD4-000117' && parEx(2)?.numero_serie === 'CD4-000118'
+  ? ok('un n° de série par exemplaire, distincts')
+  : ko(`séries : ${JSON.stringify([parEx(1)?.numero_serie, parEx(2)?.numero_serie])}`)
+if (/Étiquette décollée/.test(parEx(1)?.commentaire ?? '')) {
+  ok('commentaire relu sur la bonne ligne')
+} else {
+  ko(`commentaire : ${parEx(1)?.commentaire}`)
+}
+parEx(2)?.commentaire === null
+  ? ok('pas de commentaire là où rien n\'a été saisi') : ko(`commentaire parasite : ${parEx(2)?.commentaire}`)
+// Une chaîne d'espaces n'est pas un n° de série : elle ne doit pas être stockée.
+r.corps.saisies.find((sa) => sa.point_num === '7.2')?.numero_serie === null
+  ? ok('un n° de série vide de sens est ramené à NULL')
+  : ko('une chaîne d\'espaces a été stockée comme n° de série')
+
+// Contresignature : elle vaut pour le processus entier, avec rappel des points.
+r = await j('GET', '/api/session')
+const moiSession = r.corps.operateur.id
+const autre = r.corps.operateurs.find((o) => o.id !== moiSession)
+if (!autre) {
+  ko('aucun second opérateur actif : contresignature non éprouvable')
+} else {
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: moiSession })
+  r.statut === 409 ? ok('contresignature par soi-même refusée (409)') : ko(`statut ${r.statut}`)
+
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: autre.id })
+  r.statut === 200 && r.corps.points.length >= 4
+    ? ok(`contresigné par ${r.corps.contresignataire.libelle} — ${r.corps.points.length} points rappelés`)
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 140)}`)
+  const empreinte = r.corps.empreinte
+  if (/^[0-9a-f]{64}$/.test(empreinte ?? '')) {
+    ok(`empreinte SHA-256 du contenu signé : ${empreinte.slice(0, 16)}…`)
+  } else {
+    ko(`empreinte : ${empreinte}`)
+  }
+
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: autre.id })
+  r.corps?.deja === true ? ok('une seconde contresignature du même vérificateur ne double pas')
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 120)}`)
+
+  r = await j('GET', `/api/dossiers/${dossierK}/signatures`)
+  r.corps.length === 1 && r.corps[0].role === 'verificateur'
+    ? ok(`1 contresignature relue, rôle « ${r.corps[0].role} »`)
+    : ko(`signatures : ${JSON.stringify(r.corps.map((x) => x.role))}`)
+
+  r = await j('POST', '/api/processus/00000000-0000-0000-0000-000000000000/contresigner',
+    { utilisateurId: autre.id })
+  r.statut === 404 ? ok('processus inconnu → 404') : ko(`statut ${r.statut}`)
+
+  // Un processus sans point en double validation n'a rien à contresigner.
+  r = await j('GET', `/api/dossiers/${dossierK}`)
+  const sansDbl = r.corps.processus.find((p) => !(p.definition?.sections ?? [])
+    .flatMap((sc) => sc.points ?? []).some((pt) => pt.doubleValidation))
+  r = await j('POST', `/api/processus/${sansDbl.id}/contresigner`, { utilisateurId: autre.id })
+  r.statut === 409 ? ok(`« ${sansDbl.nom} » : rien à contresigner, refusé (409)`)
+    : ko(`statut ${r.statut}`)
+}
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

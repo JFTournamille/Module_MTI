@@ -127,3 +127,46 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 
 /* ── Avancement du processus courant ── */
 .proc-etat:disabled{opacity:.55;cursor:default;}
+
+/* ── Kits, n° de série, commentaires, double validation ── */
+.ckit td{background:#fffbf3;border-top:1px solid #e0c890;border-bottom:1px solid #f0e0c0;
+  padding:5px 10px;font-size:12px;color:#7a4f00;}
+.ckit-b{display:inline-block;background:#fff3e0;border:1px solid #e0a030;border-radius:9px;
+  padding:1px 8px;font-size:10px;font-weight:bold;margin-right:6px;}
+.ckit-c{color:#9a7030;font-style:italic;margin-left:4px;}
+
+.cflags{display:flex;align-items:center;gap:6px;margin-top:3px;}
+.cdbl{display:inline-block;background:#e8e4ff;border:1px solid #b0a0e0;color:#4a3880;
+  border-radius:9px;padding:1px 7px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.ccmt-b{background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;
+  opacity:.35;line-height:1;}
+.ccmt-b:hover{opacity:1;}
+.ccmt-b.plein{opacity:1;}
+
+.cserie{display:flex;align-items:center;gap:5px;margin-top:4px;}
+.cserie label{font-size:9.5px;color:#7a4f00;font-weight:bold;white-space:nowrap;}
+.cserie input{font-family:inherit;font-size:10px;padding:1px 5px;border:1px solid #e0a030;
+  border-radius:2px;background:#fffbf3;width:108px;}
+
+.ccmt-r td{background:#f8f6ff!important;}
+.ccmt-t{font-size:10px;color:#4a3880;font-weight:bold;margin-bottom:4px;}
+.ccmt-z{width:100%;font-family:inherit;font-size:11px;padding:4px 6px;border:1px solid #c8b8e8;
+  border-radius:2px;box-sizing:border-box;}
+.ccmt-a{display:flex;gap:6px;margin-top:5px;}
+.ccmt-ok,.ccmt-x{font-family:inherit;font-size:10px;padding:2px 9px;border-radius:2px;cursor:pointer;}
+.ccmt-ok{background:#4a3880;border:none;color:#fff;}
+.ccmt-x{background:#e8e8e8;border:1px solid #bbb;color:#444;}
+
+/* ── Contresignature de processus ── */
+.contre{margin:10px 14px;padding:10px 13px;border-radius:4px;font-size:12px;}
+.contre-req{background:#f5f0ff;border:1px solid #d0c0f0;}
+.contre-ok{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;}
+.contre-t{font-size:13px;font-weight:bold;color:#4a3880;margin-bottom:6px;}
+.contre ul{margin:6px 0 10px 20px;line-height:1.7;color:#333;}
+.contre-f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.contre-f select{font-family:inherit;font-size:12px;padding:3px 7px;border:1px solid #a090cc;
+  border-radius:2px;}
+.contre-b{font-family:inherit;font-size:12px;font-weight:bold;padding:3px 12px;border:none;
+  border-radius:2px;background:#4a3880;color:#fff;cursor:pointer;}
+.contre-b:disabled{opacity:.5;cursor:default;}
+.contre-emp{font-family:'Courier New',monospace;font-size:10px;color:#2e7d32;}

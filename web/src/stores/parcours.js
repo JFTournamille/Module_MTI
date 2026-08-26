@@ -26,7 +26,11 @@ const saisieVide = () => ({
   photos: [],             // [{ libelle, presente }]
   timerDebut: null,       // epoch ms
   timerFin: null,
-  operateur: ''
+  operateur: '',
+  /* Texte libre de l'opérateur sur la ligne, restitué en bulle. */
+  commentaire: '',
+  /* N° de série de l'exemplaire, en complément du n° de lot. */
+  numeroSerie: ''
 })
 
 export const useParcours = defineStore('parcours', () => {
@@ -256,7 +260,9 @@ export const useParcours = defineStore('parcours', () => {
             : [],
           timerDebut: s.timer_debut ? new Date(s.timer_debut).getTime() : null,
           timerFin: s.timer_fin ? new Date(s.timer_fin).getTime() : null,
-          operateur: ''
+          operateur: '',
+          commentaire: s.commentaire ?? '',
+          numeroSerie: s.numero_serie ?? ''
         }
         if (s.operateur_role === 'op2') {
           op2Ouverts.add(cleSaisie(idx, s.section_index, s.point_index, s.exemplaire, 'op1'))
@@ -266,6 +272,7 @@ export const useParcours = defineStore('parcours', () => {
       // On reprend là où le dossier en est, pas au début.
       const enCours = d.processus.findIndex((p) => p.etat !== 'valide')
       selection.value = enCours >= 0 ? enCours : 0
+      await chargerSignatures()
       return true
     } catch (e) {
       erreurDossier.value = e.message || 'API injoignable.'
@@ -344,7 +351,9 @@ export const useParcours = defineStore('parcours', () => {
               seuil: point.seuil ?? null,
               horodatage: s.horodatage ? new Date(s.horodatage).toISOString() : null,
               timerDebut: s.timerDebut ? new Date(s.timerDebut).toISOString() : null,
-              timerFin: s.timerFin ? new Date(s.timerFin).toISOString() : null
+              timerFin: s.timerFin ? new Date(s.timerFin).toISOString() : null,
+              commentaire: s.commentaire || null,
+              numeroSerie: s.numeroSerie || null
             })
           }
         }
@@ -451,10 +460,18 @@ export const useParcours = defineStore('parcours', () => {
 
   // ────────────────────────────────────────────────────────────── Lignes ──
 
-  /** Nombre de copies d'un point selon son mode de duplication.
-   *  `multi: 'photo' | 'cuve'` → n exemplaires ; `false` → 1. */
-  const nbCopies = (point) =>
-    point.multi ? Math.max(1, Math.min(10, Number(dossier.nbExemplaires) || 1)) : 1
+  /**
+   * Nombre de copies d'un point.
+   *
+   * `exemplaires: n` — compte PROPRE au point, indépendant du dossier. C'est ce
+   * qu'exige un kit : trois tubes CD4 et deux tubes CD8 ne se comptent pas
+   * ensemble, et surtout pas avec le nombre d'exemplaires du produit.
+   * `multi: 'photo' | 'cuve'` — compte porté par le dossier, comme avant.
+   */
+  const nbCopies = (point) => {
+    if (point.exemplaires) return Math.max(1, Math.min(12, Number(point.exemplaires)))
+    return point.multi ? Math.max(1, Math.min(10, Number(dossier.nbExemplaires) || 1)) : 1
+  }
 
   /**
    * Développe les sections du processus de réception en lignes affichables.
@@ -467,7 +484,17 @@ export const useParcours = defineStore('parcours', () => {
     const lignes = []
     p.sections.forEach((section, idxSection) => {
       lignes.push({ genre: 'section', titre: section.titre, cle: `s${idxSection}` })
+      let kitCourant = null
       section.points.forEach((point, idxPoint) => {
+        /* En-tête de kit : les étapes propres à chaque composant restent
+           regroupées, avec la composition sous les yeux de l'opérateur. */
+        if (point.kit && point.kit !== kitCourant) {
+          const kit = (section.kits ?? []).find((k) => k.id === point.kit)
+          if (kit) lignes.push({ genre: 'kit', kit, cle: `k${idxSection}-${point.kit}` })
+          kitCourant = point.kit
+        } else if (!point.kit) {
+          kitCourant = null
+        }
         const copies = nbCopies(point)
         for (let ex = 1; ex <= copies; ex++) {
           lignes.push({
@@ -494,16 +521,29 @@ export const useParcours = defineStore('parcours', () => {
     const lignes = []
     sections.forEach((section, idxSection) => {
       lignes.push({ genre: 'section', titre: section.titre, cle: `s${idxSection}` })
+      let kitCourant = null
       section.points.forEach((point, idxPoint) => {
-        lignes.push({
-          genre: 'point',
-          point,
-          idxSection,
-          idxPoint,
-          exemplaire: 1,
-          copies: 1,
-          cle: cleSaisie(selection.value, idxSection, idxPoint, 1, 'op1')
-        })
+        if (point.kit && point.kit !== kitCourant) {
+          const kit = (section.kits ?? []).find((k) => k.id === point.kit)
+          if (kit) lignes.push({ genre: 'kit', kit, cle: `k${idxSection}-${point.kit}` })
+          kitCourant = point.kit
+        } else if (!point.kit) {
+          kitCourant = null
+        }
+        /* Les processus standard portent eux aussi des exemplaires : la poche
+           d'aphérèse en a deux, chacune avec son n° de série. */
+        const copies = nbCopies(point)
+        for (let ex = 1; ex <= copies; ex++) {
+          lignes.push({
+            genre: 'point',
+            point,
+            idxSection,
+            idxPoint,
+            exemplaire: ex,
+            copies,
+            cle: cleSaisie(selection.value, idxSection, idxPoint, ex, 'op1')
+          })
+        }
       })
     })
     return lignes
@@ -530,6 +570,56 @@ export const useParcours = defineStore('parcours', () => {
   const basculerObligatoire = (cle, point) => {
     const s = saisie(cle, point)
     s.obligatoire = !s.obligatoire
+  }
+
+  /** Lignes dont le commentaire est déplié. */
+  const commentairesOuverts = reactive(new Set())
+  const commentaireOuvert = (cle) => commentairesOuverts.has(cle)
+  const basculerCommentaire = (cle) => {
+    commentairesOuverts.has(cle) ? commentairesOuverts.delete(cle) : commentairesOuverts.add(cle)
+  }
+
+  // ── Contresignature de processus par une 2e personne ──
+  const signatures = ref([])
+
+  /** Points du processus soumis à double validation. */
+  function pointsDoubleValidation (idx = selection.value) {
+    const p = processus.value[idx]
+    if (!p) return []
+    return (p.sections ?? []).flatMap((sc) => (sc.points ?? []))
+      .filter((pt) => pt.doubleValidation === true)
+  }
+
+  /** Contresignature posée sur le processus courant, s'il y en a une. */
+  function contresignature (idx = selection.value) {
+    const pid = processusIds.value[idx]
+    if (!pid) return null
+    return signatures.value.find((s) => s.processusId === pid && s.role === 'verificateur') ?? null
+  }
+
+  async function chargerSignatures () {
+    if (!dossierId.value) { signatures.value = []; return }
+    const r = await appel(`/api/dossiers/${dossierId.value}/signatures`)
+    signatures.value = r.ok ? await r.json() : []
+  }
+
+  /** Contresigne le processus courant. La 2e personne doit être une autre. */
+  async function contresigner (utilisateurId, idx = selection.value) {
+    const pid = processusIds.value[idx]
+    if (!pid) return false
+    erreurDossier.value = ''
+    if (!(await enregistrerProcessus(idx))) return false
+    const r = await appel(`/api/processus/${pid}/contresigner`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ utilisateurId })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Contresignature refusée (${r.status}).`)
+      return false
+    }
+    await chargerSignatures()
+    return true
   }
 
   // ── Double contrôle ──
@@ -715,6 +805,8 @@ export const useParcours = defineStore('parcours', () => {
     lectureSeule, creerDossier, ouvrirDossier, enregistrerEntete,
     enregistrerProcessus, validerDossier, fermerDossier, dossierMemorise,
     changerEtatProcessus,
+    commentaireOuvert, basculerCommentaire,
+    signatures, pointsDoubleValidation, contresignature, chargerSignatures, contresigner,
     basculerPrescription,
     saisie, basculerObligatoire,
     op2Ouvert, basculerOp2, cleOp2,

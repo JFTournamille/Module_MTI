@@ -47,6 +47,21 @@ const modeleActif = await fetch(`${base}/api/modeles`)
   .catch(() => null)
 const NB_PROCESSUS = modeleActif?.nbProcessus ?? 12
 
+/* Définition de la réception, lue du modèle actif : sections, lignes attendues
+   et obligations en découlent, plutôt que d'être recopiées dans la suite — les
+   figer en dur les ferait recasser à chaque version du parcours. */
+const defModele = await fetch(`${base}/api/modeles/PARCOURS_CART_AUTOLOGUE`)
+  .then((r) => r.json()).catch(() => null)
+const ptsReception = (defModele?.processus ?? [])
+  .find((p) => p.gabarit === 'reception')?.sections ?? []
+/** Copies d'un point : son propre compte s'il en impose un, sinon `n`. */
+const copiesDe = (pt, n) => Number(pt.exemplaires) || (pt.multi ? n : 1)
+const NB_SECTIONS = ptsReception.length
+const nbLignesAttendues = (n) => ptsReception.flatMap((sc) => sc.points)
+  .reduce((t, pt) => t + copiesDe(pt, n), 0)
+const NB_OBLIGATOIRES = ptsReception.flatMap((sc) => sc.points)
+  .reduce((t, pt) => t + (pt.obligatoire ? copiesDe(pt, 1) : 0), 0)
+
 /** Sélectionne un processus par son NOM : les index bougent d'une version du
  *  parcours à l'autre, les noms sont stables. */
 async function allerAuProcessus (nom) {
@@ -104,24 +119,38 @@ await page.locator('.hdr-left .meta').innerText().then(t =>
 // ── 3. Checklist de réception ──
 console.log('\n3. Réception')
 const nbSections = await page.locator('.chk .csec').count()
-nbSections === 6 ? ok('6 sections') : ko(`${nbSections} sections au lieu de 6`)
+nbSections === NB_SECTIONS ? ok(`${nbSections} sections`)
+  : ko(`${nbSections} sections au lieu de ${NB_SECTIONS}`)
 let nbLignes = await page.locator('.chk .crow').count()
-nbLignes === 24 ? ok('24 points de contrôle (n=1)') : ko(`${nbLignes} lignes au lieu de 24`)
+nbLignes === nbLignesAttendues(1) ? ok(`${nbLignes} points de contrôle (n=1)`)
+  : ko(`${nbLignes} lignes au lieu de ${nbLignesAttendues(1)}`)
+
+/* Non-régression : l'accès paresseux aux saisies crée la ligne au PREMIER
+   appel. Un appel sans le point la crée sans son caractère obligatoire, et le
+   modèle ne s'applique plus jamais — la validation cesse alors de bloquer, en
+   silence. C'est arrivé, d'où ce contrôle. */
+const nbObl = await page.locator('.cobtn.on').count()
+nbObl === NB_OBLIGATOIRES
+  ? ok(`${nbObl} point(s) obligatoire(s), hérités du modèle`)
+  : ko(`${nbObl} obligatoire(s) au lieu de ${NB_OBLIGATOIRES} — le défaut du modèle est perdu`)
 
 // ── 4. Duplication réactive par n exemplaires ──
 console.log('\n4. Duplication n exemplaires (sans bouton « Appliquer »)')
 await page.locator('.ch-meta input[type=number]').fill('3')
 await page.waitForTimeout(200)
 nbLignes = await page.locator('.chk .crow').count()
-// 24 points dont 8 marqués multi (1.5, 2.1, 2.2, 2.3, 3.2, 5.1, 5.2, 5.3) → 24 + 8*2 = 40
-nbLignes === 40 ? ok('40 lignes avec n=3 (8 points multi × 3)')
-  : ko(`${nbLignes} lignes au lieu de 40`)
+// Les points « multi » suivent le nombre d'exemplaires du dossier ; ceux qui
+// portent leur propre compte (les tubes du kit) n'en dépendent pas.
+nbLignes === nbLignesAttendues(3) ? ok(`${nbLignes} lignes avec n=3`)
+  : ko(`${nbLignes} lignes au lieu de ${nbLignesAttendues(3)}`)
 const badgesEx = await page.locator('.chk .cmul').filter({ hasText: 'Ex. 2/3' }).count()
 badgesEx > 0 ? ok(`badges « Ex. 2/3 » présents (${badgesEx})`) : ko('badges exemplaire absents')
 await page.locator('.ch-meta input[type=number]').fill('1')
 await page.waitForTimeout(200)
 nbLignes = await page.locator('.chk .crow').count()
-nbLignes === 24 ? ok('retour à 24 lignes (aucune copie orpheline)') : ko(`${nbLignes} lignes après retour à n=1`)
+nbLignes === nbLignesAttendues(1)
+  ? ok(`retour à ${nbLignes} lignes (aucune copie orpheline)`)
+  : ko(`${nbLignes} lignes après retour à n=1`)
 
 // ── 5. Alarme de température ──
 console.log('\n5. Alarme de température (seuil −150 °C sur le point 1.3)')
@@ -645,7 +674,93 @@ const dateRelue = await page.locator('.std-ir input[type=date], .chk input[type=
 dateRelue === '2026-09-15' ? ok(`jalon relu depuis la base : ${dateRelue}`)
   : ko(`jalon relu : « ${dateRelue} » au lieu de 2026-09-15`)
 
-console.log('\n20. Console du navigateur et réseau')
+// ── 20. Kits, n° de série, commentaires, double validation ──
+console.log('\n20. Kits, n° de série, commentaires et double validation')
+await allerAuScenario()
+await allerAuProcessus('Réception (+/-')
+
+const kits = await page.locator('.ckit').count()
+kits >= 1 ? ok(`${kits} en-tête(s) de kit`) : ko('aucun regroupement par kit')
+const composition = (await page.locator('.ckit-c').first().innerText()).trim()
+if (/tubes CD4/.test(composition) && /tubes CD8/.test(composition)) {
+  ok(`composition affichée : « ${composition.replace(/^—\s*/, '')} »`)
+} else {
+  ko(`composition : « ${composition} »`)
+}
+
+// Les tubes du kit ont leur PROPRE compte d'exemplaires : 3 CD4 et 2 CD8 ne se
+// comptent pas ensemble, et surtout pas avec les exemplaires du produit.
+const lignesCD4 = await page.locator('.chk .crow').filter({ hasText: 'Tube CD4' }).count()
+const lignesCD8 = await page.locator('.chk .crow').filter({ hasText: 'Tube CD8' }).count()
+lignesCD4 === 3 && lignesCD8 === 2
+  ? ok(`${lignesCD4} tubes CD4 et ${lignesCD8} tubes CD8, comptés séparément`)
+  : ko(`${lignesCD4} CD4 / ${lignesCD8} CD8 au lieu de 3 / 2`)
+
+const badgesDbl = await page.locator('.cdbl').count()
+badgesDbl >= 4 ? ok(`${badgesDbl} point(s) marqués « 2 pers. »`)
+  : ko(`${badgesDbl} badge(s) de double validation`)
+
+const champsSerie = await page.locator('.cserie input').count()
+champsSerie === 5 ? ok(`${champsSerie} champs de n° de série (un par tube)`)
+  : ko(`${champsSerie} champ(s) de n° de série au lieu de 5`)
+
+// Saisir un n° de série et un commentaire, puis les relire de la base.
+await page.locator('.cserie input').first().fill('CD4-000117')
+await page.locator('.ccmt-b').first().click()
+await page.waitForTimeout(300)
+await page.locator('.ccmt-z').first().fill('Étiquette décollée, tube intègre.')
+await page.locator('.ccmt-ok').first().click()
+await page.waitForTimeout(300)
+await page.locator('.ccmt-b.plein').count() >= 1
+  ? ok('la bulle signale un commentaire présent') : ko('la bulle reste vide')
+
+await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.waitForTimeout(1600)
+
+// ── Contresignature du processus par une 2e personne ──
+const blocContre = page.locator('.contre')
+await blocContre.count() === 1 ? ok('bloc de double validation affiché')
+  : ko('aucun bloc de double validation sur la réception')
+const rappels = await page.locator('.contre li').count()
+rappels >= 4 ? ok(`${rappels} point(s) rappelés à la 2e personne`)
+  : ko(`${rappels} point(s) rappelés`)
+
+const candidats = await page.locator('#contre-qui option').count()
+if (candidats > 1) {
+  await page.locator('#contre-qui').selectOption({ index: 1 })
+  await page.locator('.contre-b').click()
+  await page.waitForTimeout(1800)
+  const titreContre = (await page.locator('.contre-t').innerText()).trim()
+  if (/contresigné par/.test(titreContre)) ok(`contresignature posée : « ${titreContre} »`)
+  else ko(`bloc après contresignature : « ${titreContre} »`)
+  await page.locator('.contre-emp').count() === 1
+    ? ok("l'empreinte du contenu signé est affichée")
+    : ko('aucune empreinte affichée')
+} else {
+  console.log('  · un seul opérateur actif : contresignature non éprouvée')
+}
+
+// Tout doit revenir de la base, pas de l'écran.
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+await allerAuScenario()
+await allerAuProcessus('Réception (+/-')
+const serieRelue = await page.locator('.cserie input').first().inputValue()
+serieRelue === 'CD4-000117' ? ok(`n° de série relu : ${serieRelue}`)
+  : ko(`n° de série relu : « ${serieRelue} »`)
+const bulleRelue = await page.locator('.ccmt-b.plein').first().getAttribute('title')
+if (/Étiquette décollée/.test(bulleRelue ?? '')) {
+  ok('commentaire relu depuis la base, restitué en bulle')
+} else {
+  ko(`bulle relue : « ${bulleRelue} »`)
+}
+if (candidats > 1) {
+  const contreRelue = (await page.locator('.contre-t').innerText()).trim()
+  if (/contresigné par/.test(contreRelue)) ok('contresignature relue depuis la base')
+  else ko(`bloc relu : « ${contreRelue} »`)
+}
+
+console.log('\n21. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

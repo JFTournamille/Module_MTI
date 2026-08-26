@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { transaction, requete } from '../db.js'
 
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
@@ -176,6 +177,122 @@ export default async function dossiers (app) {
       })
     }
     return { id: rows[0].id, statut: rows[0].statut }
+  })
+
+  // ── Contresignature d'un processus par une 2e personne ───────────────────
+  //
+  // La double validation demandée en réunion n'est pas une seconde saisie ligne
+  // à ligne — le double contrôle Op.1/Op.2 existe déjà pour ça. C'est une
+  // contresignature GLOBALE du processus par une 2e personne identifiée, avec
+  // rappel des points concernés.
+  //
+  // Elle vit dans `mti.signature`, où elle a sa place : le rôle « verificateur »
+  // existe, la table est auditée, et le rôle applicatif n'a ni UPDATE ni DELETE
+  // dessus — une contresignature posée ne se retire pas.
+  app.post('/api/processus/:id/contresigner', async (request, reply) => {
+    const { utilisateurId } = request.body ?? {}
+    if (!utilisateurId) {
+      return reply.code(400).send({ erreur: 'utilisateurId de la 2e personne requis.' })
+    }
+
+    const { rows: ctx } = await requete(
+      `SELECT dp.dossier_id, dp.nom, dp.definition, d.statut
+         FROM mti.dossier_processus dp
+         JOIN mti.dossier d ON d.id = dp.dossier_id
+        WHERE dp.id = $1`,
+      [request.params.id])
+    if (!ctx.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
+    if (ctx[0].statut === 'valide') {
+      return reply.code(409).send({ erreur: 'Dossier validé : les signatures sont figées.' })
+    }
+
+    // Une contresignature par la même personne que la 1re n'en est pas une :
+    // tout l'objet du double contrôle est qu'un second regard s'exerce.
+    if (utilisateurId === request.utilisateur.id) {
+      return reply.code(409).send({
+        erreur: 'La 2e personne doit être différente de celle qui saisit. Une ' +
+                'contresignature par le même opérateur ne vaut pas double contrôle.'
+      })
+    }
+
+    const { rows: second } = await requete(
+      'SELECT id, identifiant, nom, prenom, titre, profil FROM mti.utilisateur WHERE id = $1 AND actif',
+      [utilisateurId])
+    if (!second.length) {
+      return reply.code(409).send({
+        erreur: "La 2e personne n'existe pas ou son compte est désactivé."
+      })
+    }
+
+    const points = (ctx[0].definition?.sections ?? [])
+      .flatMap((sc, iS) => (sc.points ?? []).map((pt, iP) => ({ ...pt, iS, iP })))
+      .filter((pt) => pt.doubleValidation === true)
+    if (!points.length) {
+      return reply.code(409).send({
+        erreur: `Aucun point de « ${ctx[0].nom} » n'est soumis à double validation.`
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* L'empreinte porte sur CE QUI EST SIGNÉ : le processus et la liste
+         exacte des points contresignés. Si la définition du processus changeait,
+         l'empreinte ne correspondrait plus — c'est le but. */
+      const contenu = JSON.stringify({
+        processus: request.params.id,
+        nom: ctx[0].nom,
+        points: points.map((pt) => ({ num: pt.num ?? null, libelle: pt.libelle })),
+        contresignataire: second[0].id
+      })
+      const empreinte = createHash('sha256').update(contenu).digest('hex')
+
+      const { rows } = await client.query(
+        `INSERT INTO mti.signature (dossier_id, processus_id, role, utilisateur_id, empreinte)
+         VALUES ($1, $2, 'verificateur', $3, $4)
+         ON CONFLICT (dossier_id, processus_id, role, utilisateur_id) DO NOTHING
+         RETURNING id, signe_le`,
+        [ctx[0].dossier_id, request.params.id, second[0].id, empreinte])
+
+      if (!rows.length) {
+        return {
+          deja: true,
+          message: `« ${ctx[0].nom} » est déjà contresigné par ce vérificateur.`
+        }
+      }
+      return {
+        id: rows[0].id,
+        signeLe: rows[0].signe_le,
+        empreinte,
+        processus: ctx[0].nom,
+        contresignataire: {
+          id: second[0].id,
+          identifiant: second[0].identifiant,
+          libelle: `${second[0].titre ? second[0].titre + ' ' : ''}${second[0].prenom} ${second[0].nom}`,
+          profil: second[0].profil
+        },
+        points: points.map((pt) => ({ num: pt.num ?? null, libelle: pt.libelle }))
+      }
+    })
+  })
+
+  /** Contresignatures posées sur un dossier, pour l'affichage. */
+  app.get('/api/dossiers/:id/signatures', async (request) => {
+    const { rows } = await requete(
+      `SELECT s.id, s.processus_id, s.role, s.signe_le, s.empreinte,
+              u.identifiant, u.profil,
+              coalesce(u.titre || ' ', '') || u.prenom || ' ' || u.nom AS libelle
+         FROM mti.signature s
+         JOIN mti.utilisateur u ON u.id = s.utilisateur_id
+        WHERE s.dossier_id = $1
+        ORDER BY s.signe_le`,
+      [request.params.id])
+    return rows.map((r) => ({
+      id: r.id,
+      processusId: r.processus_id,
+      role: r.role,
+      signeLe: r.signe_le,
+      empreinte: r.empreinte,
+      contresignataire: { identifiant: r.identifiant, libelle: r.libelle, profil: r.profil }
+    }))
   })
 
   // ── Avancement d'un processus ────────────────────────────────────────────
@@ -410,8 +527,9 @@ export default async function dossiers (app) {
             `INSERT INTO mti.saisie
                (dossier_processus_id, section_index, point_index, point_num, point_type,
                 exemplaire, operateur_role, obligatoire, reponse, valeur_num, valeur_texte,
-                seuil_applique, hors_seuil, horodatage, timer_debut, timer_fin, operateur_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                seuil_applique, hors_seuil, horodatage, timer_debut, timer_fin, operateur_id,
+                commentaire, numero_serie)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
              ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire, operateur_role)
              DO UPDATE SET
                obligatoire = EXCLUDED.obligatoire,
@@ -424,13 +542,19 @@ export default async function dossiers (app) {
                timer_debut = EXCLUDED.timer_debut,
                timer_fin = EXCLUDED.timer_fin,
                operateur_id = EXCLUDED.operateur_id,
+               commentaire = EXCLUDED.commentaire,
+               numero_serie = EXCLUDED.numero_serie,
                saisi_le = now()
              RETURNING id`,
             [request.params.id, s.sectionIndex, s.pointIndex, s.pointNum ?? null, s.pointType,
               s.exemplaire ?? 1, s.operateurRole ?? 'op1', s.obligatoire === true,
               s.reponse ?? null, valeur, s.valeurTexte ?? null, seuil, horsSeuil,
               s.horodatage ?? null, s.timerDebut ?? null, s.timerFin ?? null,
-              s.operateurRole === 'systeme' ? null : (s.operateurId ?? request.utilisateur.id)]
+              s.operateurRole === 'systeme' ? null : (s.operateurId ?? request.utilisateur.id),
+              /* Chaînes vides ramenées à NULL : « pas de commentaire » et
+                 « commentaire vide » ne sont pas deux états à distinguer. */
+              (s.commentaire ?? '').trim() || null,
+              (s.numeroSerie ?? '').trim() || null]
           )
           enregistrees.push(rows[0].id)
         }

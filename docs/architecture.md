@@ -211,6 +211,48 @@ n'admet qu'une version active par code (`modele_parcours_actif_unique`), et une
 version retirée du service doit rester en base, sinon les dossiers qui la
 référencent deviendraient illisibles.
 
+### Kits, exemplaires, n° de série, commentaires
+
+Quatre évolutions de points, demandées en réunion, portées par le référentiel
+(`jsonb`) pour trois d'entre elles et par deux colonnes pour la dernière.
+
+| Demande | Où elle vit | Pourquoi là |
+|---|---|---|
+| Regroupement par **kit** | `section.kits[]` + `point.kit` | C'est une propriété du modèle, pas de la saisie |
+| **Exemplaires par point** (`point.exemplaires`) | Modèle | Trois tubes CD4 et deux tubes CD8 ne se comptent pas ensemble, et surtout pas avec les exemplaires du produit |
+| **Double validation** (`point.doubleValidation`) | Modèle | Le point est soumis ou non à contresignature, indépendamment du dossier |
+| **N° de série** et **commentaire** | `saisie.numero_serie`, `saisie.commentaire` (migration `007`) | C'est l'opérateur qui les renseigne, pour un exemplaire donné |
+
+Le n° de série vient **en complément** du n° de lot, jamais à sa place : un lot
+couvre plusieurs exemplaires, le n° de série en identifie un seul. La clé unique
+de `mti.saisie` portant déjà l'exemplaire, aucune structure supplémentaire n'a
+été nécessaire.
+
+Le commentaire répond à ce qu'un type de point ne peut pas exprimer : ce qui
+explique un écart ou une réserve ne rentre pas dans une case à cocher. Sans lui,
+cette information partait dans le commentaire global du dossier, où elle perdait
+le lien avec la ligne concernée.
+
+### La double validation est une contresignature de processus
+
+Ce n'est **pas** une seconde saisie ligne à ligne — le double contrôle
+Op.1/Op.2 existe déjà pour ça. C'est une validation **globale** du processus par
+une 2ᵉ personne identifiée, avec rappel des points concernés : c'est cette liste
+qui donne son sens au geste.
+
+Elle vit dans `mti.signature`, où elle a sa place : le rôle `verificateur`
+existe, la table est auditée, et `mti_app` n'a ni `UPDATE` ni `DELETE` dessus —
+une contresignature posée ne se retire pas. L'empreinte SHA-256 porte sur le
+processus **et la liste exacte des points contresignés** : si la définition
+changeait, l'empreinte ne correspondrait plus, ce qui est le but.
+
+Contresigner par le même opérateur que celui qui saisit est refusé : tout
+l'objet du double contrôle est qu'un second regard s'exerce.
+
+> **Sans valeur probante en l'état.** Le geste se limite à un choix nominatif
+> tant que l'authentification réelle n'est pas branchée. Deux identités
+> authentifiées distinctes sont un prérequis, pas une évolution.
+
 ### Prescription : un jalon, pas un référentiel
 
 `mti.dossier.prescription_faite` (migration `005`) répond à un besoin simple —
