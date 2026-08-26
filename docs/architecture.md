@@ -181,6 +181,23 @@ L'interface porte en permanence un bandeau rappelant que la double validation
 et la signature électronique **n'ont pas de valeur probante dans cet état**.
 Une démonstration ne doit pas pouvoir passer pour une mise en service.
 
+### Prescription : un jalon, pas un référentiel
+
+`mti.dossier.prescription_faite` (migration `005`) répond à un besoin simple —
+jalonner le parcours — sans que ce module porte la moindre donnée de
+prescription. La raison est la même que pour les patients : la source de vérité
+est le logiciel de prescription (Pharma®/CHIMIO®).
+
+Rattacher une prescription **identifiée** — sa référence, son protocole, son
+prescripteur — suppose de décider où elle vit et qui en répond. **Cette décision
+est reportée**, et le booléen ne la préempte pas : il n'introduit aucune
+structure à défaire ensuite.
+
+`false` signifie « pas encore réalisée », pas « inconnue » : c'est l'état de
+départ de tout dossier, et il n'y a pas de tiers état à distinguer. Le jalon
+s'enregistre au clic, sans attendre un « Enregistrer » — un changement d'onglet
+le perdrait — et son passage est tracé avec son auteur, comme le reste.
+
 ### Le tableau de bord est le point d'entrée
 
 L'application ouvre sur la liste des dossiers, pas sur un formulaire vide :

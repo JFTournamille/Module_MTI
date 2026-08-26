@@ -386,5 +386,36 @@ r.corps.length >= 1 && r.corps.every((d) => /KYMRIAH/i.test(d.produit ?? ''))
   ? ok(`filtre par produit : ${r.corps.length} dossier(s), tous du bon produit`)
   : ko('le filtre par produit laisse passer autre chose')
 
+console.log('\n16. Jalon de prescription')
+const refJ = `DOS-PRESC-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refJ })
+const dossierJ = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierJ}`)
+r.corps.dossier.prescription_faite === false
+  ? ok('un dossier neuf porte « prescription non réalisée »')
+  : ko(`prescription_faite = ${r.corps.dossier.prescription_faite}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: true })
+r.statut === 200 ? ok('jalon posé') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('GET', `/api/dossiers?q=${refJ}`)
+r.corps[0]?.prescriptionFaite === true
+  ? ok('jalon repris dans la liste du tableau de bord')
+  : ko(`liste : ${JSON.stringify(r.corps[0]?.prescriptionFaite)}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: 'oui' })
+r.statut === 400 ? ok('valeur non booléenne refusée (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: false })
+r.statut === 200 ? ok('jalon retiré — le parcours peut revenir en arrière avant validation')
+  : ko(`statut ${r.statut}`)
+
+// Le jalon est un état du dossier : son changement doit être tracé, comme le
+// reste. C'est ce qui distingue un jalon d'un simple affichage.
+r = await j('GET', `/api/dossiers/${dossierJ}/audit`)
+const majJalon = r.corps.filter((e) => e.table_cible === 'dossier' && e.operation === 'UPDATE')
+majJalon.length >= 2 && majJalon.every((e) => e.nom)
+  ? ok(`${majJalon.length} changement(s) de jalon tracés, tous avec leur auteur`)
+  : ko(`traces : ${JSON.stringify(majJalon.map((e) => e.nom))}`)
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

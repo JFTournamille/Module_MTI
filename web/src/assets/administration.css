@@ -114,3 +114,13 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .tb-s-en_cours{background:#6045a0;}
 .tb-s-attente{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;font-weight:normal;}
 .tb-s-termine{background:#2e7d4e;}
+
+/* ── Jalon de prescription ── */
+.presc-jalon{margin-top:4px;}
+.presc-b{font-family:inherit;font-size:12px;padding:2px 9px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.12);border:1px solid #8878c0;color:#e0d8ff;}
+.presc-b:hover:not(:disabled){background:rgba(255,255,255,.22);}
+.presc-b.faite{background:#1a5c36;border-color:#44bb77;color:#c8f0d8;}
+.presc-b:disabled{opacity:.6;cursor:default;}
+.presc-oui{font-size:12px;color:#2e7d4e;font-weight:bold;white-space:nowrap;}
+.presc-non{font-size:12px;color:#999;white-space:nowrap;}

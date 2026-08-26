@@ -109,6 +109,15 @@ const blocages = computed(() => {
           </template>
           &nbsp;|&nbsp; Péremption : {{ store.dossier.datePeremption || '—' }}
         </div>
+        <div v-if="store.dossierId" class="presc-jalon">
+          <button class="presc-b" :class="{ faite: store.dossier.prescriptionFaite }"
+                  :disabled="store.lectureSeule"
+                  :title="store.lectureSeule ? 'Dossier validé — lecture seule'
+                    : 'Basculer le jalon de prescription'"
+                  @click="store.basculerPrescription()">
+            {{ store.dossier.prescriptionFaite ? '✓ Prescription réalisée' : '○ Prescription non réalisée' }}
+          </button>
+        </div>
       </div>
       <div class="op-badge">
         <template v-if="session.selectionPossible">

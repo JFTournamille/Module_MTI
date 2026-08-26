@@ -120,6 +120,7 @@ export default async function dossiers (app) {
       nbExemplaires: 'nb_exemplaires',
       patientId: 'patient_id',
       preallocation: 'preallocation',
+      prescriptionFaite: 'prescription_faite',
       commentaire: 'commentaire'
     }
     const corps = request.body ?? {}
@@ -136,8 +137,8 @@ export default async function dossiers (app) {
         }
         v = n
       }
-      if (cle === 'preallocation' && typeof v !== 'boolean') {
-        return reply.code(400).send({ erreur: 'preallocation doit valoir true ou false.' })
+      if ((cle === 'preallocation' || cle === 'prescriptionFaite') && typeof v !== 'boolean') {
+        return reply.code(400).send({ erreur: `${cle} doit valoir true ou false.` })
       }
       valeurs.push(v)
       colonnes.push(`${colonne} = $${valeurs.length + 1}`)
@@ -219,7 +220,7 @@ export default async function dossiers (app) {
 
     const { rows } = await requete(
       `SELECT d.id, d.reference, d.numero_lot, d.statut, d.preallocation,
-              d.patient_id, d.cree_le, d.valide_le,
+              d.patient_id, d.prescription_faite, d.cree_le, d.valide_le,
               coalesce(d.designation_produit, pr.denomination) AS produit,
               pr.id AS produit_id, pat.reference AS patient_reference,
               i.nom AS patient_nom, i.prenom AS patient_prenom,
@@ -259,6 +260,8 @@ export default async function dossiers (app) {
         produitId: r.produit_id,
         numeroLot: r.numero_lot,
         statut: r.statut,
+        /* Jalon, pas une prescription : ce module n'en porte aucune donnée. */
+        prescriptionFaite: r.prescription_faite === true,
         /* Le statut d'affichage du tableau de bord : « en attente d'allocation »
            n'existe pas en base, c'est l'absence de patient sur un dossier
            ouvert. */

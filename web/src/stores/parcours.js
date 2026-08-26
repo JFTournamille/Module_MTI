@@ -50,6 +50,9 @@ export const useParcours = defineStore('parcours', () => {
     datePeremption: '2026-06-30',
     numeroOrdonnancier: '8812',
     nbExemplaires: 1,
+    // Jalon de prescription : réalisée ou non. Aucune donnée de prescription
+    // n'est portée ici — la source de vérité est le logiciel de prescription.
+    prescriptionFaite: false,
     // Préallocation
     preallocation: false,
     patient: null,          // { reference, nom, dateNaissance }
@@ -214,6 +217,7 @@ export const useParcours = defineStore('parcours', () => {
         transporteur: d.dossier.transporteur ?? '',
         nbExemplaires: d.dossier.nb_exemplaires ?? 1,
         preallocation: d.dossier.preallocation === true,
+        prescriptionFaite: d.dossier.prescription_faite === true,
         conformite: d.dossier.conformite ?? null,
         commentaire: d.dossier.commentaire ?? '',
         statut: d.dossier.statut
@@ -286,6 +290,7 @@ export const useParcours = defineStore('parcours', () => {
         transporteur: dossier.transporteur,
         nbExemplaires: Number(dossier.nbExemplaires) || 1,
         preallocation: dossier.preallocation === true,
+        prescriptionFaite: dossier.prescriptionFaite === true,
         patientId: dossier.preallocation ? (dossier.patient?.id ?? null) : null
       })
     })
@@ -393,6 +398,16 @@ export const useParcours = defineStore('parcours', () => {
     }
     await ouvrirDossier(dossierId.value)
     return true
+  }
+
+  /** Bascule le jalon de prescription et l'enregistre aussitôt : un jalon coché
+   *  qui attendrait un « Enregistrer » se perdrait au changement d'onglet. */
+  async function basculerPrescription () {
+    if (!dossierId.value || lectureSeule.value) return false
+    dossier.prescriptionFaite = !dossier.prescriptionFaite
+    const ok = await enregistrerEntete()
+    if (!ok) dossier.prescriptionFaite = !dossier.prescriptionFaite
+    return ok
   }
 
   function fermerDossier () {
@@ -666,6 +681,7 @@ export const useParcours = defineStore('parcours', () => {
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
     lectureSeule, creerDossier, ouvrirDossier, enregistrerEntete,
     enregistrerProcessus, validerDossier, fermerDossier, dossierMemorise,
+    basculerPrescription,
     saisie, basculerObligatoire,
     op2Ouvert, basculerOp2, cleOp2,
     alarme,

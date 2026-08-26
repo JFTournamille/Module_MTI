@@ -156,6 +156,7 @@ const dateCourte = (v) => v
             <th style="width:130px;">Produit</th>
             <th style="width:130px;">N° de lot</th>
             <th>Patient</th>
+            <th style="width:78px;" title="La prescription a-t-elle été réalisée">Prescr.</th>
             <th>Étape en cours</th>
             <th style="width:120px;">Avancement</th>
             <th style="width:150px;">Statut</th>
@@ -179,6 +180,12 @@ const dateCourte = (v) => v
                 <span class="meta">({{ d.patient.preallocation ? 'préalloué' : 'alloué' }})</span>
               </span>
               <span v-else class="tb-attente">En attente d'allocation</span>
+            </td>
+            <td>
+              <span :class="d.prescriptionFaite ? 'presc-oui' : 'presc-non'"
+                    :title="d.prescriptionFaite ? 'Prescription réalisée' : 'Prescription non réalisée'">
+                {{ d.prescriptionFaite ? '✓ faite' : '○ non' }}
+              </span>
             </td>
             <td>{{ d.etape }}</td>
             <td>

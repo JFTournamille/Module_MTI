@@ -531,7 +531,52 @@ const dossierOuvert = await page.locator('.vide-dossier').count() === 0
 surScenario && dossierOuvert ? ok('un clic sur une ligne ouvre le dossier dans le scénario')
   : ko(`onglet scénario : ${surScenario}, dossier ouvert : ${dossierOuvert}`)
 
-console.log('\n18. Console du navigateur et réseau')
+// ── 18. Jalon de prescription ──
+// Pas de table prescription : la source de vérité est le logiciel de
+// prescription. Le dossier ne porte qu'un jalon, réalisée ou non.
+console.log('\n18. Jalon de prescription')
+// Ouvrir explicitement le dossier contrôlé : le groupe précédent en laisse un
+// autre ouvert, et basculer le jalon de l'un pour vérifier la ligne de l'autre
+// ne prouverait rien.
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('#tb-q').fill(refDossier)
+await page.waitForTimeout(1200)
+await page.locator('tr.tb-ligne', { hasText: refDossier }).click()
+await page.waitForTimeout(1800)
+const jalon = page.locator('.presc-b')
+await jalon.count() === 1 ? ok('jalon affiché dans l\'en-tête du dossier')
+  : ko('aucun jalon de prescription')
+const jalonAvant = (await jalon.innerText()).trim()
+if (/non réalisée/.test(jalonAvant)) ok(`état de départ : « ${jalonAvant} »`)
+else ko(`état de départ inattendu : « ${jalonAvant} »`)
+
+await jalon.click()
+await page.waitForTimeout(1200)
+const jalonApres = (await jalon.innerText()).trim()
+if (/✓ Prescription réalisée/.test(jalonApres)) ok(`bascule : « ${jalonApres} »`)
+else ko(`après bascule : « ${jalonApres} »`)
+
+// Le jalon part tout de suite : il ne doit pas attendre un « Enregistrer », un
+// changement d'onglet le perdrait.
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+await allerAuScenario()
+const jalonRelu = (await page.locator('.presc-b').innerText()).trim()
+if (/✓ Prescription réalisée/.test(jalonRelu)) {
+  ok('jalon enregistré aussitôt, sans passer par « Enregistrer »')
+} else {
+  ko(`après rechargement : « ${jalonRelu} »`)
+}
+
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+const ligneJalon = page.locator('tr.tb-ligne', { hasText: refDossier })
+const celluleJalon = (await ligneJalon.locator('.presc-oui, .presc-non').innerText()).trim()
+celluleJalon === '✓ faite' ? ok('jalon visible dans la liste du tableau de bord')
+  : ko(`colonne Prescr. : « ${celluleJalon} »`)
+
+console.log('\n19. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
@@ -543,8 +588,13 @@ reseauHS.length === 0
   ? ok(`aucune requête en échec inattendue${voulus ? ` (${voulus} provoquée(s) par les tests)` : ''}`)
   : ko(`${reseauHS.length} requête(s) en échec :\n     ${reseauHS.join('\n     ')}`)
 
-await page.locator('.proc').first().click()
-await page.waitForTimeout(300)
+// La capture finale porte sur le scénario : y revenir, l'application pouvant
+// être restée sur un autre onglet.
+await allerAuScenario()
+if (await page.locator('.proc').count()) {
+  await page.locator('.proc').first().click()
+  await page.waitForTimeout(300)
+}
 if (process.argv[2]) await page.screenshot({ path: process.argv[2] })
 await nav.close()
 console.log(process.exitCode ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
