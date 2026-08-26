@@ -350,5 +350,41 @@ r.statut === 409 ? ok('en-tête en lecture seule après validation (409)') : ko(
 r = await j('POST', `/api/dossiers/${dossierH}/processus`, { code: 'X', nom: 'X' })
 r.statut === 409 ? ok('plus d\'ajout de processus après validation (409)') : ko(`statut ${r.statut}`)
 
+console.log('\n15. Référentiels du tableau de bord')
+r = await j('GET', '/api/produits')
+Array.isArray(r.corps) && r.corps.length >= 1
+  ? ok(`${r.corps.length} produit(s) de référence`) : ko(`réponse : ${JSON.stringify(r.corps)}`)
+r.corps.every((p) => p.id && p.denomination)
+  ? ok('chaque produit porte un identifiant et une dénomination')
+  : ko('produit incomplet dans la liste')
+const kymriah = r.corps.find((p) => /KYMRIAH/i.test(p.denomination))
+kymriah?.seuilTempC === -150
+  ? ok(`seuil de conservation exposé : ${kymriah.seuilTempC} °C`)
+  : ko(`seuil : ${JSON.stringify(kymriah?.seuilTempC)}`)
+
+r = await j('GET', '/api/modeles')
+r.corps.some((m) => m.code === 'PARCOURS_CART_AUTOLOGUE' && m.nbProcessus === 12)
+  ? ok('le modèle de parcours actif est listé avec ses 12 processus')
+  : ko(`modèles : ${JSON.stringify(r.corps)}`)
+
+// Création en un seul appel : un dossier créé sans son produit, parce qu'un
+// second appel a échoué, serait une incohérence gratuite.
+const refP = `DOS-PROD-${Date.now()}`
+r = await j('POST', '/api/dossiers', {
+  codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refP,
+  produitId: kymriah.id, numeroLot: 'LOT-PROD-1'
+})
+r.statut === 201 ? ok('dossier créé avec produit et lot en un seul appel') : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers?q=${refP}`)
+r.corps[0]?.numeroLot === 'LOT-PROD-1' && /KYMRIAH/i.test(r.corps[0]?.produit ?? '')
+  ? ok(`relu dans la liste : ${r.corps[0].produit} / ${r.corps[0].numeroLot}`)
+  : ko(`ligne : ${JSON.stringify(r.corps[0])}`)
+
+r = await j('GET', `/api/dossiers?produit=${kymriah.id}`)
+r.corps.length >= 1 && r.corps.every((d) => /KYMRIAH/i.test(d.produit ?? ''))
+  ? ok(`filtre par produit : ${r.corps.length} dossier(s), tous du bon produit`)
+  : ko('le filtre par produit laisse passer autre chose')
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

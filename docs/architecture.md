@@ -181,6 +181,23 @@ L'interface porte en permanence un bandeau rappelant que la double validation
 et la signature électronique **n'ont pas de valeur probante dans cet état**.
 Une démonstration ne doit pas pouvoir passer pour une mise en service.
 
+### Le tableau de bord est le point d'entrée
+
+L'application ouvre sur la liste des dossiers, pas sur un formulaire vide :
+recherche libre (référence, lot, produit, nom de patient), filtre par produit,
+tuiles de comptage, et démarrage d'un scénario avec son produit et son n° de lot
+en un seul appel — un dossier créé sans son produit parce qu'un second appel a
+échoué serait une incohérence gratuite. Un clic sur une ligne ouvre le dossier
+dans l'onglet Scénario. Les dossiers terminés restent listés et consultables :
+ils sont figés, pas effacés.
+
+Deux règles d'affichage sont calculées **côté serveur**, pour ne pas être
+dupliquées dans le front où elles finiraient par diverger : « en attente
+d'allocation » (absence de patient sur un dossier ouvert) et « Parcours clos »
+(dossier validé). L'anonymat vaut dans la liste comme ailleurs — aucun objet
+patient n'est renvoyé tant que le dossier n'en porte pas, alors que la recherche
+porte bien sur le nom, parce que c'est l'usage réel.
+
 ### Comptes et profils
 
 L'onglet *Utilisateurs* gère les comptes : création, correction d'état civil,

@@ -87,3 +87,30 @@ table.adm-t tr.inactif .ident{text-decoration:line-through;}
 .vide-dossier .vd-b:hover{background:#6045a0;}
 .vide-dossier .vd-e{color:#c62828;font-weight:bold;margin:12px 0 0;}
 .etat-enr{font-size:12px;color:#777;white-space:nowrap;}
+
+/* ── Tableau de bord ── */
+.tb-tuiles{display:flex;gap:11px;padding:13px 14px 6px;flex-wrap:wrap;}
+.tb-tuile{flex:1;min-width:150px;background:#fff;border:1px solid #c8b8e8;border-radius:5px;
+  padding:10px 13px;cursor:pointer;border-left:4px solid #6045a0;}
+.tb-tuile:hover{background:#f8f6ff;}
+.tb-tuile.on{background:#f0eeff;border-left-color:#b0a0ff;box-shadow:inset 0 0 0 1px #8878c8;}
+.tb-tuile .v{font-size:24px;font-weight:bold;color:#4a3880;line-height:1.15;}
+.tb-tuile .l{font-size:12px;color:#888;margin-top:2px;}
+.tb-tuile.att{border-left-color:#e0a030;}
+.tb-tuile.fin{border-left-color:#4caf50;}
+.tb-tuile.alr{border-left-color:#c62828;}
+.tb-tuile.alr .v{color:#c62828;}
+
+tr.tb-ligne{cursor:pointer;}
+tr.tb-ligne:hover td{background:#f8f6ff;}
+tr.tb-ligne.fini td{background:#f4faf4;}
+tr.tb-ligne.fini:hover td{background:#eaf5ea;}
+.tb-attente{font-style:italic;color:#7a4f00;}
+.tb-alarme{color:#c62828;font-weight:bold;margin-left:4px;}
+.tb-jauge{display:inline-block;vertical-align:middle;width:80px;height:7px;background:#ece8f8;
+  border-radius:4px;overflow:hidden;}
+.tb-jauge i{display:block;height:100%;background:#6045a0;}
+tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
+.tb-s-en_cours{background:#6045a0;}
+.tb-s-attente{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;font-weight:normal;}
+.tb-s-termine{background:#2e7d4e;}

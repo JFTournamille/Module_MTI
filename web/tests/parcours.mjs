@@ -39,10 +39,21 @@ await page.goto(base + '/', { waitUntil: 'networkidle' })
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); process.exitCode = 1 }
 
+/** L'application ouvre sur le tableau de bord : après un rechargement, il faut
+ *  revenir à l'onglet Scénario pour retrouver la table de saisie. */
+async function allerAuScenario () {
+  await page.locator('.onglet', { hasText: 'Scénario' }).click()
+  await page.waitForTimeout(600)
+}
+
 // ── Préalable : ouvrir un dossier ──
 // Les saisies n'existent que dans un dossier : l'onglet Scénario montre un état
 // vide tant qu'aucun n'est ouvert. Tous les groupes qui suivent en dépendent.
 console.log('\nPréalable : ouverture d\'un dossier')
+// L'application ouvre sur le tableau de bord : on part de la liste, pas d'un
+// formulaire vide. Les groupes qui suivent portent sur l'onglet Scénario.
+await page.locator('.onglet', { hasText: 'Scénario' }).click()
+await page.waitForTimeout(400)
 const refDossier = `MTI-NAV-${Date.now()}`
 if (await page.locator('.vide-dossier').count()) {
   await page.locator('#vd-ref').fill(refDossier)
@@ -357,6 +368,7 @@ if (await selOp.count() === 0) {
   // démonstration qu'on reprend après une pause.
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForTimeout(800)
+  await allerAuScenario()
   const apresRechargement = await page.locator('.op-sel option:checked').innerText()
   apresRechargement === autre ? ok('le choix survit à un rechargement')
     : ko(`après rechargement : ${apresRechargement}`)
@@ -395,6 +407,7 @@ else ko(`état : « ${etat} »`)
 
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(1500)
+await allerAuScenario()
 await page.locator('.vide-dossier').count() === 0
   ? ok('le dossier ouvert est retrouvé après rechargement')
   : ko('le dossier ouvert est perdu au rechargement')
@@ -424,11 +437,87 @@ apresAjout === avantAjout + 1 ? ok('processus du catalogue ajouté')
   : ko(`${avantAjout} → ${apresAjout} processus`)
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(1500)
+await allerAuScenario()
 await page.locator('.proc').count() === apresAjout
   ? ok('le processus ajouté est enregistré côté serveur, pas seulement affiché')
   : ko(`${await page.locator('.proc').count()} processus après rechargement`)
 
-console.log('\n17. Console du navigateur et réseau')
+// ── 17. Tableau de bord ──
+console.log('\n17. Tableau de bord MTI')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+
+const nbDossiersBord = await page.locator('tr.tb-ligne').count()
+nbDossiersBord >= 1 ? ok(`${nbDossiersBord} dossier(s) listés depuis la base`)
+  : ko('aucun dossier listé alors que le préalable en a créé un')
+
+// Le dossier ouvert par le préalable doit figurer dans la liste.
+const ligneDossier = page.locator('tr.tb-ligne', { hasText: refDossier })
+await ligneDossier.count() === 1 ? ok(`le dossier ${refDossier} figure dans la liste`)
+  : ko(`${await ligneDossier.count()} ligne(s) pour ${refDossier}`)
+
+// L'anonymat vaut aussi dans la liste : pas de nom sur un dossier sans patient.
+const texteLigneBord = await ligneDossier.innerText()
+if (/En attente d'allocation/.test(texteLigneBord)) ok('dossier sans patient affiché « en attente d\'allocation »')
+else ko(`libellé patient inattendu : ${texteLigneBord.replace(/\s+/g, ' ')}`)
+
+const tuiles = await page.locator('.tb-tuile .v').allTextContents()
+tuiles.length === 4 ? ok(`4 tuiles de comptage : ${tuiles.join(' / ')}`)
+  : ko(`${tuiles.length} tuile(s)`)
+
+// Recherche : une référence exacte ne doit ramener qu'un dossier.
+await page.locator('#tb-q').fill(refDossier)
+await page.waitForTimeout(1200)
+await page.locator('tr.tb-ligne').count() === 1
+  ? ok('recherche par référence exacte') : ko(`${await page.locator('tr.tb-ligne').count()} résultat(s)`)
+await page.locator('#tb-q').fill('zzz-aucune-chance-zzz')
+await page.waitForTimeout(1200)
+await page.locator('.adm-vide').count() === 1
+  ? ok('une recherche sans résultat le dit, sans table vide') : ko('pas de message « aucun dossier »')
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1200)
+
+// Démarrer un scénario, produit et lot compris, en un seul geste.
+const refBord = `MTI-BORD-${Date.now()}`
+await page.locator('.adm-b-p', { hasText: 'Démarrer un scénario' }).click()
+await page.waitForTimeout(400)
+await page.locator('#tb-ref').fill(refBord)
+const nbProduits = await page.locator('#tb-nprod option').count()
+nbProduits >= 2 ? ok(`${nbProduits - 1} produit(s) de référence proposés`)
+  : ko('aucun produit proposé au choix')
+await page.locator('#tb-nprod').selectOption({ index: 1 })
+await page.locator('#tb-lot').fill('LOT-BORD-1')
+await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
+await page.waitForTimeout(1800)
+
+const ongletApresCreation = await page.locator('.onglet.act').innerText()
+if (/Scénario/.test(ongletApresCreation)) ok('la création bascule sur le scénario du nouveau dossier')
+else ko(`onglet actif : ${ongletApresCreation}`)
+const enteteApresCreation = await page.locator('.hdr .meta').innerText()
+if (/LOT-BORD-1/.test(enteteApresCreation)) ok('le n° de lot saisi à la création arrive dans l\'en-tête')
+else ko(`en-tête : ${enteteApresCreation}`)
+
+// Le produit et le lot doivent être en base, pas seulement à l'écran.
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+const ligneBord = page.locator('tr.tb-ligne', { hasText: refBord })
+const texteBord = await ligneBord.innerText()
+if (/LOT-BORD-1/.test(texteBord) && /®/.test(texteBord)) {
+  ok('produit et lot enregistrés, relus depuis la base')
+} else {
+  ko(`ligne : ${texteBord.replace(/\s+/g, ' ')}`)
+}
+
+// Ouvrir un dossier depuis la liste.
+await ligneBord.click()
+await page.waitForTimeout(1800)
+const ongletFinal = await page.locator('.onglet.act').innerText()
+const surScenario = /Scénario/.test(ongletFinal)
+const dossierOuvert = await page.locator('.vide-dossier').count() === 0
+surScenario && dossierOuvert ? ok('un clic sur une ligne ouvre le dossier dans le scénario')
+  : ko(`onglet scénario : ${surScenario}, dossier ouvert : ${dossierOuvert}`)
+
+console.log('\n18. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

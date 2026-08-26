@@ -6,7 +6,11 @@ const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto'])
 export default async function dossiers (app) {
   // ── Création d'un dossier ────────────────────────────────────────────────
   app.post('/api/dossiers', async (request, reply) => {
-    const { codeModele, reference } = request.body ?? {}
+    /* Le produit et le n° de lot sont acceptés dès la création : les renseigner
+       par un PATCH séparé exposait à un dossier créé mais sans produit, si le
+       second appel échouait. */
+    const { codeModele, reference, produitId, designationProduit, numeroLot } =
+      request.body ?? {}
     if (!codeModele || !reference) {
       return reply.code(400).send({ erreur: 'codeModele et reference sont requis' })
     }
@@ -20,9 +24,11 @@ export default async function dossiers (app) {
 
     return transaction(request.utilisateur.id, request.ip, async (client) => {
       const { rows } = await client.query(
-        `INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
-         VALUES ($1, $2, $3) RETURNING id`,
-        [reference, modele.id, request.utilisateur.id]
+        `INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par,
+                                  produit_id, designation_produit, numero_lot)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [reference, modele.id, request.utilisateur.id,
+          produitId || null, designationProduit || null, numeroLot || null]
       )
       const dossierId = rows[0].id
 

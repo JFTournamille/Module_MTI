@@ -6,17 +6,25 @@ import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
 import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
+import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
 import { useSession } from './stores/session.js'
 
 const session = useSession()
 const store = useParcours()
 
-/** Onglet affiché : 'scenario' | 'utilisateurs'. */
-const onglet = ref('scenario')
+/** Onglet affiché. Le tableau de bord est le point d'entrée : on part de la
+ *  liste des dossiers, pas d'un formulaire vide. */
+const onglet = ref('bord')
 const TITRES = {
+  bord: 'Tableau de bord MTI',
   scenario: 'Scénario MTI — Processus chronologique',
   utilisateurs: 'Administration — Utilisateurs'
+}
+
+/** Ouvre un dossier depuis le tableau de bord et bascule sur le scénario. */
+async function ouvrirDepuisBord (id) {
+  if (await store.ouvrirDossier(id)) onglet.value = 'scenario'
 }
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
@@ -67,6 +75,10 @@ const blocages = computed(() => {
     </div>
 
     <nav class="onglets" role="tablist" aria-label="Navigation principale">
+      <button class="onglet" :class="{ act: onglet === 'bord' }" role="tab"
+              :aria-selected="onglet === 'bord'" @click="onglet = 'bord'">
+        Tableau de bord
+      </button>
       <button class="onglet" :class="{ act: onglet === 'scenario' }" role="tab"
               :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
         Scénario
@@ -77,7 +89,9 @@ const blocages = computed(() => {
       </button>
     </nav>
 
-    <template v-if="onglet === 'scenario'">
+    <PanneauTableauBord v-if="onglet === 'bord'" @ouvrir="ouvrirDepuisBord" />
+
+    <template v-else-if="onglet === 'scenario'">
     <div class="hdr">
       <div class="hdr-left">
         <div class="name">
