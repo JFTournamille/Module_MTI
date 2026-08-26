@@ -72,3 +72,18 @@ table.adm-t tr.inactif .ident{text-decoration:line-through;}
 /* Une démonstration ne doit pas pouvoir passer pour une mise en service. */
 .demo-bandeau{background:#fff8e0;border-top:1px solid #e0c860;padding:4px 14px;
   font-size:11px;color:#7a5000;flex-shrink:0;}
+
+/* ── État « aucun dossier ouvert » ── */
+.vide-dossier{margin:26px auto;max-width:560px;background:#f8f6ff;border:1px solid #d0c0f0;
+  border-radius:4px;padding:20px 22px;}
+.vide-dossier .vd-t{font-size:15px;font-weight:bold;color:#4a3880;margin-bottom:8px;}
+.vide-dossier p{font-size:13px;color:#555;line-height:1.55;margin-bottom:14px;}
+.vide-dossier .vd-f{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.vide-dossier label{font-size:13px;color:#4a3880;font-weight:bold;}
+.vide-dossier input{font-family:inherit;font-size:13px;padding:5px 9px;border:1px solid #a090cc;
+  border-radius:2px;min-width:230px;}
+.vide-dossier .vd-b{font-family:inherit;font-size:13px;font-weight:bold;padding:5px 14px;
+  border:none;border-radius:2px;background:#4a3880;color:#fff;cursor:pointer;}
+.vide-dossier .vd-b:hover{background:#6045a0;}
+.vide-dossier .vd-e{color:#c62828;font-weight:bold;margin:12px 0 0;}
+.etat-enr{font-size:12px;color:#777;white-space:nowrap;}

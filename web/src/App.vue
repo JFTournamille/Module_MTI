@@ -21,10 +21,28 @@ const TITRES = {
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
 
+const referenceNouveau = ref('')
+
 onMounted(async () => {
   await session.charger()
   await store.charger()
+  // Reprendre le dossier laissé ouvert. S'il a disparu, on retombe sur l'état
+  // vide plutôt que sur un formulaire qui n'enregistrerait rien.
+  const memorise = store.dossierMemorise()
+  if (memorise) await store.ouvrirDossier(memorise)
 })
+
+/** Référence par défaut : lisible, et unique sans avoir à interroger la base. */
+function referenceProposee () {
+  const n = new Date()
+  const p = (v) => String(v).padStart(2, '0')
+  return `MTI-${n.getFullYear()}-${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`
+}
+
+async function creer () {
+  const ref = (referenceNouveau.value || '').trim() || referenceProposee()
+  if (await store.creerDossier(ref)) referenceNouveau.value = ''
+}
 onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
@@ -106,6 +124,22 @@ const blocages = computed(() => {
         <div v-if="store.chargement" style="padding:20px;color:#777;font-size:13px;">
           Chargement des référentiels…
         </div>
+        <template v-else-if="!store.dossierId">
+          <div class="vide-dossier">
+            <div class="vd-t">Aucun dossier ouvert</div>
+            <p>
+              Les saisies ne sont enregistrées que dans un dossier. Créez-en un, ou
+              ouvrez-en un depuis le tableau de bord.
+            </p>
+            <div class="vd-f">
+              <label for="vd-ref">Référence</label>
+              <input id="vd-ref" type="text" v-model="referenceNouveau"
+                     :placeholder="referenceProposee()"/>
+              <button class="vd-b" @click="creer()">Créer le dossier</button>
+            </div>
+            <p v-if="store.erreurDossier" class="vd-e">{{ store.erreurDossier }}</p>
+          </div>
+        </template>
         <template v-else>
           <PanneauReception
             v-if="enReception"
@@ -130,11 +164,26 @@ const blocages = computed(() => {
                  v-model="store.dossier.conformite"> Conforme
         </label>
       </div>
-      <button class="btn-ann">✕ Annuler</button>
+      <span v-if="store.dossierId" class="etat-enr">
+        <template v-if="store.enregistrement">enregistrement…</template>
+        <template v-else-if="store.lectureSeule">dossier validé — lecture seule</template>
+        <template v-else-if="store.dernierEnregistrement">
+          enregistré à {{ store.dernierEnregistrement.toLocaleTimeString('fr-FR',
+            { hour: '2-digit', minute: '2-digit' }) }}
+        </template>
+        <template v-else>non enregistré</template>
+      </span>
+      <button class="btn-ann" v-if="store.dossierId" @click="store.fermerDossier()">Fermer</button>
+      <button class="f-btn" v-if="store.dossierId && !store.lectureSeule"
+              :disabled="store.enregistrement"
+              @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">
+        Enregistrer
+      </button>
       <button
-        class="btn-val" :disabled="blocages.length > 0"
-        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}` : 'Valider le processus'"
-        :style="blocages.length ? 'opacity:.5;cursor:not-allowed;' : ''"
+        class="btn-val" :disabled="blocages.length > 0 || !store.dossierId || store.lectureSeule"
+        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}` : 'Valider le dossier'"
+        :style="(blocages.length || !store.dossierId || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
+        @click="store.validerDossier()"
       >✓ Valider</button>
     </div>
 
@@ -143,13 +192,16 @@ const blocages = computed(() => {
       ⚠ {{ session.avertissement }}
     </div>
 
-    <div v-if="store.horsLigne || blocages.length"
+    <div v-if="store.horsLigne || blocages.length || store.erreurDossier"
          style="background:#fffbf0;border-top:1px solid #d0b060;padding:4px 14px;
                 font-size:11px;color:#7a5000;display:flex;gap:14px;flex-wrap:wrap;">
       <span v-if="store.horsLigne">
         ⚠ Mode hors-ligne — référentiels embarqués, saisies non synchronisées.
       </span>
       <span v-if="blocages.length">Validation bloquée : {{ blocages.join(' ; ') }}</span>
+      <span v-if="store.erreurDossier" style="color:#c62828;font-weight:bold;">
+        {{ store.erreurDossier }}
+      </span>
     </div>
     </template>
 

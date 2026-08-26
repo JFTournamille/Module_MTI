@@ -39,6 +39,20 @@ await page.goto(base + '/', { waitUntil: 'networkidle' })
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); process.exitCode = 1 }
 
+// ── Préalable : ouvrir un dossier ──
+// Les saisies n'existent que dans un dossier : l'onglet Scénario montre un état
+// vide tant qu'aucun n'est ouvert. Tous les groupes qui suivent en dépendent.
+console.log('\nPréalable : ouverture d\'un dossier')
+const refDossier = `MTI-NAV-${Date.now()}`
+if (await page.locator('.vide-dossier').count()) {
+  await page.locator('#vd-ref').fill(refDossier)
+  await page.locator('.vd-b').click()
+  await page.waitForTimeout(1500)
+}
+await page.locator('.vide-dossier').count() === 0
+  ? ok(`dossier ${refDossier} ouvert — la saisie sera enregistrée`)
+  : ko('aucun dossier ouvert : la saisie ne serait pas enregistrée')
+
 // ── 1. Structure d'ensemble ──
 console.log('\n1. Structure')
 for (const [sel, nom] of [['.dlg', 'fenêtre'], ['.titlebar', 'barre de titre'],
@@ -363,7 +377,58 @@ if (await selOp.count() === 0) {
   await page.waitForTimeout(400)
 }
 
-console.log('\n16. Console du navigateur et réseau')
+// ── 16. Persistance : la saisie survit-elle à un rechargement ? ──
+console.log('\n16. Persistance des saisies')
+await page.locator('.proc').first().click()
+await page.waitForTimeout(500)
+
+// Un point Oui/Non et un relevé de température hors seuil.
+await page.locator('.roi').first().check()
+await page.locator('.cfi').first().fill('-140')
+await page.waitForTimeout(300)
+await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.waitForTimeout(1500)
+
+const etat = (await page.locator('.etat-enr').innerText()).trim()
+if (/enregistré à/.test(etat)) ok(`état d'enregistrement affiché : « ${etat} »`)
+else ko(`état : « ${etat} »`)
+
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+await page.locator('.vide-dossier').count() === 0
+  ? ok('le dossier ouvert est retrouvé après rechargement')
+  : ko('le dossier ouvert est perdu au rechargement')
+await page.locator('.roi').first().isChecked()
+  ? ok('la réponse Oui/Non revient de la base')
+  : ko('la réponse Oui/Non est perdue')
+const tempRelue = await page.locator('.cfi').first().inputValue()
+tempRelue === '-140' ? ok(`le relevé revient de la base : ${tempRelue} °C`)
+  : ko(`relevé relu : « ${tempRelue} » au lieu de -140`)
+
+// L'alarme est figée côté serveur : elle doit être là au rechargement, sans
+// que le front ait à la recalculer pour l'avoir juste.
+await page.locator('.calm').count() >= 1
+  ? ok('l\'alarme hors seuil est restituée')
+  : ko('aucune alarme affichée pour −140 °C sous un seuil de −150 °C')
+
+// Un processus ajouté depuis le catalogue doit être persisté, sinon ses saisies
+// n'auraient nulle part où aller.
+const avantAjout = await page.locator('.proc').count()
+await page.locator('.sb-add').click()
+await page.waitForTimeout(500)
+await page.locator('.cat-item').first().click()
+await page.locator('.cat-btn-ok').click()
+await page.waitForTimeout(1200)
+const apresAjout = await page.locator('.proc').count()
+apresAjout === avantAjout + 1 ? ok('processus du catalogue ajouté')
+  : ko(`${avantAjout} → ${apresAjout} processus`)
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+await page.locator('.proc').count() === apresAjout
+  ? ok('le processus ajouté est enregistré côté serveur, pas seulement affiché')
+  : ko(`${await page.locator('.proc').count()} processus après rechargement`)
+
+console.log('\n17. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

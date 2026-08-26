@@ -44,6 +44,133 @@ export default async function dossiers (app) {
     })
   })
 
+  // ── Ajout d'un processus en cours de parcours ────────────────────────────
+  //
+  // Le catalogue permet d'insérer un processus complémentaire (contrôle qualité
+  // intermédiaire, non-conformité, transport interne). Sans cette route, l'ajout
+  // restait local au navigateur : les saisies du processus ajouté n'avaient
+  // aucun `dossier_processus` où atterrir, et l'enregistrement échouait en
+  // silence — le pire des cas pour une traçabilité.
+  app.post('/api/dossiers/:id/processus', async (request, reply) => {
+    const { code, nom, gabarit, externe, sections } = request.body ?? {}
+    if (!code || !nom) return reply.code(400).send({ erreur: 'code et nom sont requis.' })
+    if (sections !== undefined && !Array.isArray(sections)) {
+      return reply.code(400).send({ erreur: 'sections doit être un tableau.' })
+    }
+
+    const { rows: dossierRows } = await requete(
+      'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
+    if (!dossierRows.length) return reply.code(404).send({ erreur: 'Dossier introuvable.' })
+    if (dossierRows[0].statut === 'valide') {
+      return reply.code(409).send({
+        erreur: "Dossier validé : on n'y ajoute plus de processus. Toute correction " +
+                'passe par une nouvelle version du dossier.'
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* L'ordre est calculé dans la transaction : deux ajouts simultanés ne
+         doivent pas se retrouver au même rang. */
+      const { rows: [{ suivant }] } = await client.query(
+        `SELECT coalesce(max(ordre), 0) + 1 AS suivant
+           FROM mti.dossier_processus WHERE dossier_id = $1`,
+        [request.params.id])
+
+      const { rows } = await client.query(
+        `INSERT INTO mti.dossier_processus
+           (dossier_id, ordre, code, nom, gabarit, externe, definition, etat,
+            ajoute_du_catalogue)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'a_venir', true)
+         RETURNING id, ordre, code, nom, gabarit, externe, definition, etat,
+                   ajoute_du_catalogue`,
+        [request.params.id, suivant, code, nom, gabarit ?? 'standard', externe === true,
+          JSON.stringify({ sections: sections ?? [] })])
+
+      reply.code(201)
+      return rows[0]
+    })
+  })
+
+  // ── En-tête du dossier ───────────────────────────────────────────────────
+  //
+  // La création ne prend que la référence : sans cette route, le produit, le
+  // n° de lot et la péremption saisis dans l'interface n'allaient nulle part.
+  //
+  // `patient_id` et `preallocation` passent par ici : c'est la préallocation,
+  // seule voie par laquelle une identité apparaît avant la mise en fabrication.
+  app.patch('/api/dossiers/:id', async (request, reply) => {
+    /* Liste blanche : ni statut, ni conformite, ni valide_par ne se modifient
+       ici — la validation a sa route, qui vérifie les points obligatoires. */
+    const CHAMPS = {
+      designationProduit: 'designation_produit',
+      produitId: 'produit_id',
+      numeroLot: 'numero_lot',
+      codeBarre: 'code_barre',
+      datePeremption: 'date_peremption',
+      numeroOrdonnancier: 'numero_ordonnancier',
+      numeroCommande: 'numero_commande',
+      dateFabrication: 'date_fabrication',
+      transporteur: 'transporteur',
+      nbExemplaires: 'nb_exemplaires',
+      patientId: 'patient_id',
+      preallocation: 'preallocation',
+      commentaire: 'commentaire'
+    }
+    const corps = request.body ?? {}
+    const colonnes = []
+    const valeurs = []
+    for (const [cle, colonne] of Object.entries(CHAMPS)) {
+      if (!(cle in corps)) continue
+      let v = corps[cle]
+      if (typeof v === 'string' && v.trim() === '') v = null
+      if (cle === 'nbExemplaires') {
+        const n = Number(v)
+        if (!Number.isInteger(n) || n < 1 || n > 10) {
+          return reply.code(400).send({ erreur: 'nbExemplaires doit être un entier de 1 à 10.' })
+        }
+        v = n
+      }
+      if (cle === 'preallocation' && typeof v !== 'boolean') {
+        return reply.code(400).send({ erreur: 'preallocation doit valoir true ou false.' })
+      }
+      valeurs.push(v)
+      colonnes.push(`${colonne} = $${valeurs.length + 1}`)
+    }
+    if (!colonnes.length) return reply.code(400).send({ erreur: 'Aucun champ à modifier.' })
+
+    // Une préallocation sans patient n'a pas de sens, et un patient sans
+    // préallocation ferait apparaître une identité sans acte explicite.
+    if (corps.preallocation === false && corps.patientId === undefined) {
+      valeurs.push(null)
+      colonnes.push(`patient_id = $${valeurs.length + 1}`)
+    }
+
+    const { rows } = await transaction(
+      request.utilisateur.id, request.ip,
+      async (client) => {
+        /* Un dossier validé est figé : la condition est dans le UPDATE, pas
+           dans une lecture préalable, pour qu'aucune écriture ne se glisse
+           entre les deux. */
+        const r = await client.query(
+          `UPDATE mti.dossier SET ${colonnes.join(', ')}
+            WHERE id = $1 AND statut <> 'valide'
+            RETURNING id, statut`,
+          [request.params.id, ...valeurs])
+        return r
+      })
+
+    if (!rows.length) {
+      const { rows: existe } = await requete(
+        'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
+      if (!existe.length) return reply.code(404).send({ erreur: 'Dossier introuvable.' })
+      return reply.code(409).send({
+        erreur: 'Dossier validé : son en-tête est en lecture seule. Toute correction ' +
+                'passe par une nouvelle version du dossier.'
+      })
+    }
+    return { id: rows[0].id, statut: rows[0].statut }
+  })
+
   // ── Lecture ──────────────────────────────────────────────────────────────
   // ── Liste des dossiers, pour le tableau de bord ──────────────────────────
   //

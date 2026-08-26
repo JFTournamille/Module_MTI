@@ -293,5 +293,62 @@ r = await j('GET', '/api/dossiers?q=zzz-aucune-chance-zzz')
 r.corps.length === 0 ? ok('une recherche sans résultat renvoie une liste vide')
   : ko(`${r.corps.length} résultat(s) inattendus`)
 
+console.log('\n14. En-tête du dossier et ajout de processus')
+const refH = `DOS-ENT-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refH })
+const dossierH = r.corps.id
+r.statut === 201 ? ok(`dossier ${refH} créé`) : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierH}`, {
+  designationProduit: 'Kymriah® (tisagenlecleucel)',
+  numeroLot: 'LOT-KY-2608-A',
+  datePeremption: '2026-12-31',
+  nbExemplaires: 3
+})
+r.statut === 200 ? ok('en-tête enregistré') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('GET', `/api/dossiers/${dossierH}`)
+r.corps.dossier.numero_lot === 'LOT-KY-2608-A' && r.corps.dossier.nb_exemplaires === 3
+  ? ok('en-tête relu depuis la base')
+  : ko(`relu : ${JSON.stringify([r.corps.dossier.numero_lot, r.corps.dossier.nb_exemplaires])}`)
+
+// Liste blanche : le statut ne se change pas par cette route, la validation a
+// la sienne, qui vérifie les points obligatoires.
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { statut: 'valide' })
+r.statut === 400 ? ok('champ hors liste blanche refusé (400)') : ko(`statut ${r.statut}`)
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { nbExemplaires: 99 })
+r.statut === 400 ? ok('nbExemplaires hors bornes refusé (400)') : ko(`statut ${r.statut}`)
+r = await j('PATCH', '/api/dossiers/00000000-0000-0000-0000-000000000000', { numeroLot: 'X' })
+r.statut === 404 ? ok('dossier inconnu → 404') : ko(`statut ${r.statut}`)
+
+// Un processus ajouté en cours de parcours doit exister côté serveur, sinon
+// ses saisies n'auraient aucun dossier_processus où atterrir.
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, {
+  code: 'CQ_INTERMEDIAIRE', nom: 'Contrôle qualité intermédiaire',
+  sections: [{ titre: 'Contrôle qualité', points: [{ num: 'CQ.1', libelle: 'Aspect conforme', type: 'ouinon', obligatoire: true }] }]
+})
+const procAjoute = r.corps?.id
+r.statut === 201 && r.corps.ajoute_du_catalogue === true && r.corps.ordre === 13
+  ? ok(`processus ajouté au rang ${r.corps.ordre}, marqué « du catalogue »`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('PUT', `/api/processus/${procAjoute}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 0, pointNum: 'CQ.1', pointType: 'ouinon',
+    obligatoire: true, reponse: 'oui' }
+] })
+r.statut === 200 ? ok('les saisies du processus ajouté sont enregistrées')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, { nom: 'sans code' })
+r.statut === 400 ? ok('ajout sans code refusé (400)') : ko(`statut ${r.statut}`)
+
+// Un dossier validé est figé : ni en-tête, ni nouveau processus.
+r = await j('POST', `/api/dossiers/${dossierH}/valider`, { conformite: 'conforme' })
+r.statut === 200 ? ok('dossier validé') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { numeroLot: 'APRES-VALIDATION' })
+r.statut === 409 ? ok('en-tête en lecture seule après validation (409)') : ko(`statut ${r.statut}`)
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, { code: 'X', nom: 'X' })
+r.statut === 409 ? ok('plus d\'ajout de processus après validation (409)') : ko(`statut ${r.statut}`)
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

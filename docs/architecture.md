@@ -135,6 +135,17 @@ bascule sur `src/data/*.json`, affiche un bandeau « Mode hors-ligne » et reste
 saisissable. **La persistance différée des saisies reste à faire** (voir
 Reste à faire).
 
+En ligne, en revanche, la saisie est désormais persistée : l'onglet Scénario
+travaille sur un **dossier**, et sans dossier ouvert il affiche un état vide
+plutôt qu'un formulaire qui n'enregistrerait rien. Trois gestes écrivent :
+`PATCH /api/dossiers/:id` pour l'en-tête, `PUT /api/processus/:id/saisies` pour
+les points, `POST /api/dossiers/:id/valider` pour figer. Changer de processus
+enregistre celui qu'on quitte — une saisie ne doit pas disparaître sans que
+l'opérateur puisse le savoir. Un processus ajouté depuis le catalogue est créé
+côté serveur (`POST /api/dossiers/:id/processus`) : sans cela ses saisies
+n'auraient aucun `dossier_processus` où atterrir, et l'enregistrement échouait
+en silence.
+
 ## L'authentification est un prérequis, pas une évolution
 
 Le double contrôle pharmacien et la signature électronique exigent deux
