@@ -25,6 +25,12 @@ Les maquettes d'origine sont conservées à l'identique dans `docs/reference/`.
 Le CSS du front est repris **verbatim** de `scenario_mti_dialog_v9.html` : le
 rendu visuel validé par les utilisateurs n'a pas changé.
 
+`scenario_mti_dialog_v12.html` est la maquette fonctionnelle de référence pour
+les évolutions V5 arrêtées en réunion du 26 juin 2026 (voir plus bas). Elle
+reprend la palette de la v11 sans y toucher — seule l'échelle typographique a
+été relevée, via les variables `--fs-*`. Fichier autonome, ouvrable directement
+dans un navigateur.
+
 ## Les cinq décisions structurantes
 
 ### 1. Le parcours est anonyme par défaut
@@ -178,6 +184,40 @@ npm --prefix api run test:e2e
 # Parcours dans un vrai navigateur (14 groupes)
 npm --prefix web run test:navigateur
 ```
+
+## Évolutions V5 — réunion du 26 juin 2026
+
+Ces points sont des **exigences fonctionnelles**, pas des pistes : ils sont
+maquettés dans `docs/reference/scenario_mti_dialog_v12.html` et restent à
+porter dans le front Vue et le schéma.
+
+### Ce qui est arrêté
+
+| Sujet | Décision | Impact modèle |
+|---|---|---|
+| Périmètre | Le module reste **intégré à Chimio**, pas distinct — à réétudier sans présupposer la réponse | — |
+| Rattachement | Aux trois entités **patient, prescription, produit**, dès que la maturité du dossier le permet : préallocation ou mise en fabrication | `dossier.prescription_id` à ajouter |
+| Processus commande | Circuit de commande **dédié MTI**, distinct du circuit standard, avec dates d'aphérèse, de lymphodéplétion et de réception prévue | nouveaux processus en amont de la réception |
+| Double validation | Un point de contrôle se réalise à **1 (défaut) ou 2 personnes**. La 2ᵉ personne valide le processus **globalement**, avec identification nominative et rappel des points concernés | `point.double_validation`, signature de processus |
+| Kits | Regroupement logique d'étapes par **kit** (ex. 1 boîte = 3 tubes CD4 + 2 tubes CD8) | `section.kits[]`, `point.kit` |
+| Exemplaires | Une case à cocher déclenche l'enregistrement d'un **n° de série par exemplaire**, en complément du n° de lot | `point.numero_serie`, `saisie.numero_serie` |
+| Commentaires | **Texte libre par ligne**, restitué en bulle (tooltip) | `saisie.commentaire` |
+| Chronologie | Certains processus sont **indépendants** : réalisables sans attendre la validation du précédent | `processus.independant` |
+| Workflow fabrication | **Décongélation** et **réception des poches** sortent du workflow de fabrication et deviennent des processus de premier niveau — la réception des poches ne doit pas être enfouie | réordonnancement du parcours |
+| Tableau de bord | Liste des scénarii, consultation **par patient et par produit**, dossiers terminés restant consultables, démarrage d'un scénario | vue de liste + recherche |
+
+### Points encore ouverts
+
+1. **Module distinct ou intégré à Chimio** — à étudier, sans présupposer la réponse.
+2. **Planning de réception** — gardé en vue pour la phase 2 ; la maquette n'expose
+   que la réservation d'un créneau.
+3. **Menu Activité** — appel aux check-lists MTI quand elles s'intercalent à des
+   étapes déjà codées dans Chimio ; l'articulation reste à spécifier.
+4. **Double validation réelle** — la maquette se limite à un choix nominatif.
+   Le geste suppose deux identités authentifiées distinctes, donc le SSO
+   (voir *L'authentification est un prérequis*).
+
+Prochaine réunion : 7 septembre 2026.
 
 ## Reste à faire
 
