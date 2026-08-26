@@ -197,6 +197,21 @@ const blocages = computed(() => {
         <template v-else>non enregistré</template>
       </span>
       <button class="btn-ann" v-if="store.dossierId" @click="store.fermerDossier()">Fermer</button>
+      <!-- Avancement du processus courant : sans lui, un processus « à venir »
+           reste en lecture seule et le parcours ne peut pas progresser. -->
+      <button v-if="store.dossierId && !store.lectureSeule && store.processusCourant"
+              class="f-btn proc-etat" :disabled="store.processusCourant.etat === 'valide'"
+              :title="store.processusCourant.etat === 'a_venir'
+                ? 'Ouvrir ce processus à la saisie'
+                : store.processusCourant.etat === 'valide'
+                  ? 'Processus déjà validé'
+                  : 'Valider ce processus et ouvrir le suivant'"
+              @click="store.changerEtatProcessus(
+                store.processusCourant.etat === 'a_venir' ? 'en_cours' : 'valide')">
+        {{ store.processusCourant.etat === 'a_venir' ? 'Ouvrir ce processus'
+           : store.processusCourant.etat === 'valide' ? '✓ Processus validé'
+           : 'Valider ce processus' }}
+      </button>
       <button class="f-btn" v-if="store.dossierId && !store.lectureSeule"
               :disabled="store.enregistrement"
               @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">

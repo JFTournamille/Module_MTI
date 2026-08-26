@@ -1,7 +1,7 @@
 import { transaction, requete } from '../db.js'
 
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
-const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto'])
+const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date'])
 
 export default async function dossiers (app) {
   // ── Création d'un dossier ────────────────────────────────────────────────
@@ -176,6 +176,70 @@ export default async function dossiers (app) {
       })
     }
     return { id: rows[0].id, statut: rows[0].statut }
+  })
+
+  // ── Avancement d'un processus ────────────────────────────────────────────
+  //
+  // Il manquait la moitié du mécanisme : `dossier_processus.etat` était posé à
+  // la création (le premier « en_cours », les autres « a_venir ») et plus rien
+  // ne le faisait bouger. Or le front verrouille en lecture seule tout
+  // processus « a_venir » : le parcours ne pouvait donc pas avancer d'un cran,
+  // et seul le premier processus était jamais saisissable.
+  //
+  // Valider un processus ouvre le suivant encore à venir. C'est l'enchaînement
+  // chronologique du parcours ; les processus qu'on veut pouvoir réaliser sans
+  // attendre s'ouvrent explicitement (etat « en_cours »).
+  app.post('/api/processus/:id/etat', async (request, reply) => {
+    const etat = (request.body ?? {}).etat
+    if (!['a_venir', 'en_cours', 'valide'].includes(etat)) {
+      return reply.code(400).send({
+        erreur: "etat doit valoir 'a_venir', 'en_cours' ou 'valide'."
+      })
+    }
+
+    const { rows: contexte } = await requete(
+      `SELECT dp.dossier_id, dp.ordre, d.statut
+         FROM mti.dossier_processus dp
+         JOIN mti.dossier d ON d.id = dp.dossier_id
+        WHERE dp.id = $1`,
+      [request.params.id])
+    if (!contexte.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
+    if (contexte[0].statut === 'valide') {
+      return reply.code(409).send({
+        erreur: 'Dossier validé : son avancement est figé. Toute correction passe par ' +
+                'une nouvelle version du dossier.'
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      const { rows } = await client.query(
+        `UPDATE mti.dossier_processus
+            SET etat = $2::mti.etat_processus,
+                ouvert_le = CASE WHEN $2 = 'a_venir' THEN NULL
+                                 ELSE coalesce(ouvert_le, now()) END,
+                valide_par = CASE WHEN $2 = 'valide' THEN $3::uuid ELSE NULL END,
+                valide_le  = CASE WHEN $2 = 'valide' THEN now() ELSE NULL END
+          WHERE id = $1
+          RETURNING id, ordre, nom, etat, ouvert_le, valide_le`,
+        [request.params.id, etat, request.utilisateur.id])
+
+      let suivant = null
+      if (etat === 'valide') {
+        /* Ouvrir le suivant encore à venir, pas simplement `ordre + 1` : un
+           processus ajouté depuis le catalogue, ou déjà ouvert, ne doit pas
+           faire sauter un cran au parcours. */
+        const { rows: ouverts } = await client.query(
+          `UPDATE mti.dossier_processus
+              SET etat = 'en_cours', ouvert_le = coalesce(ouvert_le, now())
+            WHERE id = (SELECT id FROM mti.dossier_processus
+                         WHERE dossier_id = $1 AND ordre > $2 AND etat = 'a_venir'
+                         ORDER BY ordre LIMIT 1)
+            RETURNING id, ordre, nom, etat`,
+          [contexte[0].dossier_id, contexte[0].ordre])
+        suivant = ouverts[0] ?? null
+      }
+      return { processus: rows[0], suivant }
+    })
   })
 
   // ── Lecture ──────────────────────────────────────────────────────────────
@@ -436,6 +500,7 @@ export default async function dossiers (app) {
                 WHEN 'ouinon' THEN s.reponse IS NULL
                 WHEN 'valeur' THEN s.valeur_num IS NULL
                 WHEN 'texte'  THEN coalesce(btrim(s.valeur_texte), '') = ''
+                WHEN 'date'   THEN coalesce(btrim(s.valeur_texte), '') = ''
                 WHEN 'timer'  THEN s.timer_debut IS NULL
                 ELSE false
               END`,

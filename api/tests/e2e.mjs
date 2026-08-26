@@ -25,11 +25,19 @@ const j = async (m, url, body, entetes) => {
   return { statut: r.status, corps: await r.json().catch(() => null) }
 }
 
+const modeles = (await j('GET', '/api/modeles')).corps
+const modeleActif = modeles.find((m) => m.code === 'PARCOURS_CART_AUTOLOGUE')
+const NB_PROCESSUS = modeleActif?.nbProcessus
+console.log(`\n0. Modèle actif : ${modeleActif?.code} v${modeleActif?.version}`)
+NB_PROCESSUS >= 12
+  ? ok(`${NB_PROCESSUS} processus au parcours actif`)
+  : ko(`modèle actif introuvable ou incomplet : ${JSON.stringify(modeles)}`)
+
 console.log('\n1. Création d\'un dossier')
 const ref = `DOS-E2E-${Date.now()}`
 let r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: ref })
-r.statut === 201 && r.corps.nbProcessus === 12
-  ? ok(`dossier ${ref} créé avec 12 processus figés`)
+r.statut === 201 && r.corps.nbProcessus === NB_PROCESSUS
+  ? ok(`dossier ${ref} créé avec ${NB_PROCESSUS} processus figés`)
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 const dossierId = r.corps.id
 
@@ -40,9 +48,14 @@ console.log('\n2. Le dossier est anonyme à la création')
 r = await j('GET', `/api/dossiers/${dossierId}`)
 r.corps.dossier.patient_id === null && r.corps.dossier.preallocation === false
   ? ok('patient_id NULL, préallocation inactive') : ko(JSON.stringify(r.corps.dossier))
+const premier = r.corps.processus.find((p) => p.ordre === 1)
+premier?.etat === 'en_cours'
+  ? ok(`processus 1 « ${premier.nom} » en cours`)
+  : ko(`premier processus : ${JSON.stringify(premier)}`)
 const reception = r.corps.processus.find((p) => p.gabarit === 'reception')
-reception && reception.etat === 'en_cours'
-  ? ok(`processus 1 « ${reception.nom} » en cours`) : ko('processus de réception introuvable')
+reception
+  ? ok(`réception trouvée au rang ${reception.ordre}, état « ${reception.etat} »`)
+  : ko('processus de réception introuvable')
 reception.definition.sections.length === 6
   ? ok('définition figée dans le dossier (6 sections)')
   : ko(`${reception.definition.sections?.length} sections`)
@@ -265,7 +278,7 @@ ligne?.statutAffiche === 'termine' && ligne?.etape === 'Parcours clos'
 ligne?.nbAlarmes === 1
   ? ok(`${ligne.nbAlarmes} alarme de seuil comptée sur le dossier`)
   : ko(`${ligne?.nbAlarmes} alarme(s) au lieu de 1`)
-typeof ligne?.avancement === 'number' && ligne.nbProcessus === 12
+typeof ligne?.avancement === 'number' && ligne.nbProcessus === NB_PROCESSUS
   ? ok(`avancement ${ligne.avancement} % sur ${ligne.nbProcessus} processus`)
   : ko(`avancement/processus : ${JSON.stringify([ligne?.avancement, ligne?.nbProcessus])}`)
 
@@ -328,7 +341,8 @@ r = await j('POST', `/api/dossiers/${dossierH}/processus`, {
   sections: [{ titre: 'Contrôle qualité', points: [{ num: 'CQ.1', libelle: 'Aspect conforme', type: 'ouinon', obligatoire: true }] }]
 })
 const procAjoute = r.corps?.id
-r.statut === 201 && r.corps.ajoute_du_catalogue === true && r.corps.ordre === 13
+r.statut === 201 && r.corps.ajoute_du_catalogue === true &&
+  r.corps.ordre === NB_PROCESSUS + 1
   ? ok(`processus ajouté au rang ${r.corps.ordre}, marqué « du catalogue »`)
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 
@@ -363,8 +377,8 @@ kymriah?.seuilTempC === -150
   : ko(`seuil : ${JSON.stringify(kymriah?.seuilTempC)}`)
 
 r = await j('GET', '/api/modeles')
-r.corps.some((m) => m.code === 'PARCOURS_CART_AUTOLOGUE' && m.nbProcessus === 12)
-  ? ok('le modèle de parcours actif est listé avec ses 12 processus')
+r.corps.some((m) => m.code === 'PARCOURS_CART_AUTOLOGUE' && m.nbProcessus === NB_PROCESSUS)
+  ? ok(`le modèle de parcours actif est listé avec ses ${NB_PROCESSUS} processus`)
   : ko(`modèles : ${JSON.stringify(r.corps)}`)
 
 // Création en un seul appel : un dossier créé sans son produit, parce qu'un
@@ -416,6 +430,67 @@ const majJalon = r.corps.filter((e) => e.table_cible === 'dossier' && e.operatio
 majJalon.length >= 2 && majJalon.every((e) => e.nom)
   ? ok(`${majJalon.length} changement(s) de jalon tracés, tous avec leur auteur`)
   : ko(`traces : ${JSON.stringify(majJalon.map((e) => e.nom))}`)
+
+console.log('\n17. Processus amont et jalons calendaires (parcours v2)')
+r = await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')
+const noms = r.corps.processus.map((p) => p.nom)
+const iCommande = noms.findIndex((n) => /Commande MTI/.test(n))
+const iReception = noms.findIndex((n) => /^Réception \(/.test(n))
+iCommande >= 0 && iReception >= 0 && iCommande < iReception
+  ? ok(`la commande MTI (rang ${iCommande + 1}) précède la réception (rang ${iReception + 1})`)
+  : ko(`ordre : commande ${iCommande}, réception ${iReception}`)
+;['Demande d\'accès au traitement', 'Aphérèse / leucaphérèse',
+  'Rattachement patient / prescription'].every((n) => noms.includes(n))
+  ? ok('les trois autres processus amont sont présents')
+  : ko(`processus : ${JSON.stringify(noms.slice(0, 5))}`)
+
+// L'identité patient reste imposée par la mise en fabrication : son index a
+// bougé avec l'insertion des processus amont, il doit avoir suivi.
+const iFab = noms.findIndex((n) => /Mise en fabrication/.test(n))
+r.corps.indexIdentificationPatient === iFab
+  ? ok(`identité patient exigée à partir du rang ${iFab + 1} (${noms[iFab]})`)
+  : ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iFab}`)
+
+// Les jalons calendaires ne doivent pas être du texte libre : sans type, ils
+// seraient intriables et incomparables.
+const pointsCommande = r.corps.processus[iCommande].sections.flatMap((sc) => sc.points)
+const jalons = pointsCommande.filter((pt) => pt.type === 'date').map((pt) => pt.libelle)
+jalons.length === 3 ? ok(`3 jalons de type « date » : ${jalons.join(' · ')}`)
+  : ko(`jalons date : ${JSON.stringify(jalons)}`)
+
+// Le type doit être accepté à l'écriture ET compté à la validation, sinon un
+// jalon obligatoire vide passerait — plus grave que de le refuser.
+const refD = `DOS-DATE-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refD })
+const dossierD = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierD}`)
+const procCommande = r.corps.processus.find((p) => /Commande MTI/.test(p.nom))
+r = await j('PUT', `/api/processus/${procCommande.id}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 2, pointType: 'date', obligatoire: true, valeurTexte: '' }
+] })
+r.statut === 200 ? ok('une saisie de type date est acceptée') : ko(`statut ${r.statut}`)
+
+r = await j('POST', `/api/dossiers/${dossierD}/valider`, { conformite: 'conforme' })
+r.statut === 422 && r.corps.details?.some((d) => d.point_type === 'date')
+  ? ok('un jalon date obligatoire et vide bloque la validation (422)')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 160)}`)
+
+r = await j('PUT', `/api/processus/${procCommande.id}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 2, pointType: 'date', obligatoire: true,
+    valeurTexte: '2026-09-15' }
+] })
+r = await j('GET', `/api/dossiers/${dossierD}`)
+r.corps.saisies.some((sa) => sa.point_type === 'date' && sa.valeur_texte === '2026-09-15')
+  ? ok('le jalon est relu au format ISO depuis la base')
+  : ko('jalon date introuvable en base')
+
+// Les dossiers ouverts sur une version antérieure gardent leur définition
+// figée : c'est tout l'intérêt de la recopie à la création.
+r = await j('GET', '/api/dossiers')
+const versions = [...new Set(r.corps.map((d) => d.versionModele))].sort()
+versions.length >= 1
+  ? ok(`versions de modèle en service dans les dossiers : v${versions.join(', v')}`)
+  : ko('aucune version de modèle rapportée')
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

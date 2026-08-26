@@ -39,6 +39,21 @@ await page.goto(base + '/', { waitUntil: 'networkidle' })
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); process.exitCode = 1 }
 
+/* Le modèle actif dicte le nombre de processus : la suite le lit plutôt que de
+   le coder en dur, sinon chaque nouvelle version la casserait. */
+const modeleActif = await fetch(`${base}/api/modeles`)
+  .then((r) => r.json())
+  .then((l) => l.find((m) => m.code === 'PARCOURS_CART_AUTOLOGUE'))
+  .catch(() => null)
+const NB_PROCESSUS = modeleActif?.nbProcessus ?? 12
+
+/** Sélectionne un processus par son NOM : les index bougent d'une version du
+ *  parcours à l'autre, les noms sont stables. */
+async function allerAuProcessus (nom) {
+  await page.locator('.proc').filter({ hasText: nom }).first().click()
+  await page.waitForTimeout(500)
+}
+
 /** L'application ouvre sur le tableau de bord : après un rechargement, il faut
  *  revenir à l'onglet Scénario pour retrouver la table de saisie. */
 async function allerAuScenario () {
@@ -63,6 +78,10 @@ if (await page.locator('.vide-dossier').count()) {
 await page.locator('.vide-dossier').count() === 0
   ? ok(`dossier ${refDossier} ouvert — la saisie sera enregistrée`)
   : ko('aucun dossier ouvert : la saisie ne serait pas enregistrée')
+// La réception n'est plus le premier processus : la v2 ajoute quatre processus
+// amont. Les groupes qui suivent portent sur elle, il faut l'ouvrir.
+await allerAuProcessus('Réception (+/-')
+ok(`modèle actif : ${NB_PROCESSUS} processus, réception sélectionnée`)
 
 // ── 1. Structure d'ensemble ──
 console.log('\n1. Structure')
@@ -71,7 +90,8 @@ for (const [sel, nom] of [['.dlg', 'fenêtre'], ['.titlebar', 'barre de titre'],
   await page.locator(sel).count() ? ok(nom) : ko(nom)
 }
 const nbProc = await page.locator('.proc').count()
-nbProc === 12 ? ok(`12 processus dans la barre latérale`) : ko(`${nbProc} processus au lieu de 12`)
+nbProc === NB_PROCESSUS ? ok(`${nbProc} processus dans la barre latérale`)
+  : ko(`${nbProc} processus au lieu de ${NB_PROCESSUS}`)
 
 // ── 2. Le parcours démarre anonyme ──
 console.log('\n2. Anonymat initial')
@@ -166,7 +186,7 @@ await page.locator('.ch-pa-flds.show').count() === 1
 console.log('\n9. Identification à la mise en fabrication')
 await page.locator('.ch-pa-tog input[type=radio]').nth(0).check()   // préallocation OFF
 await page.waitForTimeout(100)
-await page.locator('.proc').nth(4).click()                          // processus 5
+await allerAuProcessus('Mise en fabrication')
 await page.waitForTimeout(200)
 const enteteFab = await page.locator('.hdr-left .name').innerText()
 enteteFab.includes('à identifier') ? ok(`en-tête : « ${enteteFab} »`) : ko(`en-tête : ${enteteFab}`)
@@ -187,8 +207,9 @@ await page.locator('.cat-item').filter({ hasText: 'Validation pharmaceutique' })
 await page.locator('.cat-btn-ok').click()
 await page.waitForTimeout(250)
 const nbProcApres = await page.locator('.proc').count()
-nbProcApres === 13 ? ok('13 processus après ajout') : ko(`${nbProcApres} processus`)
-const nomAjoute = await page.locator('.proc').nth(12).locator('.pname').innerText()
+nbProcApres === NB_PROCESSUS + 1 ? ok(`${nbProcApres} processus après ajout`)
+  : ko(`${nbProcApres} processus au lieu de ${NB_PROCESSUS + 1}`)
+const nomAjoute = await page.locator('.proc').nth(NB_PROCESSUS).locator('.pname').innerText()
 nomAjoute === 'Validation pharmaceutique' ? ok(`processus ajouté et sélectionné : ${nomAjoute}`)
   : ko(`nom inattendu : ${nomAjoute}`)
 const pointsAjoutes = await page.locator('.std-ir').count()
@@ -207,7 +228,7 @@ if (apiJoignable) {
   // ── 12. Recherche patient sur la vraie base ──
   console.log('\n12. Recherche patient (annuaire réel)')
   // L'étape 10 a navigué vers le processus ajouté : revenir à la réception.
-  await page.locator('.proc').first().click()
+  await allerAuProcessus('Réception (+/-')
   await page.locator('.ch-pa-tog').waitFor()
   await page.locator('.ch-pa-tog input[type=radio]').nth(1).check()
   await page.waitForTimeout(150)
@@ -330,7 +351,7 @@ await page.waitForTimeout(500)
 // ── Retour au scénario : l'état du parcours ne doit pas avoir été perdu ──
 await page.locator('.onglet', { hasText: 'Scénario' }).click()
 await page.waitForTimeout(400)
-await page.locator('.proc').count() >= 12
+await page.locator('.proc').count() >= NB_PROCESSUS
   ? ok('retour au scénario, processus toujours présents')
   : ko('le scénario a perdu ses processus')
 
@@ -395,8 +416,7 @@ if (await selOp.count() === 0) {
 // `input` pris au rang n attrape aussi bien un champ d'en-tête, et le contrôle
 // passerait alors pour la mauvaise raison.
 console.log('\n16. Persistance des saisies')
-await page.locator('.proc').first().click()
-await page.waitForTimeout(500)
+await allerAuProcessus('Réception (+/-')
 
 const ligneIntegrite = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
 const ligneTemp = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
@@ -422,6 +442,9 @@ await allerAuScenario()
 await page.locator('.vide-dossier').count() === 0
   ? ok('le dossier ouvert est retrouvé après rechargement')
   : ko('le dossier ouvert est perdu au rechargement')
+// À l'ouverture, le dossier reprend à son premier processus non validé — la
+// « Demande d'accès » depuis la v2, plus la réception.
+await allerAuProcessus('Réception (+/-')
 
 const ligneIntegrite2 = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
 const ligneTemp2 = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
@@ -576,7 +599,53 @@ const celluleJalon = (await ligneJalon.locator('.presc-oui, .presc-non').innerTe
 celluleJalon === '✓ faite' ? ok('jalon visible dans la liste du tableau de bord')
   : ko(`colonne Prescr. : « ${celluleJalon} »`)
 
-console.log('\n19. Console du navigateur et réseau')
+// ── 19. Processus amont : la commande MTI et ses jalons calendaires ──
+console.log('\n19. Commande MTI (parcours v2)')
+await allerAuScenario()
+await allerAuProcessus('Commande MTI')
+
+const nomsProc = await page.locator('.proc .pname').allTextContents()
+const rangCommande = nomsProc.findIndex((n) => /Commande MTI/.test(n))
+const rangReception = nomsProc.findIndex((n) => /^Réception \(/.test(n))
+rangCommande >= 0 && rangCommande < rangReception
+  ? ok(`commande MTI au rang ${rangCommande + 1}, avant la réception (${rangReception + 1})`)
+  : ko(`rangs : commande ${rangCommande}, réception ${rangReception}`)
+
+// Les jalons sont de vraies dates, pas du texte libre : sans quoi ils seraient
+// intriables et incomparables.
+const champsDate = page.locator('.std-ir input[type=date], .chk input[type=date]')
+const nbDates = await champsDate.count()
+nbDates >= 3 ? ok(`${nbDates} champ(s) de saisie de date`)
+  : ko(`${nbDates} champ(s) date au lieu de 3 au moins`)
+
+// Un processus « à venir » est en lecture seule, et rien ne le faisait avancer :
+// il faut l'ouvrir. C'est le mécanisme qui rend le parcours praticable.
+const boutonEtat = page.locator('.proc-etat')
+const libelleEtat = (await boutonEtat.innerText()).trim()
+if (/Ouvrir ce processus/.test(libelleEtat)) ok(`processus à venir : « ${libelleEtat} » proposé`)
+else ko(`bouton d'avancement : « ${libelleEtat} »`)
+await boutonEtat.click()
+await page.waitForTimeout(1500)
+await allerAuProcessus('Commande MTI')
+await page.locator('.std-ir input[type=date], .chk input[type=date]').first().isEditable()
+  ? ok('processus ouvert : la saisie est possible')
+  : ko('le processus reste en lecture seule après ouverture')
+
+await champsDate.first().fill('2026-09-15')
+await page.waitForTimeout(300)
+await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.waitForTimeout(1500)
+
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+await allerAuScenario()
+await allerAuProcessus('Commande MTI')
+const dateRelue = await page.locator('.std-ir input[type=date], .chk input[type=date]')
+  .first().inputValue()
+dateRelue === '2026-09-15' ? ok(`jalon relu depuis la base : ${dateRelue}`)
+  : ko(`jalon relu : « ${dateRelue} » au lieu de 2026-09-15`)
+
+console.log('\n20. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

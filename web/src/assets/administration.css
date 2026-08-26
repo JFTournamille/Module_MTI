@@ -124,3 +124,6 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .presc-b:disabled{opacity:.6;cursor:default;}
 .presc-oui{font-size:12px;color:#2e7d4e;font-weight:bold;white-space:nowrap;}
 .presc-non{font-size:12px;color:#999;white-space:nowrap;}
+
+/* ── Avancement du processus courant ── */
+.proc-etat:disabled{opacity:.55;cursor:default;}

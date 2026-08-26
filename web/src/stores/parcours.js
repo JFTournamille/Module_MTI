@@ -107,7 +107,7 @@ export const useParcours = defineStore('parcours', () => {
       // La saisie reste possible sans réseau — la réception d'un MTI ne peut
       // pas dépendre de la disponibilité du serveur.
       const [m, c] = await Promise.all([
-        import('../data/parcours-cart-v1.json'),
+        import('../data/parcours-cart-v2.json'),
         import('../data/catalogue-processus-v1.json')
       ])
       modele.value = m.default
@@ -410,6 +410,39 @@ export const useParcours = defineStore('parcours', () => {
     return ok
   }
 
+  /**
+   * Fait avancer un processus. Valider ouvre le suivant encore à venir.
+   *
+   * Les saisies du processus sont enregistrées d'abord : les valider puis les
+   * perdre serait le pire enchaînement possible.
+   */
+  async function changerEtatProcessus (etat, idx = selection.value) {
+    if (!dossierId.value || lectureSeule.value) return false
+    const pid = processusIds.value[idx]
+    if (!pid) {
+      erreurDossier.value = 'Ce processus n\'existe pas côté serveur. Rouvrez le dossier.'
+      return false
+    }
+    if (etat === 'valide' && !(await enregistrerProcessus(idx))) return false
+
+    erreurDossier.value = ''
+    const r = await appel(`/api/processus/${pid}/etat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ etat })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Avancement refusé (${r.status}).`)
+      return false
+    }
+    /* Relire le dossier plutôt que de recalculer localement : c'est le serveur
+       qui décide quel processus s'ouvre ensuite. */
+    const cible = selection.value
+    await ouvrirDossier(dossierId.value)
+    if (etat !== 'valide') selection.value = cible
+    return true
+  }
+
   function fermerDossier () {
     dossierId.value = null
     processusIds.value = []
@@ -663,7 +696,7 @@ export const useParcours = defineStore('parcours', () => {
         switch (l.point.type) {
           case 'ouinon': return s.reponse === null
           case 'valeur': return s.valeurNum === null || s.valeurNum === ''
-          case 'texte': return !s.valeurTexte.trim()
+          case 'texte': case 'date': return !s.valeurTexte.trim()
           case 'timer': return !s.timerDebut
           case 'photo': return !s.photos.some((p) => p.presente)
           case 'auto': return false
@@ -681,6 +714,7 @@ export const useParcours = defineStore('parcours', () => {
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
     lectureSeule, creerDossier, ouvrirDossier, enregistrerEntete,
     enregistrerProcessus, validerDossier, fermerDossier, dossierMemorise,
+    changerEtatProcessus,
     basculerPrescription,
     saisie, basculerObligatoire,
     op2Ouvert, basculerOp2, cleOp2,

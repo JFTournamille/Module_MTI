@@ -6,8 +6,12 @@ Suivi du parcours complet d'un médicament de thérapie innovante (MTI), de la
 réception du matériel de leucaphérèse jusqu'au suivi post-administration, avec
 la traçabilité exigée par les BPP.
 
-Le parcours de référence (`shared/parcours-cart-v1.json`) compte 12 processus
-chronologiques, dont 5 réalisés par le fabricant. Le premier — la réception —
+Le parcours de référence est `shared/parcours-cart-v2.json` : 16 processus
+chronologiques, dont 5 réalisés par le fabricant. La v2 ajoute les quatre
+processus amont arrêtés en réunion du 26 juin 2026 — demande d'accès, commande
+MTI, aphérèse, rattachement — et reprend les douze de la v1 sans en modifier un
+seul point. La v1 reste en base, hors service : les dossiers ouverts sous elle
+gardent leur définition figée. Le premier — la réception —
 porte 24 points de contrôle répartis en 6 sections. Des processus
 complémentaires peuvent être ajoutés en cours de parcours depuis un catalogue
 (`shared/catalogue-processus-v1.json`).
@@ -93,6 +97,17 @@ malgré cette révocation.
   arrière.
 - Contrainte `dossier_valide_coherent` : pas de validation sans conclusion de
   conformité **et** signataire **et** horodatage.
+
+### 5 bis. L'avancement d'un processus
+
+`dossier_processus.etat` (`a_venir` → `en_cours` → `valide`) commande la lecture
+seule côté front. Valider un processus par `POST /api/processus/:id/etat` ouvre
+**le suivant encore à venir** — pas `ordre + 1`, pour qu'un processus ajouté
+depuis le catalogue ou déjà ouvert ne fasse pas sauter un cran au parcours.
+
+Un processus peut aussi être ouvert explicitement, sans attendre celui qui le
+précède : c'est ce qui permettra de traiter l'indépendance chronologique
+demandée en réunion (certains processus se réalisent sans attendre les autres).
 
 ### 5. Les modèles sont versionnés et figés dans le dossier
 
@@ -180,6 +195,21 @@ nécessaires et tous vérifiés par la suite de tests :
 L'interface porte en permanence un bandeau rappelant que la double validation
 et la signature électronique **n'ont pas de valeur probante dans cet état**.
 Une démonstration ne doit pas pouvoir passer pour une mise en service.
+
+### Les jalons calendaires sont typés
+
+Le type de point `date` (migration `006`) porte les jalons de la commande MTI :
+date d'aphérèse, de lymphodéplétion, de réception prévue. En texte libre ils
+seraient inexploitables — impossible de trier, de comparer, ni de signaler une
+réception prévue dépassée. La valeur vit dans `saisie.valeur_texte` au format
+ISO ; le type du point dit déjà comment la lire, une colonne de plus ne se
+justifiait pas.
+
+`api/src/seed.js` charge **tous** les `shared/parcours-*.json` et n'active que
+la version la plus haute par code, après avoir désactivé les autres : la base
+n'admet qu'une version active par code (`modele_parcours_actif_unique`), et une
+version retirée du service doit rester en base, sinon les dossiers qui la
+référencent deviendraient illisibles.
 
 ### Prescription : un jalon, pas un référentiel
 
