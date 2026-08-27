@@ -122,7 +122,10 @@ export default async function dossiers (app) {
       patientId: 'patient_id',
       preallocation: 'preallocation',
       prescriptionFaite: 'prescription_faite',
-      commentaire: 'commentaire'
+      commentaire: 'commentaire',
+      informationImportante: 'information_importante',
+      aphereseFaite: 'apherese_faite',
+      dateApherese: 'date_apherese'
     }
     const corps = request.body ?? {}
     const colonnes = []
@@ -138,7 +141,8 @@ export default async function dossiers (app) {
         }
         v = n
       }
-      if ((cle === 'preallocation' || cle === 'prescriptionFaite') && typeof v !== 'boolean') {
+      if (['preallocation', 'prescriptionFaite', 'aphereseFaite'].includes(cle) &&
+          typeof v !== 'boolean') {
         return reply.code(400).send({ erreur: `${cle} doit valoir true ou false.` })
       }
       valeurs.push(v)
@@ -151,6 +155,15 @@ export default async function dossiers (app) {
     if (corps.preallocation === false && corps.patientId === undefined) {
       valeurs.push(null)
       colonnes.push(`patient_id = $${valeurs.length + 1}`)
+    }
+
+    /* Décocher « aphérèse faite » efface la date : la base refuserait de toute
+       façon une date sans jalon (dossier_date_apherese_exige_jalon), et un 409
+       de contrainte serait un mauvais message pour un geste qui a un sens
+       évident. On l'applique ici plutôt que de laisser le client s'en souvenir. */
+    if (corps.aphereseFaite === false && corps.dateApherese === undefined) {
+      valeurs.push(null)
+      colonnes.push(`date_apherese = $${valeurs.length + 1}`)
     }
 
     const { rows } = await transaction(
@@ -517,7 +530,8 @@ export default async function dossiers (app) {
     if (rows[0].patient_id) {
       const { rows: p } = await requete(
         `SELECT pat.id, pat.reference, pat.source,
-                i.nom, i.prenom, i.initiales, i.date_naissance
+                i.nom, i.prenom, i.initiales, i.date_naissance,
+                i.ipp, i.identifiants
            FROM mti.patient pat
            LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
           WHERE pat.id = $1`,
@@ -529,7 +543,9 @@ export default async function dossiers (app) {
           source: p[0].source,
           nom: [p[0].nom, p[0].prenom].filter(Boolean).join(' ') || null,
           initiales: p[0].initiales,
-          dateNaissance: p[0].date_naissance
+          dateNaissance: p[0].date_naissance,
+          ipp: p[0].ipp ?? null,
+          identifiants: p[0].identifiants ?? []
         }
       }
     }

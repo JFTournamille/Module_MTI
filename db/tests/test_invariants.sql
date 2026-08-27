@@ -15,6 +15,12 @@ SET search_path TO public;
 -- Les tests attendus en échec sont dans des blocs PL/pgSQL avec gestionnaire
 -- d'exception, qui posent un point de sauvegarde implicite : une erreur
 -- rattrapée n'annule donc pas la transaction englobante.
+/* Posé DANS le fichier, pas seulement dans la ligne de commande : sans cela un
+   appel qui oublie `-v ON_ERROR_STOP=1` poursuit après une erreur et affiche
+   quand même « ✓ Tous les invariants sont vérifiés » en fin de course. Une
+   suite qui peut mentir sur son propre résultat ne sert à rien. */
+\set ON_ERROR_STOP on
+
 BEGIN;
 
 \echo '── Préparation du jeu de test ──'
@@ -323,6 +329,79 @@ BEGIN
     RAISE EXCEPTION 'ÉCHEC : profil mal tracé (% → %)', v_avant, v_apres;
   END IF;
   RAISE NOTICE '  ✓ changement de profil tracé (NULL → pharmacien), auteur identifié';
+END $$;
+
+\echo ''
+\echo 'TEST 16 — Une date d''aphérèse sans jalon posé est refusée'
+DO $$
+DECLARE v_modele uuid;
+BEGIN
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  BEGIN
+    -- Une date sans jalon affirmerait une aphérèse que le dossier déclare non
+    -- faite. L'inverse est permis : le jalon peut précéder la date connue.
+    INSERT INTO mti.dossier (reference, modele_parcours_id, date_apherese, cree_par)
+    VALUES ('TEST-APH-1', v_modele, '2026-06-01',
+            '11111111-1111-1111-1111-111111111111');
+    RAISE EXCEPTION 'ÉCHEC : date d''aphérèse acceptée sans jalon';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ date sans jalon refusée';
+  END;
+
+  INSERT INTO mti.dossier (reference, modele_parcours_id, apherese_faite, cree_par)
+  VALUES ('TEST-APH-2', v_modele, true,
+          '11111111-1111-1111-1111-111111111111');
+  RAISE NOTICE '  ✓ jalon posé sans date accepté';
+END $$;
+
+\echo ''
+\echo 'TEST 17 — La forme des identifiants patient est vérifiée en base'
+DO $$
+DECLARE v_patient uuid; v_ok boolean;
+BEGIN
+  INSERT INTO mti.patient (reference, source) VALUES ('TEST-IPP', 'TEST')
+  RETURNING id INTO v_patient;
+
+  INSERT INTO mti.patient_identite (patient_id, nom, ipp, identifiants)
+  VALUES (v_patient, 'ESSAI', '80123456',
+          '[{"libelle":"N° patient 1","valeur":"A-12"}]');
+  RAISE NOTICE '  ✓ IPP et identifiant bien formé acceptés';
+
+  /* Le cas qui a réellement échappé à la première écriture de la contrainte :
+     une clé ABSENTE rend NULL, et NULL <> ''string'' vaut NULL, pas TRUE. Sans
+     coalesce, cet objet sans libellé passait. */
+  BEGIN
+    UPDATE mti.patient_identite SET identifiants = '[{"valeur":"42"}]'
+     WHERE patient_id = v_patient;
+    RAISE EXCEPTION 'ÉCHEC : identifiant sans libellé accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ identifiant sans libellé refusé';
+  END;
+
+  BEGIN
+    UPDATE mti.patient_identite SET identifiants = '[{"libelle":"N°","valeur":42}]'
+     WHERE patient_id = v_patient;
+    RAISE EXCEPTION 'ÉCHEC : valeur numérique acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ valeur non textuelle refusée';
+  END;
+
+  BEGIN
+    UPDATE mti.patient_identite SET identifiants = '["A-12"]'
+     WHERE patient_id = v_patient;
+    RAISE EXCEPTION 'ÉCHEC : élément scalaire accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ élément scalaire refusé';
+  END;
+
+  -- Qualifiée et castée : la suite tourne avec un search_path par défaut, comme
+  -- un vrai client, et `'…'` seul serait de type `unknown`.
+  SELECT mti.identifiants_patient_bien_formes('{"libelle":"x","valeur":"y"}'::jsonb)
+    INTO v_ok;
+  IF v_ok THEN
+    RAISE EXCEPTION 'ÉCHEC : un objet nu passe pour un tableau';
+  END IF;
+  RAISE NOTICE '  ✓ objet nu (hors tableau) refusé';
 END $$;
 
 -- Les traces produites par les tests disparaissent avec la transaction ; celles

@@ -439,7 +439,7 @@ majJalon.length >= 2 && majJalon.every((e) => e.nom)
   ? ok(`${majJalon.length} changement(s) de jalon tracés, tous avec leur auteur`)
   : ko(`traces : ${JSON.stringify(majJalon.map((e) => e.nom))}`)
 
-console.log('\n17. Processus amont et jalons calendaires (parcours v2)')
+console.log('\n17. Processus amont et jalons calendaires')
 r = await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')
 const noms = r.corps.processus.map((p) => p.nom)
 const iCommande = noms.findIndex((n) => /Commande MTI/.test(n))
@@ -447,10 +447,16 @@ const iReception = noms.findIndex((n) => /^Réception \(/.test(n))
 iCommande >= 0 && iReception >= 0 && iCommande < iReception
   ? ok(`la commande MTI (rang ${iCommande + 1}) précède la réception (rang ${iReception + 1})`)
   : ko(`ordre : commande ${iCommande}, réception ${iReception}`)
-;['Demande d\'accès au traitement', 'Aphérèse / leucaphérèse',
+/* L'aphérèse ne figure plus dans cette liste : ramenée à une date facultative,
+   elle vit en jalon d'en-tête (dossier.apherese_faite / date_apherese) et non
+   comme processus du parcours. Éprouvée plus bas avec les autres jalons. */
+;['Demande d\'accès au traitement',
   'Rattachement patient / prescription'].every((n) => noms.includes(n))
-  ? ok('les trois autres processus amont sont présents')
+  ? ok('les autres processus amont sont présents')
   : ko(`processus : ${JSON.stringify(noms.slice(0, 5))}`)
+noms.some((n) => /Aphérèse/i.test(n))
+  ? ko(`l'aphérèse est encore un processus du parcours : ${noms.filter((n) => /Aphérèse/i.test(n))}`)
+  : ok("l'aphérèse ne figure plus comme processus — c'est un jalon d'en-tête")
 
 // L'identité patient reste imposée par la mise en fabrication : son index a
 // bougé avec l'insertion des processus amont, il doit avoir suivi.

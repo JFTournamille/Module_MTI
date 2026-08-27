@@ -65,6 +65,13 @@ export const useParcours = defineStore('parcours', () => {
     numeroCommande: '',
     dateFabrication: '',
     transporteur: '',
+    /* Information à porter à la connaissance de qui ouvre le dossier. Distincte
+       de `commentaire`, qui documente sans être mis en avant. */
+    informationImportante: '',
+    /* Jalon d'aphérèse : l'aphérèse n'est plus un processus du parcours depuis
+       la v3, elle est ramenée à une date facultative. */
+    aphereseFaite: false,
+    dateApherese: '',
     // Conclusion
     conformite: null,
     commentaire: ''
@@ -95,6 +102,31 @@ export const useParcours = defineStore('parcours', () => {
 
   // ─────────────────────────────────────────────────────────── Chargement ──
 
+  /**
+   * Modèle de parcours embarqué le plus récent.
+   *
+   * La version était nommée en dur (`parcours-cart-v2.json`) : chaque nouvelle
+   * version du parcours obligeait à modifier cette ligne, et l'oublier faisait
+   * servir un parcours périmé au mode hors-ligne — sans erreur, sans trace, la
+   * pire forme de panne. `import.meta.glob` laisse Vite énumérer les fichiers
+   * recopiés depuis `shared/`, et on retient la version la plus haute par code.
+   *
+   * Le nombre de versions reste petit et les JSON sont déjà dans le bundle :
+   * les charger toutes pour n'en garder qu'une ne coûte rien de plus.
+   */
+  async function modeleEmbarqueLePlusRecent (code = 'PARCOURS_CART_AUTOLOGUE') {
+    const fichiers = import.meta.glob('../data/parcours-*.json')
+    const charges = await Promise.all(Object.values(fichiers).map((f) => f()))
+    const candidats = charges
+      .map((m) => m.default)
+      .filter((m) => m?.code === code)
+      .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
+    if (!candidats.length) {
+      throw new Error(`Aucun modèle « ${code} » embarqué : le repli hors-ligne est vide.`)
+    }
+    return candidats[0]
+  }
+
   async function charger () {
     chargement.value = true
     horsLigne.value = false
@@ -111,10 +143,10 @@ export const useParcours = defineStore('parcours', () => {
       // La saisie reste possible sans réseau — la réception d'un MTI ne peut
       // pas dépendre de la disponibilité du serveur.
       const [m, c] = await Promise.all([
-        import('../data/parcours-cart-v2.json'),
+        modeleEmbarqueLePlusRecent(),
         import('../data/catalogue-processus-v1.json')
       ])
-      modele.value = m.default
+      modele.value = m
       catalogue.value = c.default
       horsLigne.value = true
     } finally {
@@ -219,6 +251,9 @@ export const useParcours = defineStore('parcours', () => {
         nbExemplaires: d.dossier.nb_exemplaires ?? 1,
         preallocation: d.dossier.preallocation === true,
         prescriptionFaite: d.dossier.prescription_faite === true,
+        informationImportante: d.dossier.information_importante ?? '',
+        aphereseFaite: d.dossier.apherese_faite === true,
+        dateApherese: j(d.dossier.date_apherese),
         conformite: d.dossier.conformite ?? null,
         commentaire: d.dossier.commentaire ?? '',
         statut: d.dossier.statut,
@@ -302,6 +337,11 @@ export const useParcours = defineStore('parcours', () => {
         nbExemplaires: Number(dossier.nbExemplaires) || 1,
         preallocation: dossier.preallocation === true,
         prescriptionFaite: dossier.prescriptionFaite === true,
+        informationImportante: dossier.informationImportante,
+        aphereseFaite: dossier.aphereseFaite === true,
+        /* Décocher le jalon efface la date côté serveur ; l'envoyer à null ici
+           aussi évite un aller-retour où l'écran garderait une date orpheline. */
+        dateApherese: dossier.aphereseFaite ? (dossier.dateApherese || null) : null,
         patientId: dossier.preallocation ? (dossier.patient?.id ?? null) : null
       })
     })
@@ -415,6 +455,23 @@ export const useParcours = defineStore('parcours', () => {
 
   /** Bascule le jalon de prescription et l'enregistre aussitôt : un jalon coché
    *  qui attendrait un « Enregistrer » se perdrait au changement d'onglet. */
+  /**
+   * Bascule le jalon d'aphérèse. Décocher efface la date : la base refuse une
+   * date sans jalon, et garder une date invisible serait pire que la perdre.
+   */
+  async function basculerApherese () {
+    if (!dossierId.value || lectureSeule.value) return false
+    const avant = { faite: dossier.aphereseFaite, date: dossier.dateApherese }
+    dossier.aphereseFaite = !dossier.aphereseFaite
+    if (!dossier.aphereseFaite) dossier.dateApherese = ''
+    const ok = await enregistrerEntete()
+    if (!ok) {
+      dossier.aphereseFaite = avant.faite
+      dossier.dateApherese = avant.date
+    }
+    return ok
+  }
+
   async function basculerPrescription () {
     if (!dossierId.value || lectureSeule.value) return false
     dossier.prescriptionFaite = !dossier.prescriptionFaite
@@ -685,6 +742,53 @@ export const useParcours = defineStore('parcours', () => {
     return selection.value >= (modele.value?.indexIdentificationPatient ?? Infinity)
   })
 
+  /* ── Identifiants du patient ────────────────────────────────────────────
+     L'IPP est le pointeur vers le dossier du SIH ; les autres numéros portent
+     leur propre libellé, modifiable, parce qu'il diffère d'un établissement à
+     l'autre. Les libellés par défaut sont « N° patient 1 », « N° patient 2 »,
+     et ainsi de suite — c'est un point de départ, pas une contrainte. */
+  const LIBELLE_DEFAUT = (n) => `N° patient ${n}`
+
+  function ajouterIdentifiant () {
+    if (!dossier.patient || lectureSeule.value) return
+    const liste = dossier.patient.identifiants ?? (dossier.patient.identifiants = [])
+    if (liste.length >= 12) return
+    /* Le rang du libellé suit le nombre de lignes, pas leur contenu : renommer
+       « N° patient 1 » en « N° séjour » ne doit pas faire réapparaître un
+       « N° patient 1 » au prochain ajout. */
+    liste.push({ libelle: LIBELLE_DEFAUT(liste.length + 1), valeur: '' })
+  }
+
+  function retirerIdentifiant (i) {
+    if (!dossier.patient || lectureSeule.value) return
+    dossier.patient.identifiants?.splice(i, 1)
+  }
+
+  /** Enregistre l'IPP et les numéros. Les lignes sans valeur sont abandonnées. */
+  async function enregistrerIdentifiants () {
+    if (!dossier.patient?.id || lectureSeule.value) return false
+    const r = await appel(`/api/patients/${dossier.patient.id}/identifiants`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ipp: dossier.patient.ipp ?? '',
+        identifiants: (dossier.patient.identifiants ?? [])
+          .filter((e) => String(e.valeur ?? '').trim())
+          .map((e) => ({ libelle: e.libelle, valeur: e.valeur }))
+      })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Identifiants non enregistrés (${r.status}).`)
+      return false
+    }
+    /* On relit la réponse du serveur : c'est lui qui a rogné les blancs et
+       abandonné les lignes vides, l'écran doit montrer ce qui est en base. */
+    const enregistre = await r.json()
+    dossier.patient.ipp = enregistre.ipp ?? ''
+    dossier.patient.identifiants = enregistre.identifiants ?? []
+    return true
+  }
+
   const libellePatient = computed(() => {
     if (dossier.patient) {
       return { texte: `${dossier.patient.nom} • N° ${dossier.patient.reference}`, style: 'nomme' }
@@ -816,7 +920,8 @@ export const useParcours = defineStore('parcours', () => {
     changerEtatProcessus,
     commentaireOuvert, basculerCommentaire,
     signatures, pointsDoubleValidation, contresignature, chargerSignatures, contresigner,
-    basculerPrescription,
+    basculerPrescription, basculerApherese,
+    ajouterIdentifiant, retirerIdentifiant, enregistrerIdentifiants,
     saisie, basculerObligatoire,
     op2Ouvert, basculerOp2, cleOp2,
     alarme,
