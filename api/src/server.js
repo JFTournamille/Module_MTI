@@ -120,9 +120,19 @@ app.get('/api/sante', async () => {
       `SELECT count(*)::int AS n FROM mti.utilisateur WHERE actif`)
     base.utilisateursActifs = u.n
 
+    /* Le jeu de démonstration ne se résume pas aux patients : il pose aussi
+       des comptes et des dossiers. Ne compter que les patients laissait un
+       diagnostic « ok » sur une base qui contient dix dossiers fictifs et dix
+       comptes qui n'existent dans aucun annuaire. */
     const { rows: [f] } = await pool.query(
-      `SELECT count(*)::int AS n FROM mti.patient WHERE source = 'DEMO'`)
-    base.patientsFictifs = f.n
+      `SELECT (SELECT count(*) FROM mti.patient WHERE source = 'DEMO')::int AS patients,
+              (SELECT count(*) FROM mti.utilisateur
+                WHERE identifiant LIKE 'demo.%' AND actif)::int AS comptes,
+              (SELECT count(*) FROM mti.dossier
+                WHERE reference LIKE 'DEMO-MTI-%')::int AS dossiers`)
+    base.patientsFictifs = f.patients
+    base.comptesFictifs = f.comptes
+    base.dossiersFictifs = f.dossiers
 
     if (base.cloisonnementAudit === 'DEFAILLANT') {
       statut = 'hors_service'
@@ -134,11 +144,18 @@ app.get('/api/sante', async () => {
     } else if (base.utilisateursActifs === 0) {
       diagnostic = "Aucun utilisateur actif : les saisies n'auraient pas d'auteur. " +
                    "Insérer au moins un compte correspondant au login du SSO."
-    } else if (base.patientsFictifs > 0) {
-      diagnostic = `${base.patientsFictifs} patient(s) fictif(s) présents. ` +
+    } else if (base.patientsFictifs > 0 || base.comptesFictifs > 0 ||
+               base.dossiersFictifs > 0) {
+      const details = [
+        base.dossiersFictifs ? `${base.dossiersFictifs} dossier(s)` : null,
+        base.patientsFictifs ? `${base.patientsFictifs} patient(s)` : null,
+        base.comptesFictifs ? `${base.comptesFictifs} compte(s)` : null
+      ].filter(Boolean).join(', ')
+      diagnostic = `Jeu de démonstration présent : ${details}. ` +
                    "Acceptable en recette, à purger avant mise en service " +
-                   "(node src/seed-demo.js --supprimer) : un patient fictif pourrait " +
-                   "être rattaché à un dossier réel."
+                   "(node src/seed-demo.js --supprimer) : un dossier fictif est " +
+                   "indiscernable d'un dossier réel dans le tableau de bord, et un " +
+                   "compte fictif ne correspond à personne dans l'annuaire."
     } else {
       statut = 'ok'
     }

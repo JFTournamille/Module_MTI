@@ -58,6 +58,10 @@ const enReception = computed(() => store.processusCourant?.gabarit === 'receptio
 /** La validation reste bloquée tant qu'un point obligatoire n'est pas renseigné
  *  et qu'aucune conclusion de conformité n'est posée. */
 const blocages = computed(() => {
+  /* Un dossier déjà validé n'a rien à valider : annoncer « validation bloquée »
+     sur un dossier clos en lecture seule décrivait un obstacle qui n'existe
+     pas, à côté du message « lecture seule » qui dit le contraire. */
+  if (store.lectureSeule) return []
   const raisons = []
   if (store.pointsIncomplets.length) {
     raisons.push(`${store.pointsIncomplets.length} point(s) obligatoire(s) non renseigné(s)`)

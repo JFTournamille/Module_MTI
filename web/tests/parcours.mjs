@@ -111,7 +111,11 @@ nbProc === NB_PROCESSUS ? ok(`${nbProc} processus dans la barre latérale`)
 // ── 2. Le parcours démarre anonyme ──
 console.log('\n2. Anonymat initial')
 const entete = await page.locator('.hdr-left .name').innerText()
-entete.includes('Non affecté') ? ok(`en-tête : « ${entete} »`) : ko(`en-tête inattendu : ${entete}`)
+if (/En attente d'allocation/.test(entete)) {
+  ok(`en-tête : « ${entete} »`)
+} else {
+  ko(`en-tête inattendu : ${entete}`)
+}
 await page.locator('.hdr-left .meta').innerText().then(t =>
   !t.includes('ordonnancier') ? ok('N° ordonnancier masqué avant la fabrication')
     : ko('N° ordonnancier visible trop tôt'))
@@ -292,8 +296,11 @@ if (apiJoignable) {
     await page.locator('.ch-pa-tog input[type=radio]').nth(0).check()
     await page.waitForTimeout(200)
     const enteteRetour = await page.locator('.hdr-left .name').innerText()
-    enteteRetour.includes('Non affecté')
-      ? ok('retour à l\'anonymat, identité effacée') : ko(`en-tête : ${enteteRetour}`)
+    if (/En attente d'allocation/.test(enteteRetour)) {
+      ok('retour à l\'anonymat, identité effacée')
+    } else {
+      ko(`en-tête : ${enteteRetour}`)
+    }
   }
 } else {
   console.log('\n11. Repli hors-ligne (API absente)')
@@ -760,7 +767,114 @@ if (candidats > 1) {
   else ko(`bloc relu : « ${contreRelue} »`)
 }
 
-console.log('\n21. Console du navigateur et réseau')
+/* ── 21. Jeu de démonstration ──
+   Ce groupe ne tourne que si le jeu est en base : la suite doit rester
+   passable sur une base de recette vierge. Ce qui est vérifié, c'est ce que le
+   jeu est censé montrer à l'écran — dix dossiers étalés sur le parcours, trois
+   sans patient, une alarme, et un dossier clos non conforme distingué du
+   conforme. */
+console.log('\n21. Jeu de démonstration')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('#tb-q').fill('DEMO-MTI-')
+await page.waitForTimeout(1400)
+const nbDemo = await page.locator('tr.tb-ligne').count()
+if (nbDemo === 0) {
+  console.log('  · jeu de démonstration absent de la base — groupe non applicable')
+} else {
+  nbDemo === 10 ? ok('10 dossiers de démonstration listés')
+    : ko(`${nbDemo} dossier(s) « DEMO-MTI- »`)
+
+  const enAttente = await page.locator('tr.tb-ligne', { hasText: "En attente d'allocation" }).count()
+  enAttente === 3 ? ok('3 dossiers en attente d\'allocation, sans nom affiché')
+    : ko(`${enAttente} ligne(s) « en attente d'allocation »`)
+
+  const avecAlarme = await page.locator('tr.tb-ligne .tb-alarme').count()
+  avecAlarme === 1 ? ok('1 dossier porte le pictogramme d\'alarme')
+    : ko(`${avecAlarme} pictogramme(s) d'alarme`)
+
+  // Le point qui manquait : deux dossiers clos, mais un seul conforme.
+  const nonConforme = page.locator('tr.tb-ligne', { hasText: 'Non conforme' })
+  await nonConforme.count() === 1
+    ? ok('le dossier clos non conforme se distingue au tableau de bord')
+    : ko(`${await nonConforme.count()} ligne(s) « non conforme »`)
+  const conforme = await page.locator('tr.tb-ligne .tb-s-termine').count()
+  conforme === 1 ? ok('le dossier clos conforme reste affiché « Terminé »')
+    : ko(`${conforme} ligne(s) « Terminé »`)
+
+  /* Un dossier clos n'est pas un dossier mort : il doit s'ouvrir en lecture.
+     C'est la moitié de l'intérêt du jeu — montrer un parcours abouti. */
+  await nonConforme.click()
+  await page.waitForTimeout(1800)
+  const surScenarioDemo = /Scénario/.test(await page.locator('.onglet.act').innerText())
+  const contenuOuvert = await page.locator('.vide-dossier').count() === 0
+  surScenarioDemo && contenuOuvert
+    ? ok('un dossier clos s\'ouvre en consultation')
+    : ko(`onglet scénario : ${surScenarioDemo}, contenu : ${contenuOuvert}`)
+
+  /* Non-régression : l'en-tête d'un dossier rouvert nommait « en attente
+     d'allocation » un dossier dont le patient était alloué à la mise en
+     fabrication — l'écran contredisait la base. Et le champ « Opérateur »
+     affichait l'opérateur CONNECTÉ au lieu de celui qui avait fait la saisie,
+     ce qui attribuait la traçabilité à la mauvaise personne. */
+  await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+  await page.waitForTimeout(1200)
+  await page.locator('#tb-q').fill('DEMO-MTI-0009')
+  await page.waitForTimeout(1400)
+  const nomListe = (await page.locator('tr.tb-ligne').first().innerText())
+    .split('\n').find((t) => /[A-ZÉÈ]{3,}/.test(t) && !/DEMO-MTI|LOT-|CARVYKTI/.test(t))
+  await page.locator('tr.tb-ligne', { hasText: 'DEMO-MTI-0009' }).click()
+  await page.waitForTimeout(1800)
+  const enteteRouvert = await page.locator('.hdr-left .name').innerText()
+  if (/DUBOIS/.test(enteteRouvert) && /DEMO-01567/.test(enteteRouvert)) {
+    ok(`en-tête d'un dossier alloué : « ${enteteRouvert} »`)
+  } else {
+    ko(`en-tête d'un dossier alloué : « ${enteteRouvert} » (liste : ${nomListe})`)
+  }
+
+  await page.locator('.proc').filter({ hasText: 'Réception (+/-' }).first().click()
+  await page.waitForTimeout(700)
+  const opSaisie = await page.locator('.copi').first().inputValue()
+  const opConnecte = (await page.locator('.ubadge').first().innerText()).replace('👤', '').trim()
+  if (opSaisie && opSaisie !== opConnecte) {
+    ok(`opérateur de la saisie « ${opSaisie} », distinct du connecté « ${opConnecte} »`)
+  } else {
+    ko(`opérateur affiché « ${opSaisie} » — celui de l'écran, pas celui de la saisie`)
+  }
+
+  // Un dossier clos n'a rien à valider : le bandeau « validation bloquée » n'a
+  // pas lieu d'y apparaître, il contredisait le « lecture seule » d'à côté.
+  const bandeau = await page.locator('.dlg').innerText()
+  !/Validation bloquée/.test(bandeau)
+    ? ok('aucun « validation bloquée » sur un dossier clos')
+    : ko('« validation bloquée » affiché sur un dossier en lecture seule')
+
+  await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+  await page.waitForTimeout(1000)
+  await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+  await page.waitForTimeout(1200)
+}
+
+// ── 22. Comptes de démonstration ──
+console.log('\n22. Comptes de démonstration')
+await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+await page.waitForTimeout(1200)
+const lignesDemo = await page.locator('tr', { hasText: 'demo.' }).count()
+if (lignesDemo === 0) {
+  console.log('  · comptes de démonstration absents — groupe non applicable')
+} else {
+  lignesDemo === 10 ? ok('10 comptes de démonstration listés')
+    : ko(`${lignesDemo} compte(s) « demo. »`)
+  // Les cinq profils doivent apparaître : c'est ce que le jeu est censé
+  // permettre d'éprouver sur cet écran.
+  const texteComptes = await page.locator('table').last().innerText()
+  const manquants = ['pharmacien', 'préparateur', 'IDE', 'qualité', 'administrateur']
+    .filter((p) => !new RegExp(p, 'i').test(texteComptes))
+  manquants.length === 0 ? ok('les cinq profils sont représentés à l\'écran')
+    : ko(`profils absents de la liste : ${manquants.join(', ')}`)
+}
+
+console.log('\n23. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

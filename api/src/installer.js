@@ -349,7 +349,9 @@ for (const [libelle, sql] of [
   ['catalogues actifs', "SELECT 'v' || version FROM mti.catalogue_processus WHERE actif"],
   ['produits de référence', 'SELECT denomination FROM mti.produit WHERE actif ORDER BY denomination'],
   ['utilisateurs', "SELECT titre || ' ' || nom || ' (' || identifiant || ')' FROM mti.utilisateur WHERE actif"],
-  ['patients fictifs', "SELECT reference FROM mti.patient WHERE source = 'DEMO' ORDER BY reference"]
+  ['patients fictifs', "SELECT reference FROM mti.patient WHERE source = 'DEMO' ORDER BY reference"],
+  ['comptes fictifs', "SELECT identifiant FROM mti.utilisateur WHERE identifiant LIKE 'demo.%' AND actif ORDER BY identifiant"],
+  ['dossiers fictifs', "SELECT reference FROM mti.dossier WHERE reference LIKE 'DEMO-MTI-%' ORDER BY reference"]
 ]) {
   const { rows } = await app.query(sql)
   const valeurs = rows.map((r) => Object.values(r)[0])
@@ -379,14 +381,27 @@ if (dev.n > 0 && enProduction) {
     "    à désactiver avant une mise en service réelle.")
 }
 
-// Patients fictifs : utiles en recette, inacceptables en production.
+/* Jeu de démonstration : utile en recette, inacceptable en production. Les
+   trois natures sont comptées séparément, parce qu'une purge partielle est
+   possible — et parce qu'un dossier fictif est le plus trompeur des trois :
+   rien ne le distingue d'un dossier réel dans le tableau de bord. */
 const { rows: [fictifs] } = await app.query(
-  "SELECT count(*)::int AS n FROM mti.patient WHERE source = 'DEMO'")
-if (fictifs.n > 0) {
+  `SELECT (SELECT count(*) FROM mti.patient WHERE source = 'DEMO')::int AS patients,
+          (SELECT count(*) FROM mti.utilisateur
+            WHERE identifiant LIKE 'demo.%' AND actif)::int AS comptes,
+          (SELECT count(*) FROM mti.dossier
+            WHERE reference LIKE 'DEMO-MTI-%')::int AS dossiers`)
+if (fictifs.patients > 0 || fictifs.comptes > 0 || fictifs.dossiers > 0) {
+  const details = [
+    fictifs.dossiers ? `${fictifs.dossiers} dossier(s)` : null,
+    fictifs.patients ? `${fictifs.patients} patient(s)` : null,
+    fictifs.comptes ? `${fictifs.comptes} compte(s)` : null
+  ].filter(Boolean).join(', ')
   console.log(
-    `\n  ⚠ ${fictifs.n} patient(s) fictif(s) en base (source « DEMO »).\n` +
-    "    Acceptable en recette. À purger avant mise en service : un patient\n" +
-    "    fictif pourrait être rattaché à un dossier réel.\n" +
+    `\n  ⚠ Jeu de démonstration en base : ${details}.\n` +
+    "    Acceptable en recette. À purger avant mise en service : un dossier\n" +
+    "    fictif est indiscernable d'un dossier réel dans le tableau de bord,\n" +
+    "    et un compte fictif ne correspond à personne dans l'annuaire.\n" +
     "\n    node src/seed-demo.js --supprimer")
   defautsConfiguration++
 }

@@ -114,6 +114,7 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .tb-s-en_cours{background:#6045a0;}
 .tb-s-attente{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;font-weight:normal;}
 .tb-s-termine{background:#2e7d4e;}
+.tb-s-non_conforme{background:#a02020;}
 
 /* ── Jalon de prescription ── */
 .presc-jalon{margin-top:4px;}

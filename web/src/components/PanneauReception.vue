@@ -216,8 +216,15 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                 </td>
                 <td>
                   <div class="copw">
+                    <!-- L'opérateur AFFICHÉ est celui qui a fait la saisie, pas
+                         celui qui regarde l'écran : sur un dossier rouvert par
+                         quelqu'un d'autre, le second attribuait la saisie à la
+                         mauvaise personne. L'opérateur connecté ne s'affiche que
+                         sur une ligne encore vierge — c'est lui qui sera
+                         enregistré si elle est renseignée. -->
                     <input class="copi" type="text" placeholder="Opérateur 1"
-                           :value="store.operateurConnecte.nom" readonly>
+                           :value="store.saisie(ligne.cle, ligne.point).operateur
+                                   || store.operateurConnecte.nom" readonly>
                     <button
                       class="cadd"
                       :style="{ background: store.op2Ouvert(ligne.cle) ? '#2e7d4e' : '#6045a0' }"
