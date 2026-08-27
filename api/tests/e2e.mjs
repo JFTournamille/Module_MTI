@@ -552,9 +552,20 @@ r.corps.saisies.find((sa) => sa.point_num === '7.2')?.numero_serie === null
 // Contresignature : elle vaut pour le processus entier, avec rappel des points.
 r = await j('GET', '/api/session')
 const moiSession = r.corps.operateur.id
-const autre = r.corps.operateurs.find((o) => o.id !== moiSession)
+let autre = r.corps.operateurs.find((o) => o.id !== moiSession)
+/* Une base fraîche ne porte qu'un compte : la suite s'en crée un second plutôt
+   que d'échouer sur une absence qui n'est pas un défaut de l'application. */
 if (!autre) {
-  ko('aucun second opérateur actif : contresignature non éprouvable')
+  const second = `e2e.contre.${Date.now()}`
+  const c = await j('POST', '/api/utilisateurs',
+    { identifiant: second, nom: 'CONTRESIGNE', prenom: 'Test', titre: 'Dr', profil: 'pharmacien' })
+  if (c.statut === 201) {
+    autre = { id: c.corps.id, libelle: `Dr Test CONTRESIGNE` }
+    ok(`second opérateur créé pour la contresignature (${second})`)
+  }
+}
+if (!autre) {
+  ko('aucun second opérateur actif et création impossible : contresignature non éprouvable')
 } else {
   r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: moiSession })
   r.statut === 409 ? ok('contresignature par soi-même refusée (409)') : ko(`statut ${r.statut}`)

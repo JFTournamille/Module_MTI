@@ -20,7 +20,14 @@ function referenceProposee () {
   return `MTI-${n.getFullYear()}-${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`
 }
 
-const LIB_STATUT = { en_cours: 'En cours', attente: "En attente d'allocation", termine: 'Terminé' }
+/* Deux dossiers clos ne se valent pas : la non-conformité est la conclusion du
+   parcours, pas un détail à ouvrir le dossier pour découvrir. */
+const LIB_STATUT = {
+  en_cours: 'En cours',
+  attente: "En attente d'allocation",
+  termine: 'Terminé',
+  non_conforme: 'Non conforme'
+}
 
 const tuiles = computed(() => [
   { code: '', classe: '', valeur: store.nbEnCours, libelle: 'Scénarios en cours' },
@@ -166,7 +173,7 @@ const dateCourte = (v) => v
         </thead>
         <tbody>
           <tr v-for="d in dossiersAffiches" :key="d.id" class="tb-ligne"
-              :class="{ fini: d.statutAffiche === 'termine' }"
+              :class="{ fini: d.statutAffiche === 'termine' || d.statutAffiche === 'non_conforme' }"
               tabindex="0" @click="emit('ouvrir', d.id)">
             <td class="ident">
               {{ d.reference }}
@@ -190,7 +197,7 @@ const dateCourte = (v) => v
             <td>{{ d.etape }}</td>
             <td>
               <span class="tb-jauge"><i :style="{ width: d.avancement + '%' }"></i></span>
-              <span class="meta"> {{ d.avancement }} %</span>
+              <span class="meta">&nbsp;{{ d.avancement }}&nbsp;%</span>
             </td>
             <td>
               <span class="prof" :class="'tb-s-' + d.statutAffiche">

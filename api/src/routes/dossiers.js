@@ -400,7 +400,7 @@ export default async function dossiers (app) {
     }
 
     const { rows } = await requete(
-      `SELECT d.id, d.reference, d.numero_lot, d.statut, d.preallocation,
+      `SELECT d.id, d.reference, d.numero_lot, d.statut, d.conformite, d.preallocation,
               d.patient_id, d.prescription_faite, d.cree_le, d.valide_le,
               coalesce(d.designation_produit, pr.denomination) AS produit,
               pr.id AS produit_id, pat.reference AS patient_reference,
@@ -446,7 +446,14 @@ export default async function dossiers (app) {
         /* Le statut d'affichage du tableau de bord : « en attente d'allocation »
            n'existe pas en base, c'est l'absence de patient sur un dossier
            ouvert. */
-        statutAffiche: r.statut === 'valide' ? 'termine' : (alloue ? 'en_cours' : 'attente'),
+        statutAffiche: r.statut === 'valide'
+          ? (r.conformite === 'non_conforme' ? 'non_conforme' : 'termine')
+          : (alloue ? 'en_cours' : 'attente'),
+        /* La conformité est la seule chose qui distingue deux dossiers clos.
+           Sans elle le tableau de bord affichait « terminé, 100 % » sur un
+           dossier déclaré non conforme — l'information la plus importante du
+           dossier était la seule à ne pas remonter. */
+        conformite: r.conformite,
         /* Un dossier validé est clos, même si tous ses processus n'ont pas été
            validés un à un : c'est la validation du dossier qui le fige. */
         etape: r.statut === 'valide' ? 'Parcours clos' : (r.etape ?? 'Parcours clos'),
@@ -486,15 +493,48 @@ export default async function dossiers (app) {
          FROM mti.dossier_processus WHERE dossier_id = $1 ORDER BY ordre`,
       [request.params.id]
     )
+    /* L'opérateur de chaque saisie est joint ici : sans son nom, la colonne
+       « Opérateur » restait vide sur tout dossier rouvert, alors que
+       l'attribution est justement ce que la traçabilité doit montrer. */
     const { rows: saisies } = await requete(
-      `SELECT s.*, t.secondes
+      `SELECT s.*, t.secondes,
+              coalesce(u.titre || ' ', '') || u.prenom || ' ' || u.nom AS operateur_libelle,
+              u.identifiant AS operateur_identifiant
          FROM mti.saisie s
          LEFT JOIN mti.saisie_timer t ON t.id = s.id
+         LEFT JOIN mti.utilisateur u ON u.id = s.operateur_id
         WHERE s.dossier_processus_id = ANY($1::uuid[])`,
       [processus.map((p) => p.id)]
     )
 
-    return { dossier: rows[0], processus, saisies }
+    /* Le patient n'est joint QUE si le dossier en porte un — préallocation
+       explicite ou allocation à la mise en fabrication. Sans cette jointure,
+       l'en-tête d'un dossier rouvert annonçait « non affecté à un patient »
+       alors qu'un patient était bien alloué : l'écran mentait sur l'état du
+       dossier. Le contrôle reste l'existence de `patient_id`, pas la
+       préallocation. */
+    let patient = null
+    if (rows[0].patient_id) {
+      const { rows: p } = await requete(
+        `SELECT pat.id, pat.reference, pat.source,
+                i.nom, i.prenom, i.initiales, i.date_naissance
+           FROM mti.patient pat
+           LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
+          WHERE pat.id = $1`,
+        [rows[0].patient_id])
+      if (p.length) {
+        patient = {
+          id: p[0].id,
+          reference: p[0].reference,
+          source: p[0].source,
+          nom: [p[0].nom, p[0].prenom].filter(Boolean).join(' ') || null,
+          initiales: p[0].initiales,
+          dateNaissance: p[0].date_naissance
+        }
+      }
+    }
+
+    return { dossier: rows[0], patient, processus, saisies }
   })
 
   // ── Enregistrement des saisies (lot) ────────────────────────────────────

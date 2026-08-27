@@ -224,7 +224,14 @@ export const useParcours = defineStore('parcours', () => {
         prescriptionFaite: d.dossier.prescription_faite === true,
         conformite: d.dossier.conformite ?? null,
         commentaire: d.dossier.commentaire ?? '',
-        statut: d.dossier.statut
+        statut: d.dossier.statut,
+        /* Le patient vient du serveur, qui ne le joint que si le dossier en
+           porte un. L'omettre ici faisait annoncer « en attente d'allocation »
+           sur un dossier alloué. */
+        patient: d.patient ?? null,
+        initiales: d.patient?.initiales ?? '',
+        dateNaissance: d.patient?.dateNaissance
+          ? String(d.patient.dateNaissance).slice(0, 10) : ''
       })
 
       processus.value = d.processus.map((p) => ({
@@ -260,7 +267,7 @@ export const useParcours = defineStore('parcours', () => {
             : [],
           timerDebut: s.timer_debut ? new Date(s.timer_debut).getTime() : null,
           timerFin: s.timer_fin ? new Date(s.timer_fin).getTime() : null,
-          operateur: '',
+          operateur: s.operateur_libelle ?? '',
           commentaire: s.commentaire ?? '',
           numeroSerie: s.numero_serie ?? ''
         }
@@ -675,18 +682,23 @@ export const useParcours = defineStore('parcours', () => {
    *  Avant cette étape, seule une préallocation explicite fait apparaître
    *  l'identité. C'est aussi ce qui limite l'exposition des données de santé. */
   const patientIdentifie = computed(() => {
-    if (dossier.preallocation && dossier.patient) return true
+    // Un patient rattaché, quelle qu'en soit l'origine — préallocation
+    // explicite ou allocation à la mise en fabrication — est identifié.
+    if (dossier.patient) return true
     return selection.value >= (modele.value?.indexIdentificationPatient ?? Infinity)
   })
 
   const libellePatient = computed(() => {
-    if (dossier.preallocation && dossier.patient) {
+    if (dossier.patient) {
       return { texte: `${dossier.patient.nom} • N° ${dossier.patient.reference}`, style: 'nomme' }
     }
     if (patientIdentifie.value) {
       return { texte: 'Patient à identifier à la mise en fabrication', style: 'attente' }
     }
-    return { texte: 'Non affecté à un patient', style: 'anonyme' }
+    /* « En attente d'allocation », pas « non affecté » : le dossier n'est pas
+       en défaut, il est à un stade du parcours où l'identité n'a pas encore
+       lieu d'être — et c'est le libellé retenu au tableau de bord. */
+    return { texte: "En attente d'allocation", style: 'anonyme' }
   })
 
   const ordonnancierVisible = computed(() =>

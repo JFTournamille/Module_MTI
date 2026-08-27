@@ -336,17 +336,56 @@ Réserves connues sur CapRover : nœud unique, donc pas de haute disponibilité 
 et une sauvegarde de volume non testée en restauration n'est pas une
 sauvegarde.
 
+## Le jeu de démonstration
+
+`api/src/seed-demo.js` pose dix dossiers, dix patients et dix comptes — de quoi
+montrer l'application peuplée sans avoir à saisir un parcours en séance.
+
+```bash
+SEED_DEMO=oui npm --prefix api run seed:demo         # insertion
+npm --prefix api run seed:demo:purge                 # retrait
+```
+
+Les dix dossiers ne sont pas dix fois le même : ils s'étalent du premier
+processus au parcours clos, trois sont sans patient (dont un arrivé jusqu'à la
+réception — l'anonymat n'est pas qu'un état transitoire du début de parcours),
+un porte une alarme de seuil, trois sont contresignés, deux sont clos dont un
+non conforme. Un jeu où tout est conforme n'apprend rien ; un jeu où tout est
+en alarme non plus.
+
+Trois propriétés valent d'être notées, parce qu'elles ne vont pas de soi :
+
+- **La chronologie tient.** Un processus par jour, saisies datées sur le jour de
+  leur processus, clôture du dossier après son dernier processus. Sans ça, le
+  tableau de bord affichait une dernière activité postérieure à la validation.
+- **L'insertion est idempotente.** Un dossier, un compte ou un patient déjà
+  présent est laissé tel quel : le seed se relance sans rien détruire.
+- **La purge ne casse pas la traçabilité.** Un compte qui figure au journal
+  d'audit est **désactivé, pas effacé**. `mti.audit` survit à la purge — il
+  n'est pas effaçable, par construction — et ne porte aucune clé étrangère vers
+  `utilisateur` : effacer un compte qui y figure ne casse rien à l'insertion,
+  mais laisse des centaines de traces dont l'auteur n'est plus qu'un UUID que
+  rien ne résout. C'est exactement ce que le journal est censé empêcher.
+
+`/api/sante` et l'installateur comptent les trois natures séparément et
+refusent de conclure « ok » tant qu'il en reste une. Un dossier fictif est le
+plus trompeur des trois : rien ne le distingue d'un dossier réel dans le
+tableau de bord.
+
 ## Vérifications
 
 ```bash
-# Invariants du schéma (14 tests) — se lance avec un search_path par défaut,
+# Invariants du schéma (15 tests) — se lance avec un search_path par défaut,
 # comme un vrai client, pour ne pas masquer les références non qualifiées.
 psql -d mti -v ON_ERROR_STOP=1 -f db/tests/test_invariants.sql
 
-# API de bout en bout (10 groupes)
+# API de bout en bout
 npm --prefix api run test:e2e
 
-# Parcours dans un vrai navigateur (14 groupes)
+# Jeu de démonstration : insertion, idempotence, purge
+npm --prefix api run test:demo
+
+# Parcours dans un vrai navigateur
 npm --prefix web run test:navigateur
 ```
 

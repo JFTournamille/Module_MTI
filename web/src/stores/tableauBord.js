@@ -28,9 +28,12 @@ export const useTableauBord = defineStore('tableauBord', () => {
   const compte = (code) => dossiers.value.filter((d) => d.statutAffiche === code).length
   /* Les compteurs portent sur ce qui est affiché : filtrer puis lire un total
      qui ne correspond pas à l'écran est trompeur. */
-  const nbEnCours = computed(() => dossiers.value.filter((d) => d.statutAffiche !== 'termine').length)
+  /* Un dossier clos non conforme est clos : il compte parmi les terminés, pas
+     parmi les scénarios en cours. */
+  const clos = (d) => d.statutAffiche === 'termine' || d.statutAffiche === 'non_conforme'
+  const nbEnCours = computed(() => dossiers.value.filter((d) => !clos(d)).length)
   const nbAttente = computed(() => compte('attente'))
-  const nbTermines = computed(() => compte('termine'))
+  const nbTermines = computed(() => dossiers.value.filter(clos).length)
   const nbAlarmes = computed(() => dossiers.value.filter((d) => d.nbAlarmes > 0).length)
 
   async function messageDe (r, defaut) {

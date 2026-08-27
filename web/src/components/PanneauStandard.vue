@@ -92,6 +92,12 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
             </td>
             <td>
               <span v-if="ligne.point.type === 'auto'" class="std-op">Système</span>
+              <!-- L'opérateur de la LIGNE d'abord : deux points d'un même
+                   processus peuvent avoir été saisis par deux personnes, et
+                   l'opérateur du processus n'est qu'un défaut d'affichage. -->
+              <span v-else-if="store.saisie(ligne.cle, ligne.point).operateur" class="std-op">
+                {{ store.saisie(ligne.cle, ligne.point).operateur }}
+              </span>
               <span v-else-if="processus.operateur" class="std-op">{{ processus.operateur }}</span>
               <span v-else class="std-dash">—</span>
             </td>

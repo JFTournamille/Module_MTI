@@ -11,7 +11,8 @@
     "seed": "node src/seed.js",
     "seed:demo": "node src/seed-demo.js",
     "seed:demo:purge": "node src/seed-demo.js --supprimer",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "node tests/e2e.mjs",
+    "test:demo": "node tests/jeu-demo.mjs"
   },
   "dependencies": {
     "fastify": "^5.2.1",
