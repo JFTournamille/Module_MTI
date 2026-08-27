@@ -2,7 +2,7 @@
  * Charge les référentiels de `shared/` dans la base et crée l'utilisateur de
  * développement. Idempotent : rejouable sans effet de bord.
  */
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pool } from './db.js'
@@ -10,22 +10,59 @@ import { pool } from './db.js'
 const racine = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const lire = async (f) => JSON.parse(await readFile(join(racine, 'shared', f), 'utf8'))
 
-const parcours = await lire('parcours-cart-v1.json')
+/**
+ * Tous les parcours de `shared/`, pas seulement le dernier connu du code.
+ *
+ * Les modèles sont versionnés et une seule version est active par code : une
+ * version retirée du service doit rester EN BASE, sinon les dossiers qui la
+ * référencent deviendraient illisibles — ce qui viderait de son sens le
+ * figement de la définition dans le dossier.
+ *
+ * La version la plus haute de chaque code devient l'active. Les autres sont
+ * chargées ou rafraîchies, puis désactivées.
+ */
+const fichiersParcours = (await readdir(join(racine, 'shared')))
+  .filter((f) => /^parcours-.*\.json$/.test(f))
+  .sort()
+const parcours = await Promise.all(fichiersParcours.map(lire))
+const versionActive = new Map()
+for (const p of parcours) {
+  const courant = versionActive.get(p.code)
+  if (!courant || p.version > courant.version) versionActive.set(p.code, p)
+}
+
 const catalogue = await lire('catalogue-processus-v1.json')
 
 const client = await pool.connect()
 try {
   await client.query('BEGIN')
 
-  // ── Modèle de parcours ──
-  await client.query(
-    `INSERT INTO mti.modele_parcours (code, version, libelle, definition, actif, publie_le)
-     VALUES ($1, $2, $3, $4, true, now())
-     ON CONFLICT (code, version) DO UPDATE
-       SET definition = EXCLUDED.definition, libelle = EXCLUDED.libelle`,
-    [parcours.code, parcours.version, parcours.libelle, JSON.stringify(parcours)]
-  )
-  console.log(`✓ modèle ${parcours.code} v${parcours.version} — ${parcours.processus.length} processus`)
+  // ── Modèles de parcours ──
+  // Insertion en INACTIF d'abord : la base n'admet qu'une version active par
+  // code, activer avant d'avoir désactivé l'ancienne violerait la contrainte.
+  for (const p of parcours) {
+    await client.query(
+      `INSERT INTO mti.modele_parcours (code, version, libelle, definition, actif, publie_le)
+       VALUES ($1, $2, $3, $4, false, now())
+       ON CONFLICT (code, version) DO UPDATE
+         SET definition = EXCLUDED.definition, libelle = EXCLUDED.libelle`,
+      [p.code, p.version, p.libelle, JSON.stringify(p)]
+    )
+  }
+  for (const [code, active] of versionActive) {
+    await client.query(
+      'UPDATE mti.modele_parcours SET actif = false WHERE code = $1 AND version <> $2',
+      [code, active.version])
+    await client.query(
+      'UPDATE mti.modele_parcours SET actif = true WHERE code = $1 AND version = $2',
+      [code, active.version])
+    const retirees = parcours.filter((p) => p.code === code && p.version !== active.version)
+    console.log(
+      `✓ modèle ${code} v${active.version} actif — ${active.processus.length} processus` +
+      (retirees.length
+        ? ` (v${retirees.map((p) => p.version).join(', v')} conservée(s) hors service)`
+        : ''))
+  }
 
   // ── Catalogue ──
   await client.query(

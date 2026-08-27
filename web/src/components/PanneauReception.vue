@@ -8,6 +8,7 @@
  * attributs `name` des radios, ce qui exigeait de nettoyer les copies à
  * chaque changement — d'où les attributs `data-generated-dup`.
  */
+import BlocContresignature from './BlocContresignature.vue'
 import CelluleControle from './CelluleControle.vue'
 import { useParcours } from '../stores/parcours.js'
 
@@ -139,6 +140,16 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
               <td colspan="7">{{ ligne.titre }}</td>
             </tr>
 
+            <!-- En-tête de kit : la composition reste sous les yeux de
+                 l'opérateur, sinon « 3 tubes » ne veut rien dire. -->
+            <tr v-else-if="ligne.genre === 'kit'" class="ckit">
+              <td colspan="7">
+                <span class="ckit-b">⊞ Kit</span>
+                <strong>{{ ligne.kit.nom }}</strong>
+                <span class="ckit-c">— {{ ligne.kit.composition }}</span>
+              </td>
+            </tr>
+
             <template v-else>
               <tr class="crow">
                 <td class="cnc">
@@ -160,6 +171,17 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                   <div v-if="ligne.point.multi && ligne.exemplaire === 1" class="cmul">
                     × {{ ligne.copies }} {{ uniteMulti(ligne.point.multi) }}
                   </div>
+                  <div class="cflags">
+                    <span v-if="ligne.point.doubleValidation" class="cdbl"
+                          title="Point soumis à double validation : contresigné par une 2e personne">
+                      👥 2 pers.
+                    </span>
+                    <button class="ccmt-b"
+                            :class="{ plein: store.saisie(ligne.cle, ligne.point).commentaire }"
+                            :title="store.saisie(ligne.cle, ligne.point).commentaire
+                              || 'Ajouter un commentaire'"
+                            @click="store.basculerCommentaire(ligne.cle)">💬</button>
+                  </div>
                 </td>
                 <td style="text-align:center">
                   <span class="ctb" :class="badge[ligne.point.type]?.[0] ?? 't-au'">
@@ -178,6 +200,14 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                 </td>
                 <td>
                   <CelluleControle :point="ligne.point" :cle="ligne.cle" :lecture-seule="lectureSeule" />
+                  <!-- Le n° de série identifie CET exemplaire ; il vient en
+                       complément du n° de lot, qui couvre tout l'envoi. -->
+                  <div v-if="ligne.point.numeroSerie" class="cserie">
+                    <label>N° série</label>
+                    <input type="text" placeholder="Ex. CD4-000117"
+                           v-model="store.saisie(ligne.cle, ligne.point).numeroSerie"
+                           :disabled="lectureSeule">
+                  </div>
                 </td>
                 <td>
                   <input class="cdf" type="datetime-local"
@@ -196,6 +226,28 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                       :disabled="lectureSeule"
                       @click="store.basculerOp2(ligne.cle)"
                     >{{ store.op2Ouvert(ligne.cle) ? '−' : '+' }}</button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Commentaire libre : ce qui explique un écart ne rentre pas
+                   dans une case à cocher. -->
+              <tr v-if="store.commentaireOuvert(ligne.cle)" class="crow ccmt-r">
+                <td></td>
+                <td colspan="6">
+                  <div class="ccmt-t">Commentaire — {{ ligne.point.num }} · restitué en bulle</div>
+                  <textarea rows="2" class="ccmt-z" placeholder="Observation, écart, réserve…"
+                            v-model="store.saisie(ligne.cle, ligne.point).commentaire"
+                            :disabled="lectureSeule"></textarea>
+                  <div class="ccmt-a">
+                    <button class="ccmt-ok" @click="store.basculerCommentaire(ligne.cle)">
+                      Replier
+                    </button>
+                    <button class="ccmt-x" :disabled="lectureSeule"
+                            @click="store.saisie(ligne.cle, ligne.point).commentaire = '';
+                                    store.basculerCommentaire(ligne.cle)">
+                      Effacer
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -235,4 +287,5 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
       </table>
     </div>
   </div>
+  <BlocContresignature />
 </template>

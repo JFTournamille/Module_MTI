@@ -6,25 +6,51 @@ import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
 import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
+import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
 import { useSession } from './stores/session.js'
 
 const session = useSession()
 const store = useParcours()
 
-/** Onglet affiché : 'scenario' | 'utilisateurs'. */
-const onglet = ref('scenario')
+/** Onglet affiché. Le tableau de bord est le point d'entrée : on part de la
+ *  liste des dossiers, pas d'un formulaire vide. */
+const onglet = ref('bord')
 const TITRES = {
+  bord: 'Tableau de bord MTI',
   scenario: 'Scénario MTI — Processus chronologique',
   utilisateurs: 'Administration — Utilisateurs'
+}
+
+/** Ouvre un dossier depuis le tableau de bord et bascule sur le scénario. */
+async function ouvrirDepuisBord (id) {
+  if (await store.ouvrirDossier(id)) onglet.value = 'scenario'
 }
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
 
+const referenceNouveau = ref('')
+
 onMounted(async () => {
   await session.charger()
   await store.charger()
+  // Reprendre le dossier laissé ouvert. S'il a disparu, on retombe sur l'état
+  // vide plutôt que sur un formulaire qui n'enregistrerait rien.
+  const memorise = store.dossierMemorise()
+  if (memorise) await store.ouvrirDossier(memorise)
 })
+
+/** Référence par défaut : lisible, et unique sans avoir à interroger la base. */
+function referenceProposee () {
+  const n = new Date()
+  const p = (v) => String(v).padStart(2, '0')
+  return `MTI-${n.getFullYear()}-${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`
+}
+
+async function creer () {
+  const ref = (referenceNouveau.value || '').trim() || referenceProposee()
+  if (await store.creerDossier(ref)) referenceNouveau.value = ''
+}
 onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
@@ -49,6 +75,10 @@ const blocages = computed(() => {
     </div>
 
     <nav class="onglets" role="tablist" aria-label="Navigation principale">
+      <button class="onglet" :class="{ act: onglet === 'bord' }" role="tab"
+              :aria-selected="onglet === 'bord'" @click="onglet = 'bord'">
+        Tableau de bord
+      </button>
       <button class="onglet" :class="{ act: onglet === 'scenario' }" role="tab"
               :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
         Scénario
@@ -59,7 +89,9 @@ const blocages = computed(() => {
       </button>
     </nav>
 
-    <template v-if="onglet === 'scenario'">
+    <PanneauTableauBord v-if="onglet === 'bord'" @ouvrir="ouvrirDepuisBord" />
+
+    <template v-else-if="onglet === 'scenario'">
     <div class="hdr">
       <div class="hdr-left">
         <div class="name">
@@ -76,6 +108,15 @@ const blocages = computed(() => {
             &nbsp;|&nbsp; N° ordonnancier : {{ store.dossier.numeroOrdonnancier || '—' }}
           </template>
           &nbsp;|&nbsp; Péremption : {{ store.dossier.datePeremption || '—' }}
+        </div>
+        <div v-if="store.dossierId" class="presc-jalon">
+          <button class="presc-b" :class="{ faite: store.dossier.prescriptionFaite }"
+                  :disabled="store.lectureSeule"
+                  :title="store.lectureSeule ? 'Dossier validé — lecture seule'
+                    : 'Basculer le jalon de prescription'"
+                  @click="store.basculerPrescription()">
+            {{ store.dossier.prescriptionFaite ? '✓ Prescription réalisée' : '○ Prescription non réalisée' }}
+          </button>
         </div>
       </div>
       <div class="op-badge">
@@ -106,6 +147,22 @@ const blocages = computed(() => {
         <div v-if="store.chargement" style="padding:20px;color:#777;font-size:13px;">
           Chargement des référentiels…
         </div>
+        <template v-else-if="!store.dossierId">
+          <div class="vide-dossier">
+            <div class="vd-t">Aucun dossier ouvert</div>
+            <p>
+              Les saisies ne sont enregistrées que dans un dossier. Créez-en un, ou
+              ouvrez-en un depuis le tableau de bord.
+            </p>
+            <div class="vd-f">
+              <label for="vd-ref">Référence</label>
+              <input id="vd-ref" type="text" v-model="referenceNouveau"
+                     :placeholder="referenceProposee()"/>
+              <button class="vd-b" @click="creer()">Créer le dossier</button>
+            </div>
+            <p v-if="store.erreurDossier" class="vd-e">{{ store.erreurDossier }}</p>
+          </div>
+        </template>
         <template v-else>
           <PanneauReception
             v-if="enReception"
@@ -130,11 +187,41 @@ const blocages = computed(() => {
                  v-model="store.dossier.conformite"> Conforme
         </label>
       </div>
-      <button class="btn-ann">✕ Annuler</button>
+      <span v-if="store.dossierId" class="etat-enr">
+        <template v-if="store.enregistrement">enregistrement…</template>
+        <template v-else-if="store.lectureSeule">dossier validé — lecture seule</template>
+        <template v-else-if="store.dernierEnregistrement">
+          enregistré à {{ store.dernierEnregistrement.toLocaleTimeString('fr-FR',
+            { hour: '2-digit', minute: '2-digit' }) }}
+        </template>
+        <template v-else>non enregistré</template>
+      </span>
+      <button class="btn-ann" v-if="store.dossierId" @click="store.fermerDossier()">Fermer</button>
+      <!-- Avancement du processus courant : sans lui, un processus « à venir »
+           reste en lecture seule et le parcours ne peut pas progresser. -->
+      <button v-if="store.dossierId && !store.lectureSeule && store.processusCourant"
+              class="f-btn proc-etat" :disabled="store.processusCourant.etat === 'valide'"
+              :title="store.processusCourant.etat === 'a_venir'
+                ? 'Ouvrir ce processus à la saisie'
+                : store.processusCourant.etat === 'valide'
+                  ? 'Processus déjà validé'
+                  : 'Valider ce processus et ouvrir le suivant'"
+              @click="store.changerEtatProcessus(
+                store.processusCourant.etat === 'a_venir' ? 'en_cours' : 'valide')">
+        {{ store.processusCourant.etat === 'a_venir' ? 'Ouvrir ce processus'
+           : store.processusCourant.etat === 'valide' ? '✓ Processus validé'
+           : 'Valider ce processus' }}
+      </button>
+      <button class="f-btn" v-if="store.dossierId && !store.lectureSeule"
+              :disabled="store.enregistrement"
+              @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">
+        Enregistrer
+      </button>
       <button
-        class="btn-val" :disabled="blocages.length > 0"
-        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}` : 'Valider le processus'"
-        :style="blocages.length ? 'opacity:.5;cursor:not-allowed;' : ''"
+        class="btn-val" :disabled="blocages.length > 0 || !store.dossierId || store.lectureSeule"
+        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}` : 'Valider le dossier'"
+        :style="(blocages.length || !store.dossierId || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
+        @click="store.validerDossier()"
       >✓ Valider</button>
     </div>
 
@@ -143,13 +230,16 @@ const blocages = computed(() => {
       ⚠ {{ session.avertissement }}
     </div>
 
-    <div v-if="store.horsLigne || blocages.length"
+    <div v-if="store.horsLigne || blocages.length || store.erreurDossier"
          style="background:#fffbf0;border-top:1px solid #d0b060;padding:4px 14px;
                 font-size:11px;color:#7a5000;display:flex;gap:14px;flex-wrap:wrap;">
       <span v-if="store.horsLigne">
         ⚠ Mode hors-ligne — référentiels embarqués, saisies non synchronisées.
       </span>
       <span v-if="blocages.length">Validation bloquée : {{ blocages.join(' ; ') }}</span>
+      <span v-if="store.erreurDossier" style="color:#c62828;font-weight:bold;">
+        {{ store.erreurDossier }}
+      </span>
     </div>
     </template>
 

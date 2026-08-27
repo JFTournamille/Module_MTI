@@ -83,6 +83,14 @@ const alarme = computed(() => store.alarme(props.cle, props.point))
     v-model="saisie.valeurTexte" :disabled="lectureSeule"
   >
 
+  <!-- Date — jalon calendaire (aphérèse, lymphodéplétion, réception prévue).
+       La valeur vit dans valeurTexte au format ISO, comme la rend l'input. -->
+  <input
+    v-else-if="point.type === 'date'"
+    class="cfi" type="date" style="width:150px;"
+    v-model="saisie.valeurTexte" :disabled="lectureSeule"
+  >
+
   <!-- Automatique : renseigné par le système à la validation -->
   <span v-else style="font-size:10px;color:#777;font-style:italic;">
     {{ point.valeurAuto ?? 'Automatique' }}

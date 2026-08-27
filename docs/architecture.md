@@ -6,8 +6,12 @@ Suivi du parcours complet d'un médicament de thérapie innovante (MTI), de la
 réception du matériel de leucaphérèse jusqu'au suivi post-administration, avec
 la traçabilité exigée par les BPP.
 
-Le parcours de référence (`shared/parcours-cart-v1.json`) compte 12 processus
-chronologiques, dont 5 réalisés par le fabricant. Le premier — la réception —
+Le parcours de référence est `shared/parcours-cart-v2.json` : 16 processus
+chronologiques, dont 5 réalisés par le fabricant. La v2 ajoute les quatre
+processus amont arrêtés en réunion du 26 juin 2026 — demande d'accès, commande
+MTI, aphérèse, rattachement — et reprend les douze de la v1 sans en modifier un
+seul point. La v1 reste en base, hors service : les dossiers ouverts sous elle
+gardent leur définition figée. Le premier — la réception —
 porte 24 points de contrôle répartis en 6 sections. Des processus
 complémentaires peuvent être ajoutés en cours de parcours depuis un catalogue
 (`shared/catalogue-processus-v1.json`).
@@ -94,6 +98,17 @@ malgré cette révocation.
 - Contrainte `dossier_valide_coherent` : pas de validation sans conclusion de
   conformité **et** signataire **et** horodatage.
 
+### 5 bis. L'avancement d'un processus
+
+`dossier_processus.etat` (`a_venir` → `en_cours` → `valide`) commande la lecture
+seule côté front. Valider un processus par `POST /api/processus/:id/etat` ouvre
+**le suivant encore à venir** — pas `ordre + 1`, pour qu'un processus ajouté
+depuis le catalogue ou déjà ouvert ne fasse pas sauter un cran au parcours.
+
+Un processus peut aussi être ouvert explicitement, sans attendre celui qui le
+précède : c'est ce qui permettra de traiter l'indépendance chronologique
+demandée en réunion (certains processus se réalisent sans attendre les autres).
+
 ### 5. Les modèles sont versionnés et figés dans le dossier
 
 `mti.modele_parcours` porte `(code, version, definition jsonb)` avec une seule
@@ -135,6 +150,17 @@ bascule sur `src/data/*.json`, affiche un bandeau « Mode hors-ligne » et reste
 saisissable. **La persistance différée des saisies reste à faire** (voir
 Reste à faire).
 
+En ligne, en revanche, la saisie est désormais persistée : l'onglet Scénario
+travaille sur un **dossier**, et sans dossier ouvert il affiche un état vide
+plutôt qu'un formulaire qui n'enregistrerait rien. Trois gestes écrivent :
+`PATCH /api/dossiers/:id` pour l'en-tête, `PUT /api/processus/:id/saisies` pour
+les points, `POST /api/dossiers/:id/valider` pour figer. Changer de processus
+enregistre celui qu'on quitte — une saisie ne doit pas disparaître sans que
+l'opérateur puisse le savoir. Un processus ajouté depuis le catalogue est créé
+côté serveur (`POST /api/dossiers/:id/processus`) : sans cela ses saisies
+n'auraient aucun `dossier_processus` où atterrir, et l'enregistrement échouait
+en silence.
+
 ## L'authentification est un prérequis, pas une évolution
 
 Le double contrôle pharmacien et la signature électronique exigent deux
@@ -169,6 +195,97 @@ nécessaires et tous vérifiés par la suite de tests :
 L'interface porte en permanence un bandeau rappelant que la double validation
 et la signature électronique **n'ont pas de valeur probante dans cet état**.
 Une démonstration ne doit pas pouvoir passer pour une mise en service.
+
+### Les jalons calendaires sont typés
+
+Le type de point `date` (migration `006`) porte les jalons de la commande MTI :
+date d'aphérèse, de lymphodéplétion, de réception prévue. En texte libre ils
+seraient inexploitables — impossible de trier, de comparer, ni de signaler une
+réception prévue dépassée. La valeur vit dans `saisie.valeur_texte` au format
+ISO ; le type du point dit déjà comment la lire, une colonne de plus ne se
+justifiait pas.
+
+`api/src/seed.js` charge **tous** les `shared/parcours-*.json` et n'active que
+la version la plus haute par code, après avoir désactivé les autres : la base
+n'admet qu'une version active par code (`modele_parcours_actif_unique`), et une
+version retirée du service doit rester en base, sinon les dossiers qui la
+référencent deviendraient illisibles.
+
+### Kits, exemplaires, n° de série, commentaires
+
+Quatre évolutions de points, demandées en réunion, portées par le référentiel
+(`jsonb`) pour trois d'entre elles et par deux colonnes pour la dernière.
+
+| Demande | Où elle vit | Pourquoi là |
+|---|---|---|
+| Regroupement par **kit** | `section.kits[]` + `point.kit` | C'est une propriété du modèle, pas de la saisie |
+| **Exemplaires par point** (`point.exemplaires`) | Modèle | Trois tubes CD4 et deux tubes CD8 ne se comptent pas ensemble, et surtout pas avec les exemplaires du produit |
+| **Double validation** (`point.doubleValidation`) | Modèle | Le point est soumis ou non à contresignature, indépendamment du dossier |
+| **N° de série** et **commentaire** | `saisie.numero_serie`, `saisie.commentaire` (migration `007`) | C'est l'opérateur qui les renseigne, pour un exemplaire donné |
+
+Le n° de série vient **en complément** du n° de lot, jamais à sa place : un lot
+couvre plusieurs exemplaires, le n° de série en identifie un seul. La clé unique
+de `mti.saisie` portant déjà l'exemplaire, aucune structure supplémentaire n'a
+été nécessaire.
+
+Le commentaire répond à ce qu'un type de point ne peut pas exprimer : ce qui
+explique un écart ou une réserve ne rentre pas dans une case à cocher. Sans lui,
+cette information partait dans le commentaire global du dossier, où elle perdait
+le lien avec la ligne concernée.
+
+### La double validation est une contresignature de processus
+
+Ce n'est **pas** une seconde saisie ligne à ligne — le double contrôle
+Op.1/Op.2 existe déjà pour ça. C'est une validation **globale** du processus par
+une 2ᵉ personne identifiée, avec rappel des points concernés : c'est cette liste
+qui donne son sens au geste.
+
+Elle vit dans `mti.signature`, où elle a sa place : le rôle `verificateur`
+existe, la table est auditée, et `mti_app` n'a ni `UPDATE` ni `DELETE` dessus —
+une contresignature posée ne se retire pas. L'empreinte SHA-256 porte sur le
+processus **et la liste exacte des points contresignés** : si la définition
+changeait, l'empreinte ne correspondrait plus, ce qui est le but.
+
+Contresigner par le même opérateur que celui qui saisit est refusé : tout
+l'objet du double contrôle est qu'un second regard s'exerce.
+
+> **Sans valeur probante en l'état.** Le geste se limite à un choix nominatif
+> tant que l'authentification réelle n'est pas branchée. Deux identités
+> authentifiées distinctes sont un prérequis, pas une évolution.
+
+### Prescription : un jalon, pas un référentiel
+
+`mti.dossier.prescription_faite` (migration `005`) répond à un besoin simple —
+jalonner le parcours — sans que ce module porte la moindre donnée de
+prescription. La raison est la même que pour les patients : la source de vérité
+est le logiciel de prescription (Pharma®/CHIMIO®).
+
+Rattacher une prescription **identifiée** — sa référence, son protocole, son
+prescripteur — suppose de décider où elle vit et qui en répond. **Cette décision
+est reportée**, et le booléen ne la préempte pas : il n'introduit aucune
+structure à défaire ensuite.
+
+`false` signifie « pas encore réalisée », pas « inconnue » : c'est l'état de
+départ de tout dossier, et il n'y a pas de tiers état à distinguer. Le jalon
+s'enregistre au clic, sans attendre un « Enregistrer » — un changement d'onglet
+le perdrait — et son passage est tracé avec son auteur, comme le reste.
+
+### Le tableau de bord est le point d'entrée
+
+L'application ouvre sur la liste des dossiers, pas sur un formulaire vide :
+recherche libre (référence, lot, produit, nom de patient), filtre par produit,
+tuiles de comptage, et démarrage d'un scénario avec son produit et son n° de lot
+en un seul appel — un dossier créé sans son produit parce qu'un second appel a
+échoué serait une incohérence gratuite. Un clic sur une ligne ouvre le dossier
+dans l'onglet Scénario. Les dossiers terminés restent listés et consultables :
+ils sont figés, pas effacés.
+
+Deux règles d'affichage sont calculées **côté serveur**, pour ne pas être
+dupliquées dans le front où elles finiraient par diverger : « en attente
+d'allocation » (absence de patient sur un dossier ouvert) et « Parcours clos »
+(dossier validé). L'anonymat vaut dans la liste comme ailleurs — aucun objet
+patient n'est renvoyé tant que le dossier n'en porte pas, alors que la recherche
+porte bien sur le nom, parce que c'est l'usage réel.
 
 ### Comptes et profils
 

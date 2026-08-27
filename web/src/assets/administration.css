@@ -72,3 +72,101 @@ table.adm-t tr.inactif .ident{text-decoration:line-through;}
 /* Une démonstration ne doit pas pouvoir passer pour une mise en service. */
 .demo-bandeau{background:#fff8e0;border-top:1px solid #e0c860;padding:4px 14px;
   font-size:11px;color:#7a5000;flex-shrink:0;}
+
+/* ── État « aucun dossier ouvert » ── */
+.vide-dossier{margin:26px auto;max-width:560px;background:#f8f6ff;border:1px solid #d0c0f0;
+  border-radius:4px;padding:20px 22px;}
+.vide-dossier .vd-t{font-size:15px;font-weight:bold;color:#4a3880;margin-bottom:8px;}
+.vide-dossier p{font-size:13px;color:#555;line-height:1.55;margin-bottom:14px;}
+.vide-dossier .vd-f{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.vide-dossier label{font-size:13px;color:#4a3880;font-weight:bold;}
+.vide-dossier input{font-family:inherit;font-size:13px;padding:5px 9px;border:1px solid #a090cc;
+  border-radius:2px;min-width:230px;}
+.vide-dossier .vd-b{font-family:inherit;font-size:13px;font-weight:bold;padding:5px 14px;
+  border:none;border-radius:2px;background:#4a3880;color:#fff;cursor:pointer;}
+.vide-dossier .vd-b:hover{background:#6045a0;}
+.vide-dossier .vd-e{color:#c62828;font-weight:bold;margin:12px 0 0;}
+.etat-enr{font-size:12px;color:#777;white-space:nowrap;}
+
+/* ── Tableau de bord ── */
+.tb-tuiles{display:flex;gap:11px;padding:13px 14px 6px;flex-wrap:wrap;}
+.tb-tuile{flex:1;min-width:150px;background:#fff;border:1px solid #c8b8e8;border-radius:5px;
+  padding:10px 13px;cursor:pointer;border-left:4px solid #6045a0;}
+.tb-tuile:hover{background:#f8f6ff;}
+.tb-tuile.on{background:#f0eeff;border-left-color:#b0a0ff;box-shadow:inset 0 0 0 1px #8878c8;}
+.tb-tuile .v{font-size:24px;font-weight:bold;color:#4a3880;line-height:1.15;}
+.tb-tuile .l{font-size:12px;color:#888;margin-top:2px;}
+.tb-tuile.att{border-left-color:#e0a030;}
+.tb-tuile.fin{border-left-color:#4caf50;}
+.tb-tuile.alr{border-left-color:#c62828;}
+.tb-tuile.alr .v{color:#c62828;}
+
+tr.tb-ligne{cursor:pointer;}
+tr.tb-ligne:hover td{background:#f8f6ff;}
+tr.tb-ligne.fini td{background:#f4faf4;}
+tr.tb-ligne.fini:hover td{background:#eaf5ea;}
+.tb-attente{font-style:italic;color:#7a4f00;}
+.tb-alarme{color:#c62828;font-weight:bold;margin-left:4px;}
+.tb-jauge{display:inline-block;vertical-align:middle;width:80px;height:7px;background:#ece8f8;
+  border-radius:4px;overflow:hidden;}
+.tb-jauge i{display:block;height:100%;background:#6045a0;}
+tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
+.tb-s-en_cours{background:#6045a0;}
+.tb-s-attente{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;font-weight:normal;}
+.tb-s-termine{background:#2e7d4e;}
+
+/* ── Jalon de prescription ── */
+.presc-jalon{margin-top:4px;}
+.presc-b{font-family:inherit;font-size:12px;padding:2px 9px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.12);border:1px solid #8878c0;color:#e0d8ff;}
+.presc-b:hover:not(:disabled){background:rgba(255,255,255,.22);}
+.presc-b.faite{background:#1a5c36;border-color:#44bb77;color:#c8f0d8;}
+.presc-b:disabled{opacity:.6;cursor:default;}
+.presc-oui{font-size:12px;color:#2e7d4e;font-weight:bold;white-space:nowrap;}
+.presc-non{font-size:12px;color:#999;white-space:nowrap;}
+
+/* ── Avancement du processus courant ── */
+.proc-etat:disabled{opacity:.55;cursor:default;}
+
+/* ── Kits, n° de série, commentaires, double validation ── */
+.ckit td{background:#fffbf3;border-top:1px solid #e0c890;border-bottom:1px solid #f0e0c0;
+  padding:5px 10px;font-size:12px;color:#7a4f00;}
+.ckit-b{display:inline-block;background:#fff3e0;border:1px solid #e0a030;border-radius:9px;
+  padding:1px 8px;font-size:10px;font-weight:bold;margin-right:6px;}
+.ckit-c{color:#9a7030;font-style:italic;margin-left:4px;}
+
+.cflags{display:flex;align-items:center;gap:6px;margin-top:3px;}
+.cdbl{display:inline-block;background:#e8e4ff;border:1px solid #b0a0e0;color:#4a3880;
+  border-radius:9px;padding:1px 7px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.ccmt-b{background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;
+  opacity:.35;line-height:1;}
+.ccmt-b:hover{opacity:1;}
+.ccmt-b.plein{opacity:1;}
+
+.cserie{display:flex;align-items:center;gap:5px;margin-top:4px;}
+.cserie label{font-size:9.5px;color:#7a4f00;font-weight:bold;white-space:nowrap;}
+.cserie input{font-family:inherit;font-size:10px;padding:1px 5px;border:1px solid #e0a030;
+  border-radius:2px;background:#fffbf3;width:108px;}
+
+.ccmt-r td{background:#f8f6ff!important;}
+.ccmt-t{font-size:10px;color:#4a3880;font-weight:bold;margin-bottom:4px;}
+.ccmt-z{width:100%;font-family:inherit;font-size:11px;padding:4px 6px;border:1px solid #c8b8e8;
+  border-radius:2px;box-sizing:border-box;}
+.ccmt-a{display:flex;gap:6px;margin-top:5px;}
+.ccmt-ok,.ccmt-x{font-family:inherit;font-size:10px;padding:2px 9px;border-radius:2px;cursor:pointer;}
+.ccmt-ok{background:#4a3880;border:none;color:#fff;}
+.ccmt-x{background:#e8e8e8;border:1px solid #bbb;color:#444;}
+
+/* ── Contresignature de processus ── */
+.contre{margin:10px 14px;padding:10px 13px;border-radius:4px;font-size:12px;}
+.contre-req{background:#f5f0ff;border:1px solid #d0c0f0;}
+.contre-ok{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;}
+.contre-t{font-size:13px;font-weight:bold;color:#4a3880;margin-bottom:6px;}
+.contre ul{margin:6px 0 10px 20px;line-height:1.7;color:#333;}
+.contre-f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.contre-f select{font-family:inherit;font-size:12px;padding:3px 7px;border:1px solid #a090cc;
+  border-radius:2px;}
+.contre-b{font-family:inherit;font-size:12px;font-weight:bold;padding:3px 12px;border:none;
+  border-radius:2px;background:#4a3880;color:#fff;cursor:pointer;}
+.contre-b:disabled{opacity:.5;cursor:default;}
+.contre-emp{font-family:'Courier New',monospace;font-size:10px;color:#2e7d32;}

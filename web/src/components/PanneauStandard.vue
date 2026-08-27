@@ -1,5 +1,6 @@
 <script setup>
 /** Gabarit « standard » — processus 2 à 12 et processus ajoutés au catalogue. */
+import BlocContresignature from './BlocContresignature.vue'
 import CelluleControle from './CelluleControle.vue'
 import { useParcours } from '../stores/parcours.js'
 
@@ -99,4 +100,5 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
       </tbody>
     </table>
   </div>
+  <BlocContresignature />
 </template>

@@ -25,11 +25,19 @@ const j = async (m, url, body, entetes) => {
   return { statut: r.status, corps: await r.json().catch(() => null) }
 }
 
+const modeles = (await j('GET', '/api/modeles')).corps
+const modeleActif = modeles.find((m) => m.code === 'PARCOURS_CART_AUTOLOGUE')
+const NB_PROCESSUS = modeleActif?.nbProcessus
+console.log(`\n0. Modèle actif : ${modeleActif?.code} v${modeleActif?.version}`)
+NB_PROCESSUS >= 12
+  ? ok(`${NB_PROCESSUS} processus au parcours actif`)
+  : ko(`modèle actif introuvable ou incomplet : ${JSON.stringify(modeles)}`)
+
 console.log('\n1. Création d\'un dossier')
 const ref = `DOS-E2E-${Date.now()}`
 let r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: ref })
-r.statut === 201 && r.corps.nbProcessus === 12
-  ? ok(`dossier ${ref} créé avec 12 processus figés`)
+r.statut === 201 && r.corps.nbProcessus === NB_PROCESSUS
+  ? ok(`dossier ${ref} créé avec ${NB_PROCESSUS} processus figés`)
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 const dossierId = r.corps.id
 
@@ -40,12 +48,25 @@ console.log('\n2. Le dossier est anonyme à la création')
 r = await j('GET', `/api/dossiers/${dossierId}`)
 r.corps.dossier.patient_id === null && r.corps.dossier.preallocation === false
   ? ok('patient_id NULL, préallocation inactive') : ko(JSON.stringify(r.corps.dossier))
+const premier = r.corps.processus.find((p) => p.ordre === 1)
+premier?.etat === 'en_cours'
+  ? ok(`processus 1 « ${premier.nom} » en cours`)
+  : ko(`premier processus : ${JSON.stringify(premier)}`)
 const reception = r.corps.processus.find((p) => p.gabarit === 'reception')
-reception && reception.etat === 'en_cours'
-  ? ok(`processus 1 « ${reception.nom} » en cours`) : ko('processus de réception introuvable')
-reception.definition.sections.length === 6
-  ? ok('définition figée dans le dossier (6 sections)')
-  : ko(`${reception.definition.sections?.length} sections`)
+reception
+  ? ok(`réception trouvée au rang ${reception.ordre}, état « ${reception.etat} »`)
+  : ko('processus de réception introuvable')
+/* Le nombre de sections vient du modèle actif : ce qui compte n'est pas qu'il
+   y en ait six, c'est que le dossier porte une COPIE fidèle de la définition —
+   c'est elle qui le rend relisible après évolution du référentiel. */
+const sectionsModele = (await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')).corps
+  .processus.find((p) => p.gabarit === 'reception').sections
+reception.definition.sections.length === sectionsModele.length
+  ? ok(`définition figée dans le dossier (${sectionsModele.length} sections, copie du modèle)`)
+  : ko(`${reception.definition.sections?.length} sections au lieu de ${sectionsModele.length}`)
+JSON.stringify(reception.definition.sections) === JSON.stringify(sectionsModele)
+  ? ok('la copie est fidèle, point par point')
+  : ko('la définition figée diffère du modèle dont elle est issue')
 
 console.log('\n3. Validation de type sur les saisies')
 r = await j('PUT', `/api/processus/${reception.id}/saisies`,
@@ -250,6 +271,326 @@ r = await j('GET', '/api/session', null, { [enTete]: compteId })
 r.statut === 409
   ? ok('un compte désactivé cesse aussitôt d\'être désignable, sans redémarrage')
   : ko(`statut ${r.statut} — un compte désactivé reste utilisable`)
+
+console.log('\n13. Liste des dossiers (tableau de bord)')
+r = await j('GET', '/api/dossiers')
+const liste = r.corps
+Array.isArray(liste) && liste.length >= 1
+  ? ok(`${liste.length} dossier(s) listés`) : ko(`réponse : ${JSON.stringify(r.corps)}`)
+
+const ligne = liste.find((x) => x.id === dossierId)
+ligne ? ok(`le dossier ${ref} figure dans la liste`) : ko('dossier créé absent de la liste')
+ligne?.statutAffiche === 'termine' && ligne?.etape === 'Parcours clos'
+  ? ok('un dossier validé est affiché « Parcours clos »')
+  : ko(`statut ${ligne?.statutAffiche}, étape « ${ligne?.etape} »`)
+ligne?.nbAlarmes === 1
+  ? ok(`${ligne.nbAlarmes} alarme de seuil comptée sur le dossier`)
+  : ko(`${ligne?.nbAlarmes} alarme(s) au lieu de 1`)
+typeof ligne?.avancement === 'number' && ligne.nbProcessus === NB_PROCESSUS
+  ? ok(`avancement ${ligne.avancement} % sur ${ligne.nbProcessus} processus`)
+  : ko(`avancement/processus : ${JSON.stringify([ligne?.avancement, ligne?.nbProcessus])}`)
+
+// L'anonymat vaut aussi dans une liste — c'est justement là qu'une identité
+// fuit sans qu'on y pense.
+ligne?.patient === null
+  ? ok('aucune donnée identifiante sur un dossier sans patient')
+  : ko(`patient renvoyé sur un dossier anonyme : ${JSON.stringify(ligne?.patient)}`)
+
+r = await j('GET', '/api/dossiers?statut=attente')
+r.corps.every((x) => x.patient === null && x.statut !== 'valide')
+  ? ok(`${r.corps.length} dossier(s) en attente d'allocation, tous sans patient`)
+  : ko('le filtre « attente » laisse passer des dossiers alloués ou clos')
+
+r = await j('GET', '/api/dossiers?statut=valide')
+r.corps.every((x) => x.statut === 'valide')
+  ? ok(`${r.corps.length} dossier(s) terminés, restant consultables`)
+  : ko('le filtre « valide » laisse passer des dossiers ouverts')
+
+r = await j('GET', `/api/dossiers?q=${ref}`)
+r.corps.length === 1 && r.corps[0].id === dossierId
+  ? ok('recherche par référence exacte') : ko(`${r.corps.length} résultat(s)`)
+
+r = await j('GET', '/api/dossiers?q=zzz-aucune-chance-zzz')
+r.corps.length === 0 ? ok('une recherche sans résultat renvoie une liste vide')
+  : ko(`${r.corps.length} résultat(s) inattendus`)
+
+console.log('\n14. En-tête du dossier et ajout de processus')
+const refH = `DOS-ENT-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refH })
+const dossierH = r.corps.id
+r.statut === 201 ? ok(`dossier ${refH} créé`) : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierH}`, {
+  designationProduit: 'Kymriah® (tisagenlecleucel)',
+  numeroLot: 'LOT-KY-2608-A',
+  datePeremption: '2026-12-31',
+  nbExemplaires: 3
+})
+r.statut === 200 ? ok('en-tête enregistré') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('GET', `/api/dossiers/${dossierH}`)
+r.corps.dossier.numero_lot === 'LOT-KY-2608-A' && r.corps.dossier.nb_exemplaires === 3
+  ? ok('en-tête relu depuis la base')
+  : ko(`relu : ${JSON.stringify([r.corps.dossier.numero_lot, r.corps.dossier.nb_exemplaires])}`)
+
+// Liste blanche : le statut ne se change pas par cette route, la validation a
+// la sienne, qui vérifie les points obligatoires.
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { statut: 'valide' })
+r.statut === 400 ? ok('champ hors liste blanche refusé (400)') : ko(`statut ${r.statut}`)
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { nbExemplaires: 99 })
+r.statut === 400 ? ok('nbExemplaires hors bornes refusé (400)') : ko(`statut ${r.statut}`)
+r = await j('PATCH', '/api/dossiers/00000000-0000-0000-0000-000000000000', { numeroLot: 'X' })
+r.statut === 404 ? ok('dossier inconnu → 404') : ko(`statut ${r.statut}`)
+
+// Un processus ajouté en cours de parcours doit exister côté serveur, sinon
+// ses saisies n'auraient aucun dossier_processus où atterrir.
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, {
+  code: 'CQ_INTERMEDIAIRE', nom: 'Contrôle qualité intermédiaire',
+  sections: [{ titre: 'Contrôle qualité', points: [{ num: 'CQ.1', libelle: 'Aspect conforme', type: 'ouinon', obligatoire: true }] }]
+})
+const procAjoute = r.corps?.id
+r.statut === 201 && r.corps.ajoute_du_catalogue === true &&
+  r.corps.ordre === NB_PROCESSUS + 1
+  ? ok(`processus ajouté au rang ${r.corps.ordre}, marqué « du catalogue »`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('PUT', `/api/processus/${procAjoute}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 0, pointNum: 'CQ.1', pointType: 'ouinon',
+    obligatoire: true, reponse: 'oui' }
+] })
+r.statut === 200 ? ok('les saisies du processus ajouté sont enregistrées')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, { nom: 'sans code' })
+r.statut === 400 ? ok('ajout sans code refusé (400)') : ko(`statut ${r.statut}`)
+
+// Un dossier validé est figé : ni en-tête, ni nouveau processus.
+r = await j('POST', `/api/dossiers/${dossierH}/valider`, { conformite: 'conforme' })
+r.statut === 200 ? ok('dossier validé') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('PATCH', `/api/dossiers/${dossierH}`, { numeroLot: 'APRES-VALIDATION' })
+r.statut === 409 ? ok('en-tête en lecture seule après validation (409)') : ko(`statut ${r.statut}`)
+r = await j('POST', `/api/dossiers/${dossierH}/processus`, { code: 'X', nom: 'X' })
+r.statut === 409 ? ok('plus d\'ajout de processus après validation (409)') : ko(`statut ${r.statut}`)
+
+console.log('\n15. Référentiels du tableau de bord')
+r = await j('GET', '/api/produits')
+Array.isArray(r.corps) && r.corps.length >= 1
+  ? ok(`${r.corps.length} produit(s) de référence`) : ko(`réponse : ${JSON.stringify(r.corps)}`)
+r.corps.every((p) => p.id && p.denomination)
+  ? ok('chaque produit porte un identifiant et une dénomination')
+  : ko('produit incomplet dans la liste')
+const kymriah = r.corps.find((p) => /KYMRIAH/i.test(p.denomination))
+kymriah?.seuilTempC === -150
+  ? ok(`seuil de conservation exposé : ${kymriah.seuilTempC} °C`)
+  : ko(`seuil : ${JSON.stringify(kymriah?.seuilTempC)}`)
+
+r = await j('GET', '/api/modeles')
+r.corps.some((m) => m.code === 'PARCOURS_CART_AUTOLOGUE' && m.nbProcessus === NB_PROCESSUS)
+  ? ok(`le modèle de parcours actif est listé avec ses ${NB_PROCESSUS} processus`)
+  : ko(`modèles : ${JSON.stringify(r.corps)}`)
+
+// Création en un seul appel : un dossier créé sans son produit, parce qu'un
+// second appel a échoué, serait une incohérence gratuite.
+const refP = `DOS-PROD-${Date.now()}`
+r = await j('POST', '/api/dossiers', {
+  codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refP,
+  produitId: kymriah.id, numeroLot: 'LOT-PROD-1'
+})
+r.statut === 201 ? ok('dossier créé avec produit et lot en un seul appel') : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers?q=${refP}`)
+r.corps[0]?.numeroLot === 'LOT-PROD-1' && /KYMRIAH/i.test(r.corps[0]?.produit ?? '')
+  ? ok(`relu dans la liste : ${r.corps[0].produit} / ${r.corps[0].numeroLot}`)
+  : ko(`ligne : ${JSON.stringify(r.corps[0])}`)
+
+r = await j('GET', `/api/dossiers?produit=${kymriah.id}`)
+r.corps.length >= 1 && r.corps.every((d) => /KYMRIAH/i.test(d.produit ?? ''))
+  ? ok(`filtre par produit : ${r.corps.length} dossier(s), tous du bon produit`)
+  : ko('le filtre par produit laisse passer autre chose')
+
+console.log('\n16. Jalon de prescription')
+const refJ = `DOS-PRESC-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refJ })
+const dossierJ = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierJ}`)
+r.corps.dossier.prescription_faite === false
+  ? ok('un dossier neuf porte « prescription non réalisée »')
+  : ko(`prescription_faite = ${r.corps.dossier.prescription_faite}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: true })
+r.statut === 200 ? ok('jalon posé') : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+r = await j('GET', `/api/dossiers?q=${refJ}`)
+r.corps[0]?.prescriptionFaite === true
+  ? ok('jalon repris dans la liste du tableau de bord')
+  : ko(`liste : ${JSON.stringify(r.corps[0]?.prescriptionFaite)}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: 'oui' })
+r.statut === 400 ? ok('valeur non booléenne refusée (400)') : ko(`statut ${r.statut}`)
+
+r = await j('PATCH', `/api/dossiers/${dossierJ}`, { prescriptionFaite: false })
+r.statut === 200 ? ok('jalon retiré — le parcours peut revenir en arrière avant validation')
+  : ko(`statut ${r.statut}`)
+
+// Le jalon est un état du dossier : son changement doit être tracé, comme le
+// reste. C'est ce qui distingue un jalon d'un simple affichage.
+r = await j('GET', `/api/dossiers/${dossierJ}/audit`)
+const majJalon = r.corps.filter((e) => e.table_cible === 'dossier' && e.operation === 'UPDATE')
+majJalon.length >= 2 && majJalon.every((e) => e.nom)
+  ? ok(`${majJalon.length} changement(s) de jalon tracés, tous avec leur auteur`)
+  : ko(`traces : ${JSON.stringify(majJalon.map((e) => e.nom))}`)
+
+console.log('\n17. Processus amont et jalons calendaires (parcours v2)')
+r = await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')
+const noms = r.corps.processus.map((p) => p.nom)
+const iCommande = noms.findIndex((n) => /Commande MTI/.test(n))
+const iReception = noms.findIndex((n) => /^Réception \(/.test(n))
+iCommande >= 0 && iReception >= 0 && iCommande < iReception
+  ? ok(`la commande MTI (rang ${iCommande + 1}) précède la réception (rang ${iReception + 1})`)
+  : ko(`ordre : commande ${iCommande}, réception ${iReception}`)
+;['Demande d\'accès au traitement', 'Aphérèse / leucaphérèse',
+  'Rattachement patient / prescription'].every((n) => noms.includes(n))
+  ? ok('les trois autres processus amont sont présents')
+  : ko(`processus : ${JSON.stringify(noms.slice(0, 5))}`)
+
+// L'identité patient reste imposée par la mise en fabrication : son index a
+// bougé avec l'insertion des processus amont, il doit avoir suivi.
+const iFab = noms.findIndex((n) => /Mise en fabrication/.test(n))
+r.corps.indexIdentificationPatient === iFab
+  ? ok(`identité patient exigée à partir du rang ${iFab + 1} (${noms[iFab]})`)
+  : ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iFab}`)
+
+// Les jalons calendaires ne doivent pas être du texte libre : sans type, ils
+// seraient intriables et incomparables.
+const pointsCommande = r.corps.processus[iCommande].sections.flatMap((sc) => sc.points)
+const jalons = pointsCommande.filter((pt) => pt.type === 'date').map((pt) => pt.libelle)
+jalons.length === 3 ? ok(`3 jalons de type « date » : ${jalons.join(' · ')}`)
+  : ko(`jalons date : ${JSON.stringify(jalons)}`)
+
+// Le type doit être accepté à l'écriture ET compté à la validation, sinon un
+// jalon obligatoire vide passerait — plus grave que de le refuser.
+const refD = `DOS-DATE-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refD })
+const dossierD = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierD}`)
+const procCommande = r.corps.processus.find((p) => /Commande MTI/.test(p.nom))
+r = await j('PUT', `/api/processus/${procCommande.id}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 2, pointType: 'date', obligatoire: true, valeurTexte: '' }
+] })
+r.statut === 200 ? ok('une saisie de type date est acceptée') : ko(`statut ${r.statut}`)
+
+r = await j('POST', `/api/dossiers/${dossierD}/valider`, { conformite: 'conforme' })
+r.statut === 422 && r.corps.details?.some((d) => d.point_type === 'date')
+  ? ok('un jalon date obligatoire et vide bloque la validation (422)')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 160)}`)
+
+r = await j('PUT', `/api/processus/${procCommande.id}/saisies`, { saisies: [
+  { sectionIndex: 0, pointIndex: 2, pointType: 'date', obligatoire: true,
+    valeurTexte: '2026-09-15' }
+] })
+r = await j('GET', `/api/dossiers/${dossierD}`)
+r.corps.saisies.some((sa) => sa.point_type === 'date' && sa.valeur_texte === '2026-09-15')
+  ? ok('le jalon est relu au format ISO depuis la base')
+  : ko('jalon date introuvable en base')
+
+// Les dossiers ouverts sur une version antérieure gardent leur définition
+// figée : c'est tout l'intérêt de la recopie à la création.
+r = await j('GET', '/api/dossiers')
+const versions = [...new Set(r.corps.map((d) => d.versionModele))].sort()
+versions.length >= 1
+  ? ok(`versions de modèle en service dans les dossiers : v${versions.join(', v')}`)
+  : ko('aucune version de modèle rapportée')
+
+console.log('\n18. Commentaire, n° de série, kits et contresignature')
+const refK = `DOS-KIT-${Date.now()}`
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refK })
+const dossierK = r.corps.id
+r = await j('GET', `/api/dossiers/${dossierK}`)
+const procK = r.corps.processus.find((p) => p.gabarit === 'reception')
+
+// Le kit vient du modèle : composition et compte propre à chaque composant.
+const secKit = procK.definition.sections.find((sc) => (sc.kits ?? []).length)
+secKit ? ok(`section « ${secKit.titre} » porte ${secKit.kits.length} kit(s)`)
+  : ko('aucune section ne déclare de kit')
+const compo = secKit?.kits?.[0]?.composition ?? ''
+if (/CD4/.test(compo) && /CD8/.test(compo)) ok(`composition : ${compo}`)
+else ko(`composition : ${JSON.stringify(secKit?.kits?.[0])}`)
+const tubes = secKit.points.filter((pt) => pt.kit === secKit.kits[0].id && pt.exemplaires)
+tubes.length === 2 && tubes[0].exemplaires === 3 && tubes[1].exemplaires === 2
+  ? ok(`exemplaires propres au point : ${tubes.map((t) => t.exemplaires).join(' et ')}`)
+  : ko(`exemplaires : ${JSON.stringify(tubes.map((t) => t.exemplaires))}`)
+
+const iKit = procK.definition.sections.indexOf(secKit)
+r = await j('PUT', `/api/processus/${procK.id}/saisies`, { saisies: [
+  { sectionIndex: iKit, pointIndex: 0, pointNum: '7.1', pointType: 'ouinon', exemplaire: 1,
+    obligatoire: true, reponse: 'oui', numeroSerie: 'CD4-000117',
+    commentaire: 'Étiquette décollée, tube intègre.' },
+  { sectionIndex: iKit, pointIndex: 0, pointNum: '7.1', pointType: 'ouinon', exemplaire: 2,
+    obligatoire: true, reponse: 'oui', numeroSerie: 'CD4-000118' },
+  { sectionIndex: iKit, pointIndex: 1, pointNum: '7.2', pointType: 'ouinon', exemplaire: 1,
+    obligatoire: true, reponse: 'oui', numeroSerie: '   ' }
+] })
+r.statut === 200 ? ok('saisies avec n° de série et commentaire enregistrées') : ko(`statut ${r.statut}`)
+
+r = await j('GET', `/api/dossiers/${dossierK}`)
+const parEx = (ex) => r.corps.saisies.find(
+  (sa) => sa.point_num === '7.1' && sa.exemplaire === ex)
+parEx(1)?.numero_serie === 'CD4-000117' && parEx(2)?.numero_serie === 'CD4-000118'
+  ? ok('un n° de série par exemplaire, distincts')
+  : ko(`séries : ${JSON.stringify([parEx(1)?.numero_serie, parEx(2)?.numero_serie])}`)
+if (/Étiquette décollée/.test(parEx(1)?.commentaire ?? '')) {
+  ok('commentaire relu sur la bonne ligne')
+} else {
+  ko(`commentaire : ${parEx(1)?.commentaire}`)
+}
+parEx(2)?.commentaire === null
+  ? ok('pas de commentaire là où rien n\'a été saisi') : ko(`commentaire parasite : ${parEx(2)?.commentaire}`)
+// Une chaîne d'espaces n'est pas un n° de série : elle ne doit pas être stockée.
+r.corps.saisies.find((sa) => sa.point_num === '7.2')?.numero_serie === null
+  ? ok('un n° de série vide de sens est ramené à NULL')
+  : ko('une chaîne d\'espaces a été stockée comme n° de série')
+
+// Contresignature : elle vaut pour le processus entier, avec rappel des points.
+r = await j('GET', '/api/session')
+const moiSession = r.corps.operateur.id
+const autre = r.corps.operateurs.find((o) => o.id !== moiSession)
+if (!autre) {
+  ko('aucun second opérateur actif : contresignature non éprouvable')
+} else {
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: moiSession })
+  r.statut === 409 ? ok('contresignature par soi-même refusée (409)') : ko(`statut ${r.statut}`)
+
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: autre.id })
+  r.statut === 200 && r.corps.points.length >= 4
+    ? ok(`contresigné par ${r.corps.contresignataire.libelle} — ${r.corps.points.length} points rappelés`)
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 140)}`)
+  const empreinte = r.corps.empreinte
+  if (/^[0-9a-f]{64}$/.test(empreinte ?? '')) {
+    ok(`empreinte SHA-256 du contenu signé : ${empreinte.slice(0, 16)}…`)
+  } else {
+    ko(`empreinte : ${empreinte}`)
+  }
+
+  r = await j('POST', `/api/processus/${procK.id}/contresigner`, { utilisateurId: autre.id })
+  r.corps?.deja === true ? ok('une seconde contresignature du même vérificateur ne double pas')
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 120)}`)
+
+  r = await j('GET', `/api/dossiers/${dossierK}/signatures`)
+  r.corps.length === 1 && r.corps[0].role === 'verificateur'
+    ? ok(`1 contresignature relue, rôle « ${r.corps[0].role} »`)
+    : ko(`signatures : ${JSON.stringify(r.corps.map((x) => x.role))}`)
+
+  r = await j('POST', '/api/processus/00000000-0000-0000-0000-000000000000/contresigner',
+    { utilisateurId: autre.id })
+  r.statut === 404 ? ok('processus inconnu → 404') : ko(`statut ${r.statut}`)
+
+  // Un processus sans point en double validation n'a rien à contresigner.
+  r = await j('GET', `/api/dossiers/${dossierK}`)
+  const sansDbl = r.corps.processus.find((p) => !(p.definition?.sections ?? [])
+    .flatMap((sc) => sc.points ?? []).some((pt) => pt.doubleValidation))
+  r = await j('POST', `/api/processus/${sansDbl.id}/contresigner`, { utilisateurId: autre.id })
+  r.statut === 409 ? ok(`« ${sansDbl.nom} » : rien à contresigner, refusé (409)`)
+    : ko(`statut ${r.statut}`)
+}
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)
