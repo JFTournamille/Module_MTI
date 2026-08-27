@@ -196,6 +196,16 @@ L'interface porte en permanence un bandeau rappelant que la double validation
 et la signature électronique **n'ont pas de valeur probante dans cet état**.
 Une démonstration ne doit pas pouvoir passer pour une mise en service.
 
+Réciproquement, `AUTH_MODE=oidc` sans fournisseur d'identité branché rend
+l'application **entièrement muette** : toutes les routes applicatives répondent
+501, seul `/api/sante` reste ouvert — c'est le seul moyen de diagnostiquer une
+instance dans cet état. Le message d'erreur nomme donc la variable et le
+remède, et pas seulement le symptôme : le texte du serveur parle du SSO, ce qui
+est exact mais envoie chercher du côté de l'intégration ou d'une base vide
+alors que la cause est une ligne d'`App Configs`. Le complément est posé dans
+`web/src/api.js` (`messageErreur`), c'est-à-dire là où l'exploitant lit
+réellement le message. Éprouvé par `npm --prefix api run test:oidc`.
+
 ### Les jalons calendaires sont typés
 
 Le type de point `date` (migration `006`) porte les jalons de la commande MTI :
@@ -384,6 +394,10 @@ npm --prefix api run test:e2e
 
 # Jeu de démonstration : insertion, idempotence, purge
 npm --prefix api run test:demo
+
+# Ce que fait l'application en AUTH_MODE=oidc sans SSO branché
+# (démarrer le serveur avec AUTH_MODE=oidc au préalable)
+npm --prefix api run test:oidc
 
 # Parcours dans un vrai navigateur
 npm --prefix web run test:navigateur

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { appel } from '../api.js'
+import { appel, messageErreur } from '../api.js'
 
 /**
  * Tableau de bord MTI : la liste des dossiers, et le point d'entrée du travail.
@@ -36,9 +36,8 @@ export const useTableauBord = defineStore('tableauBord', () => {
   const nbTermines = computed(() => dossiers.value.filter(clos).length)
   const nbAlarmes = computed(() => dossiers.value.filter((d) => d.nbAlarmes > 0).length)
 
-  async function messageDe (r, defaut) {
-    try { return (await r.json())?.erreur || defaut } catch { return defaut }
-  }
+  // Voir api.js : le 501 y porte son explication (AUTH_MODE=oidc sans SSO).
+  const messageDe = messageErreur
 
   async function charger () {
     chargement.value = true

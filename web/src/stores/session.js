@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { appel, memoriserOperateur, operateurChoisi } from '../api.js'
+import { appel, memoriserOperateur, messageErreur, operateurChoisi } from '../api.js'
 
 /**
  * Session courante : qui travaille.
@@ -21,10 +21,7 @@ export const useSession = defineStore('session', () => {
     erreur.value = ''
     try {
       const r = await appel('/api/session')
-      if (!r.ok) {
-        const corps = await r.json().catch(() => null)
-        throw new Error(corps?.erreur ?? `Session illisible (${r.status}).`)
-      }
+      if (!r.ok) throw new Error(await messageErreur(r, `Session illisible (${r.status}).`))
       const s = await r.json()
       mode.value = s.mode
       selectionPossible.value = s.selectionPossible

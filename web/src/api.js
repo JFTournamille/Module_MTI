@@ -48,3 +48,31 @@ export async function appel (url, options = {}) {
   }
   return reponse
 }
+
+/**
+ * Message d'erreur lisible pour une réponse en échec.
+ *
+ * Le cas 501 mérite son propre texte. Le serveur y répond « Authentification
+ * OIDC non configurée » — exact, mais qui envoie chercher du côté du SSO ou
+ * des données alors que la cause est une variable d'environnement : en
+ * `AUTH_MODE=oidc`, TOUTES les routes répondent 501 et l'application est
+ * entièrement muette, sans que rien ne dise que c'est une configuration et non
+ * une panne. Le diagnostic a réellement coûté un aller-retour ; il est écrit
+ * ici une fois pour toutes.
+ */
+export async function messageErreur (reponse, defaut) {
+  let message = defaut
+  try {
+    const corps = await reponse.json()
+    if (corps?.erreur) message = corps.erreur
+  } catch { /* corps vide ou non JSON : on garde le message par défaut */ }
+
+  if (reponse.status === 501) {
+    return message +
+      " L'instance tourne en AUTH_MODE=oidc, où l'API refuse toutes les " +
+      'requêtes tant que le fournisseur d\'identité n\'est pas branché. ' +
+      'Pour une démonstration, repasser en AUTH_MODE=dev avec ' +
+      'NODE_ENV=development.'
+  }
+  return message
+}

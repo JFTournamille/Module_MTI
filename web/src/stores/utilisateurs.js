@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { appel } from '../api.js'
+import { appel, messageErreur } from '../api.js'
 import { useSession } from './session.js'
 
 /**
@@ -22,13 +22,8 @@ export const useUtilisateurs = defineStore('utilisateurs', () => {
   const actifs = computed(() => liste.value.filter((u) => u.actif))
   const inactifs = computed(() => liste.value.filter((u) => !u.actif))
 
-  /** Lecture du corps d'erreur de l'API, qui porte toujours un champ `erreur`. */
-  async function messageDe (reponse, defaut) {
-    try {
-      const corps = await reponse.json()
-      return corps?.erreur || defaut
-    } catch { return defaut }
-  }
+  /** Lecture du corps d'erreur de l'API : voir api.js, qui explique aussi le 501. */
+  const messageDe = messageErreur
 
   async function charger () {
     chargement.value = true

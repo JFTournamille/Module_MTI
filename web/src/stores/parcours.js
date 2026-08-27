@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
-import { appel } from '../api.js'
+import { appel, messageErreur } from '../api.js'
 import { useSession } from './session.js'
 
 /**
@@ -162,12 +162,9 @@ export const useParcours = defineStore('parcours', () => {
     try { return localStorage.getItem(CLE_DOSSIER) || null } catch { return null }
   }
 
-  async function messageDe (reponse, defaut) {
-    try {
-      const corps = await reponse.json()
-      return corps?.erreur || defaut
-    } catch { return defaut }
-  }
+  // Délègue à api.js : le cas 501 (AUTH_MODE=oidc sans SSO branché) y porte son
+  // explication, et il ne doit pas diverger d'un écran à l'autre.
+  const messageDe = messageErreur
 
   /** Crée un dossier et l'ouvre. La référence est libre mais obligatoire. */
   async function creerDossier (reference, codeModele = 'PARCOURS_CART_AUTOLOGUE') {
