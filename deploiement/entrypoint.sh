@@ -113,27 +113,32 @@ if [ -n "${DATABASE_URL_ADMIN:-}" ] || [ -n "${ADMIN_MOT_DE_PASSE:-}" ]; then
   fi
 fi
 
-# ── Patients fictifs au démarrage ────────────────────────────────────────────
+# ── Jeu de démonstration au démarrage ────────────────────────────────────────
 #
 # Même logique que l'installation : sans accès shell, la variable est le seul
 # moyen de déclencher l'insertion. seed-demo.js porte ses propres garde-fous
-# (source « DEMO », refus en production sans SEED_DEMO=oui).
+# (source « DEMO », préfixes « demo. » et « DEMO-MTI- », refus en production
+# sans SEED_DEMO=oui).
 if [ "${SEED_DEMO:-}" = "oui" ]; then
-  journal "SEED_DEMO=oui : insertion des patients fictifs"
+  journal "SEED_DEMO=oui : insertion du jeu de démonstration"
   if node /app/src/seed-demo.js; then
-    journal "⚠ Patients fictifs en base. À purger avant mise en service :"
-    journal "  retirer SEED_DEMO, ajouter PURGER_DEMO=oui, puis redéployer."
+    journal "⚠ Jeu de démonstration en base : dossiers, patients ET comptes."
+    journal "  Un dossier fictif est indiscernable d'un dossier réel dans le"
+    journal "  tableau de bord. À purger avant mise en service : retirer"
+    journal "  SEED_DEMO, ajouter PURGER_DEMO=oui, puis redéployer."
   else
-    journal "✗ insertion des patients fictifs en échec (voir ci-dessus)."
+    journal "✗ insertion du jeu de démonstration en échec (voir ci-dessus)."
     journal "  Le démarrage continue : ce n'est pas bloquant."
   fi
 fi
 
 # Purge, par le même canal.
 if [ "${PURGER_DEMO:-}" = "oui" ]; then
-  journal "PURGER_DEMO=oui : suppression des patients fictifs"
+  journal "PURGER_DEMO=oui : suppression du jeu de démonstration"
   if node /app/src/seed-demo.js --supprimer; then
-    journal "✓ patients fictifs supprimés — retirer PURGER_DEMO de la configuration"
+    journal "✓ jeu de démonstration supprimé — retirer PURGER_DEMO de la configuration."
+    journal "  Les comptes fictifs auteurs de saisies sont DÉSACTIVÉS, pas effacés :"
+    journal "  le journal d'audit garderait sinon des traces sans auteur résoluble."
   else
     journal "✗ purge refusée (voir ci-dessus). Le démarrage continue."
   fi

@@ -451,7 +451,7 @@ try {
     }
 
     await client.query('COMMIT')
-    console.log(`✓ ${PATIENTS.length} patients fictifs (source « ${SOURCE} »)`)
+    console.log(`✓ ${PATIENTS.length} patient(s) fictif(s) (source « ${SOURCE} »)`)
     console.log(`✓ ${COMPTES.length} comptes fictifs (préfixe « ${PREFIXE_COMPTE} »)`)
     console.log(`✓ ${crees} dossier(s) fictif(s) créé(s)` +
       (existants ? `, ${existants} déjà présent(s) et laissé(s) tels quels` : '') +

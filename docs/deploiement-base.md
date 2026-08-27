@@ -293,9 +293,11 @@ erreur** tant qu'il est actif.
 UPDATE mti.utilisateur SET actif = false WHERE identifiant = 'mdurand';
 ```
 
-### 7. Patients fictifs (recette uniquement)
+### 7. Jeu de démonstration (recette uniquement)
 
-Pour éprouver la recherche patient sans annuaire SIH branché.
+Dix dossiers, dix patients et dix comptes — de quoi montrer l'application
+peuplée sans saisir un parcours en séance. Détail de ce que contient le jeu :
+[architecture.md](architecture.md#le-jeu-de-démonstration).
 
 **Sans accès shell** — ajouter dans *App Configs* :
 
@@ -320,15 +322,18 @@ docker exec -e SEED_DEMO=oui $(docker ps -qf name=srv-captain--module-mti) \
   node src/seed-demo.js
 ```
 
-Huit patients, portant `source = 'DEMO'` et des références `DEMO-…`, donc
-identifiables par requête.
+Tout est identifiable par requête : patients `source = 'DEMO'`, comptes
+préfixés `demo.`, dossiers préfixés `DEMO-MTI-`.
 
 En `NODE_ENV=production`, l'insertion **exige** `SEED_DEMO=oui` : un oubli ne
-suffit pas. Leur présence est signalée comme défaut de configuration par
-l'installateur et par `/api/sante`, tant qu'ils n'ont pas été purgés.
+suffit pas. La présence de ces données est signalée comme défaut de
+configuration par l'installateur et par `/api/sante`, tant qu'elles n'ont pas
+été purgées — et les trois natures sont comptées séparément, une purge
+partielle ne passe donc pas pour une purge.
 
-> **À purger avant toute mise en service** : un patient fictif pourrait être
-> rattaché à un dossier réel.
+> **À purger avant toute mise en service.** Le plus trompeur des trois n'est
+> pas le patient mais le **dossier** : rien ne le distingue d'un dossier réel
+> dans le tableau de bord.
 >
 > Par variable : `PURGER_DEMO=oui` puis `Save & Update`.
 > Par shell :
@@ -338,9 +343,77 @@ l'installateur et par `/api/sante`, tant qu'ils n'ont pas été purgés.
 >   node src/seed-demo.js --supprimer
 > ```
 >
-> La purge refuse de s'exécuter si un patient fictif est déjà rattaché à un
-> dossier : elle laisserait ce dossier sans patient. Traiter ces dossiers
-> d'abord — ce sont probablement des essais.
+> Deux refus volontaires de la purge :
+>
+> - elle **s'arrête** si un patient fictif est déjà rattaché à un dossier
+>   réel : elle laisserait ce dossier sans patient. Traiter ces dossiers
+>   d'abord — ce sont probablement des essais ;
+> - elle **désactive au lieu d'effacer** tout compte fictif qui figure au
+>   journal d'audit ou qui est auteur d'une saisie. `mti.audit` survit à la
+>   purge — il n'est pas effaçable, par construction — et ne porte aucune clé
+>   étrangère vers `utilisateur` : effacer un tel compte ne casserait rien
+>   d'apparent, mais laisserait des centaines de traces dont l'auteur n'est plus
+>   qu'un UUID que rien ne résout.
+
+### 7 bis. Changer le mot de passe de `mti_app`
+
+À faire si le mot de passe a pu être lu par quelqu'un d'autre — et **il a pu
+l'être si l'installateur l'a un jour généré lui-même** : il l'affichait alors
+dans les logs du conteneur, que l'hébergeur conserve. Un mot de passe apparu
+dans des logs est compromis : il se change, il ne s'efface pas.
+
+*(Depuis, un mot de passe **fourni** dans `MTI_APP_PASSWORD` n'est plus
+journalisé ; un mot de passe généré l'est toujours, avec son avertissement —
+il faut bien un moyen de le lire une première fois.)*
+
+Un seul déploiement suffit, parce que l'installateur tourne **avant** l'API :
+il change le mot de passe dans la base, puis l'API démarre avec la nouvelle
+valeur.
+
+1. Générer un mot de passe sans caractère à encoder dans une URL :
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+   ```
+
+   Ne pas le coller dans un ticket, un courriel ou un dépôt : il ne doit
+   exister que dans *App Configs*.
+
+2. Dans *App Configs* → **Bulk Edit**, avec la **même** valeur aux deux
+   endroits :
+
+   ```
+   DATABASE_URL=postgresql://mti_app:LE_NOUVEAU@srv-captain--mti-db:5432/mti
+   MTI_APP_PASSWORD=LE_NOUVEAU
+   ADMIN_HOTE=srv-captain--mti-db
+   ADMIN_UTILISATEUR=postgres
+   ADMIN_MOT_DE_PASSE=<mot de passe root de mti-db>
+   ADMIN_BASE=mti
+   NODE_ENV=production
+   AUTH_MODE=oidc
+   ```
+
+3. `Save & Update`. Dans les logs, attendre :
+
+   ```
+   ✓ mot de passe de mti_app défini
+   ✓ Base opérationnelle.
+   ```
+
+4. **Retirer `MTI_APP_PASSWORD` et les quatre `ADMIN_*`**, garder
+   `DATABASE_URL`. `Save & Update`. Un compte superutilisateur laissé dans la
+   configuration de l'app annule le cloisonnement du journal d'audit, qui est
+   toute la raison d'être du rôle `mti_app` restreint.
+
+5. Vérifier : `GET /api/sante` doit répondre `"joignable": true` et
+   `"cloisonnementAudit": "verifie"`. Si l'API ne joint plus la base, les deux
+   valeurs de l'étape 2 ne concordaient pas — refaire l'étape avec la même
+   chaîne exacte.
+
+> **`mti_app` appartient au cluster, pas à la base.** Si une autre base
+> (recette) tourne sur la même instance PostgreSQL avec ce rôle, le changement
+> vaut aussi pour elle : reporter la nouvelle valeur dans *toutes* les apps
+> concernées, sinon l'une d'elles cessera de joindre sa base.
 
 ### 8. Sécuriser le tableau de bord CapRover
 
