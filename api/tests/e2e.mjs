@@ -469,8 +469,14 @@ r.corps.indexIdentificationPatient === iFab
 // seraient intriables et incomparables.
 const pointsCommande = r.corps.processus[iCommande].sections.flatMap((sc) => sc.points)
 const jalons = pointsCommande.filter((pt) => pt.type === 'date').map((pt) => pt.libelle)
-jalons.length === 3 ? ok(`3 jalons de type « date » : ${jalons.join(' · ')}`)
+/* Deux jalons, plus trois : la date d'aphérèse a quitté la commande en v4. Elle
+   vit en en-tête du dossier, et la laisser ici en aurait fait un doublon dont
+   rien ne dit lequel fait foi. */
+jalons.length === 2 ? ok(`2 jalons de type « date » : ${jalons.join(' · ')}`)
   : ko(`jalons date : ${JSON.stringify(jalons)}`)
+jalons.some((l) => /phérèse/i.test(l))
+  ? ko(`la date d'aphérèse est encore un point de la commande : ${jalons}`)
+  : ok("la date d'aphérèse ne figure plus dans la commande")
 
 // Le type doit être accepté à l'écriture ET compté à la validation, sinon un
 // jalon obligatoire vide passerait — plus grave que de le refuser.

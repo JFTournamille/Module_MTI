@@ -183,8 +183,12 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .ids-lm{font-size:11px;padding:2px 5px;width:104px;border:1px dashed #8a72c8;
   border-radius:3px;background:#f3eeff;color:#4a3580;font-style:italic;}
 .ids-i:disabled,.ids-lm:disabled{background:#efeaf8;color:#6a5a8a;font-style:normal;}
-.ids-p,.ids-x{font-size:13px;line-height:1;width:20px;height:20px;cursor:pointer;
+.ids-x{font-size:13px;line-height:1;width:20px;height:20px;cursor:pointer;
   border:none;border-radius:3px;color:#fff;background:#6045a0;}
+/* « + N° » porte un libellé : une largeur fixe de 20px le tronquerait. */
+.ids-p{font-size:11px;line-height:1;height:20px;padding:0 7px;cursor:pointer;
+  border:none;border-radius:3px;color:#fff;background:#6045a0;font-family:inherit;
+  white-space:nowrap;}
 .ids-x{background:#8a6a6a;}
 .ids-p:hover{background:#7a5ac0;}
 
@@ -269,3 +273,14 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .cfg-x{font-size:12px;line-height:1;width:18px;height:18px;cursor:pointer;border-radius:2px;
   border:1px solid #e8c0c0;background:#fff;color:#c62828;}
 .cfg-x:disabled{opacity:.35;cursor:default;}
+
+/* ── Filtres par colonne du tableau de bord ─────────────────────────────── */
+table.adm-t thead tr.tb-filtres{background:#f6f3ff;}
+tr.tb-filtres th{padding:4px 6px;font-weight:normal;}
+tr.tb-filtres input,tr.tb-filtres select{width:100%;min-width:0;font-size:11px;
+  padding:2px 5px;border:1px solid #c8b8e8;border-radius:2px;color:#3a2870;
+  background:#fff;font-family:inherit;}
+tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
+/* Un total qui ne correspond pas à l'écran est trompeur : quand un filtre est
+   posé, le dire explicitement. */
+.tb-restreint{font-size:11px;color:#e65100;font-weight:bold;}

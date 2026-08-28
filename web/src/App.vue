@@ -140,8 +140,10 @@ const blocages = computed(() => {
             <button v-if="!store.lectureSeule" class="ids-x" title="Retirer ce numéro"
                     @click="store.retirerIdentifiant(i); store.enregistrerIdentifiants()">−</button>
           </template>
+          <!-- « + N° » et non « + » seul : le bouton doit dire ce qu'il ajoute,
+               il est entouré d'autres champs. -->
           <button v-if="!store.lectureSeule" class="ids-p" title="Ajouter un numéro patient"
-                  @click="store.ajouterIdentifiant()">+</button>
+                  @click="store.ajouterIdentifiant()">+&nbsp;N°</button>
         </div>
 
         <div v-if="store.dossierId" class="presc-jalon">

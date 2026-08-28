@@ -209,8 +209,10 @@ réellement le message. Éprouvé par `npm --prefix api run test:oidc`.
 ### L'aphérèse est un jalon, plus un processus
 
 Le parcours v2 portait un processus « Aphérèse / leucaphérèse » à cinq points de
-contrôle. La v3 le retire : à ce stade du projet, l'aphérèse n'est **qu'une date,
-facultative**. Elle vit donc en jalon d'en-tête du dossier
+contrôle, et la commande portait en plus un point « Date d'aphérèse ». La v3
+retire le processus, la v4 le point de la commande : à ce stade du projet,
+l'aphérèse n'est **qu'une date, facultative**, et deux endroits pour la saisir
+n'auraient rien dit sur lequel fait foi. Elle vit donc en jalon d'en-tête du dossier
 (`apherese_faite` / `date_apherese`), comme la prescription, avec la même
 contrainte de base : une date sans jalon posé est refusée
 (`dossier_date_apherese_exige_jalon`), l'inverse est permis — le jalon peut
@@ -350,6 +352,29 @@ structure à défaire ensuite.
 départ de tout dossier, et il n'y a pas de tiers état à distinguer. Le jalon
 s'enregistre au clic, sans attendre un « Enregistrer » — un changement d'onglet
 le perdrait — et son passage est tracé avec son auteur, comme le reste.
+
+### Les filtres du tableau de bord sont côté serveur
+
+Chaque en-tête de colonne porte son filtre — n° de dossier, produit, n° de lot,
+patient, prescription, étape en cours, statut. Tous partent au **serveur**, et
+c'est le point à ne pas retoucher : la liste est plafonnée à 200 lignes, et
+filtrer une liste déjà tronquée cacherait **sans le dire** les dossiers
+correspondants situés au-delà du plafond. Un filtre qui ment par omission est
+pire que pas de filtre.
+
+Deux conséquences :
+
+- La liste des étapes proposées est lue des **dossiers**, pas du modèle actif
+  (`GET /api/dossiers/etapes`). Un dossier ouvert sous une version précédente
+  porte des processus que le modèle ne connaît plus — l'aphérèse en est
+  l'exemple — et une liste tirée du modèle actif les rendrait infiltrables.
+- Les champs texte passent par un chargement différé de 300 ms. Un appel par
+  frappe était déjà limite avec une seule zone de recherche ; avec quatre champs
+  de filtre, c'était intenable.
+
+Quand un filtre est posé, le bandeau le dit : les compteurs des tuiles portent
+sur ce qui est affiché, et un total qui ne correspond pas à l'écran est
+trompeur.
 
 ### Le tableau de bord est le point d'entrée
 

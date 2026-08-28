@@ -647,12 +647,28 @@ rangCommande >= 0 && rangCommande < rangReception
   ? ok(`commande MTI au rang ${rangCommande + 1}, avant la réception (${rangReception + 1})`)
   : ko(`rangs : commande ${rangCommande}, réception ${rangReception}`)
 
-// Les jalons sont de vraies dates, pas du texte libre : sans quoi ils seraient
-// intriables et incomparables.
+/* Les jalons sont de vraies dates, pas du texte libre : sans quoi ils seraient
+   intriables et incomparables. Le nombre attendu est LU DU MODÈLE et non codé
+   en dur : il était fixé à « 3 au moins », et le retrait de la date d'aphérèse
+   de la commande en v4 l'a fait tomber à 2 — la suite a cassé sur une valeur
+   qui n'avait aucune raison d'être stable. */
+const pointsDateCommande = (defModele?.processus ?? [])
+  .find((p) => p.code === 'COMMANDE_MTI')?.sections
+  .flatMap((sc) => sc.points ?? [])
+  .filter((pt) => pt.type === 'date').length ?? 0
 const champsDate = page.locator('.std-ir input[type=date], .chk input[type=date]')
 const nbDates = await champsDate.count()
-nbDates >= 3 ? ok(`${nbDates} champ(s) de saisie de date`)
-  : ko(`${nbDates} champ(s) date au lieu de 3 au moins`)
+if (pointsDateCommande > 0 && nbDates === pointsDateCommande) {
+  ok(`${nbDates} champ(s) de saisie de date, autant que le modèle en déclare`)
+} else {
+  ko(`${nbDates} champ(s) date à l'écran, ${pointsDateCommande} au modèle`)
+}
+// L'aphérèse ne doit plus figurer dans la commande : elle est en en-tête.
+const libellesCommande = await page.locator('.std-lbl, .chk .clbl').allTextContents()
+libellesCommande.some((l) => /phérèse/i.test(l))
+  ? ko(`la commande porte encore un point d'aphérèse : ${
+      libellesCommande.filter((l) => /phérèse/i.test(l))}`)
+  : ok("la commande ne porte plus de point d'aphérèse")
 
 // Un processus « à venir » est en lecture seule, et rien ne le faisait avancer :
 // il faut l'ouvrir. C'est le mécanisme qui rend le parcours praticable.
@@ -1039,7 +1055,75 @@ await page.locator('.cfg-mod').count() === 0
   ? ok('abandonner rend le brouillon à la version en service')
   : ko('le brouillon reste marqué modifié après abandon')
 
-console.log('\n25. Console du navigateur et réseau')
+/* ── 25. Filtres par colonne du tableau de bord ──
+   Le point qui compte : ces filtres partent au SERVEUR. La liste est plafonnée
+   à 200 lignes ; filtrer côté client cacherait sans le dire les dossiers
+   correspondants situés au-delà du plafond. On le vérifie en comparant le
+   compte de l'écran à celui de l'API interrogée directement. */
+console.log('\n25. Filtres par colonne du tableau de bord')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1300)
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1400)
+const totalSansFiltre = await page.locator('tr.tb-ligne').count()
+totalSansFiltre > 0 ? ok(`${totalSansFiltre} dossier(s) sans filtre`)
+  : ko('aucun dossier listé')
+
+const nbFiltres = await page.locator('tr.tb-filtres th input, tr.tb-filtres th select').count()
+nbFiltres >= 6 ? ok(`${nbFiltres} filtres de colonne présents`)
+  : ko(`${nbFiltres} filtre(s) de colonne`)
+
+// Filtre texte sur le n° de dossier.
+await page.locator('tr.tb-filtres input').first().fill('DEMO-MTI-000')
+await page.waitForTimeout(1500)
+const parReference = await page.locator('tr.tb-ligne').count()
+parReference > 0 && parReference <= totalSansFiltre
+  ? ok(`filtre n° de dossier : ${parReference} ligne(s)`)
+  : ko(`filtre n° de dossier : ${parReference} ligne(s)`)
+
+// Le bandeau doit dire que la liste est restreinte : un total qui ne
+// correspond pas à l'écran est trompeur.
+await page.locator('.tb-restreint').count() === 1
+  ? ok('le bandeau signale une liste restreinte')
+  : ko('rien ne signale que la liste est filtrée')
+
+// Filtre étape : comparé à ce que rend l'API, pour prouver qu'il est serveur.
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1400)
+const etapes = await page.getByLabel('Filtrer par étape en cours')
+  .locator('option').allTextContents()
+const etapeChoisie = etapes.find((e) => e && e !== 'Toutes')
+if (!etapeChoisie) {
+  ko('aucune étape proposée au filtre')
+} else {
+  await page.getByLabel('Filtrer par étape en cours').selectOption({ label: etapeChoisie })
+  await page.waitForTimeout(1500)
+  const ecran = await page.locator('tr.tb-ligne').count()
+  const api = await fetch(`${base}/api/dossiers?etape=${encodeURIComponent(etapeChoisie)}`)
+    .then((r) => r.json()).then((l) => l.length).catch(() => -1)
+  ecran === api
+    ? ok(`filtre « ${etapeChoisie} » : ${ecran} ligne(s), autant que l'API`)
+    : ko(`écran ${ecran} ligne(s), API ${api} — le filtre n'est pas celui du serveur`)
+}
+
+// Deux filtres se combinent, ils ne se remplacent pas.
+await page.getByLabel('Filtrer par prescription').selectOption('oui')
+await page.waitForTimeout(1500)
+const combine = await page.locator('tr.tb-ligne').count()
+combine <= (await page.locator('tr.tb-ligne').count())
+  ? ok(`étape + prescription : ${combine} ligne(s)`)
+  : ko('la combinaison de deux filtres ne restreint pas')
+
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1500)
+await page.locator('tr.tb-ligne').count() === totalSansFiltre
+  ? ok('« Réinitialiser » vide tous les filtres de colonne')
+  : ko(`${await page.locator('tr.tb-ligne').count()} ligne(s) après réinitialisation`)
+await page.locator('.tb-restreint').count() === 0
+  ? ok('le bandeau « liste restreinte » disparaît')
+  : ko('le bandeau subsiste sans filtre')
+
+console.log('\n26. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

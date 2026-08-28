@@ -24,6 +24,16 @@ export const useTableauBord = defineStore('tableauBord', () => {
   const recherche = ref('')
   const filtreProduit = ref('')
   const filtreStatut = ref('')
+  /* Filtres par colonne. Ils partent au SERVEUR : la liste est plafonnée à 200
+     lignes, et filtrer une liste déjà tronquée cacherait sans le dire les
+     dossiers correspondants situés au-delà du plafond. */
+  const filtreReference = ref('')
+  const filtreLot = ref('')
+  const filtrePatient = ref('')
+  const filtreEtape = ref('')
+  const filtrePrescription = ref('')
+  /** Étapes réellement présentes en base, pour peupler le filtre d'étape. */
+  const etapes = ref([])
 
   const compte = (code) => dossiers.value.filter((d) => d.statutAffiche === code).length
   /* Les compteurs portent sur ce qui est affiché : filtrer puis lire un total
@@ -47,16 +57,26 @@ export const useTableauBord = defineStore('tableauBord', () => {
       if (recherche.value.trim()) params.set('q', recherche.value.trim())
       if (filtreProduit.value) params.set('produit', filtreProduit.value)
       if (filtreStatut.value) params.set('statut', filtreStatut.value)
+      if (filtreReference.value.trim()) params.set('reference', filtreReference.value.trim())
+      if (filtreLot.value.trim()) params.set('lot', filtreLot.value.trim())
+      if (filtrePatient.value.trim()) params.set('patient', filtrePatient.value.trim())
+      if (filtreEtape.value) params.set('etape', filtreEtape.value)
+      if (filtrePrescription.value) params.set('prescription', filtrePrescription.value)
 
-      const [rD, rP, rM] = await Promise.all([
+      const [rD, rP, rM, rE] = await Promise.all([
         appel('/api/dossiers?' + params.toString()),
         produits.value.length ? null : appel('/api/produits'),
-        modeles.value.length ? null : appel('/api/modeles')
+        modeles.value.length ? null : appel('/api/modeles'),
+        appel('/api/dossiers/etapes')
       ])
       if (!rD.ok) throw new Error(await messageDe(rD, `Liste illisible (${rD.status}).`))
       dossiers.value = await rD.json()
       if (rP?.ok) produits.value = await rP.json()
       if (rM?.ok) modeles.value = await rM.json()
+      /* Les étapes sont relues à chaque chargement, pas mises en cache : la
+         liste change dès qu'un processus est validé quelque part, et un filtre
+         qui ne propose plus l'étape où l'on se trouve est pire qu'inutile. */
+      if (rE?.ok) etapes.value = await rE.json()
       indisponible.value = false
     } catch (e) {
       indisponible.value = true
@@ -71,8 +91,29 @@ export const useTableauBord = defineStore('tableauBord', () => {
     recherche.value = ''
     filtreProduit.value = ''
     filtreStatut.value = ''
+    filtreReference.value = ''
+    filtreLot.value = ''
+    filtrePatient.value = ''
+    filtreEtape.value = ''
+    filtrePrescription.value = ''
     return charger()
   }
+
+  /* Un chargement par frappe saturait l'API : quatre champs de filtre en plus
+     rendaient la chose intenable. Le dernier appel gagne, après un temps mort
+     court — assez pour ne pas gêner la frappe, assez pour n'envoyer qu'une
+     requête par mot saisi. */
+  let minuteur = null
+  function chargerDiffere (delai = 300) {
+    if (minuteur) clearTimeout(minuteur)
+    minuteur = setTimeout(() => { minuteur = null; charger() }, delai)
+  }
+
+  /** Vrai dès qu'un filtre est posé — sert à signaler une liste restreinte. */
+  const filtreActif = computed(() => Boolean(
+    recherche.value.trim() || filtreProduit.value || filtreStatut.value ||
+    filtreReference.value.trim() || filtreLot.value.trim() ||
+    filtrePatient.value.trim() || filtreEtape.value || filtrePrescription.value))
 
   /** Crée un dossier en un seul appel : produit et lot partent avec. */
   async function demarrerScenario ({ reference, codeModele, produitId, numeroLot }) {
@@ -98,6 +139,8 @@ export const useTableauBord = defineStore('tableauBord', () => {
     dossiers, produits, modeles, chargement, erreur, indisponible,
     recherche, filtreProduit, filtreStatut,
     nbEnCours, nbAttente, nbTermines, nbAlarmes,
-    charger, reinitialiser, demarrerScenario
+    filtreReference, filtreLot, filtrePatient, filtreEtape, filtrePrescription,
+    etapes, filtreActif,
+    charger, chargerDiffere, reinitialiser, demarrerScenario
   }
 })

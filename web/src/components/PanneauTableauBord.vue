@@ -75,13 +75,12 @@ const dateCourte = (v) => v
   <div class="adm">
     <div class="adm-bar">
       <label for="tb-q" style="font-weight:bold;color:#4a3880;">Rechercher :</label>
-      <input id="tb-q" type="text" v-model="store.recherche" @input="store.charger()"
+      <input id="tb-q" type="text" v-model="store.recherche" @input="store.chargerDiffere()"
              placeholder="Patient, produit, n° de lot, n° de dossier…" style="width:280px;"/>
-      <label for="tb-prod">Produit :</label>
-      <select id="tb-prod" v-model="store.filtreProduit" @change="store.charger()">
-        <option value="">Tous les produits</option>
-        <option v-for="p in store.produits" :key="p.id" :value="p.id">{{ p.denomination }}</option>
-      </select>
+      <!-- Le choix du produit a rejoint la ligne de filtres, sous l'en-tête de
+           sa colonne : deux commandes pour le même critère invitent à se
+           demander laquelle gagne. -->
+      <span v-if="store.filtreActif" class="tb-restreint">liste restreinte par un filtre</span>
       <button class="adm-b" @click="filtreAlarme = false; store.reinitialiser()">Réinitialiser</button>
       <button class="adm-b adm-b-p" style="margin-left:auto;"
               @click="formulaireOuvert = !formulaireOuvert">
@@ -169,6 +168,62 @@ const dateCourte = (v) => v
             <th style="width:150px;">Statut</th>
             <th style="width:110px;">Dernière activité</th>
             <th style="width:34px;"></th>
+          </tr>
+          <!-- Ligne de filtres. Chacun part au serveur : la liste est plafonnée
+               à 200 lignes, filtrer ici cacherait sans le dire les dossiers
+               correspondants situés au-delà du plafond. -->
+          <tr class="tb-filtres">
+            <th>
+              <input type="text" placeholder="Filtrer…" aria-label="Filtrer par n° de dossier"
+                     v-model="store.filtreReference" @input="store.chargerDiffere()">
+            </th>
+            <th>
+              <select aria-label="Filtrer par produit"
+                      v-model="store.filtreProduit" @change="store.charger()">
+                <option value="">Tous</option>
+                <option v-for="p in store.produits" :key="p.id" :value="p.id">
+                  {{ p.denomination }}
+                </option>
+              </select>
+            </th>
+            <th>
+              <input type="text" placeholder="Filtrer…" aria-label="Filtrer par n° de lot"
+                     v-model="store.filtreLot" @input="store.chargerDiffere()">
+            </th>
+            <th>
+              <input type="text" placeholder="Nom ou référence…" aria-label="Filtrer par patient"
+                     v-model="store.filtrePatient" @input="store.chargerDiffere()">
+            </th>
+            <th>
+              <select aria-label="Filtrer par prescription"
+                      v-model="store.filtrePrescription" @change="store.charger()">
+                <option value="">Tous</option>
+                <option value="oui">✓ faite</option>
+                <option value="non">○ non</option>
+              </select>
+            </th>
+            <th>
+              <!-- Les étapes viennent des dossiers, pas du modèle actif : un
+                   dossier ouvert sous une version précédente porte des
+                   processus que le modèle ne connaît plus. -->
+              <select aria-label="Filtrer par étape en cours"
+                      v-model="store.filtreEtape" @change="store.charger()">
+                <option value="">Toutes</option>
+                <option v-for="e in store.etapes" :key="e" :value="e">{{ e }}</option>
+              </select>
+            </th>
+            <th></th>
+            <th>
+              <select aria-label="Filtrer par statut"
+                      v-model="store.filtreStatut" @change="store.charger()">
+                <option value="">Tous</option>
+                <option value="attente">En attente d'allocation</option>
+                <option value="en_cours">En cours</option>
+                <option value="valide">Clos</option>
+              </select>
+            </th>
+            <th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
