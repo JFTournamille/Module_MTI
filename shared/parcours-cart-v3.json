@@ -1,0 +1,763 @@
+{
+  "code": "PARCOURS_CART_AUTOLOGUE",
+  "version": 3,
+  "libelle": "Parcours MTI — CAR-T autologue",
+  "description": "Parcours CAR-T autologue. L'aphérèse ne figure plus comme processus : ramenée à ce qu'elle est à ce stade du projet — une date facultative — elle vit en jalon d'en-tête du dossier (dossier.apherese_faite / date_apherese), au même titre que la prescription. La version 2 reste consultable : les dossiers ouverts sous elle conservent leur définition figée, aphérèse comprise.",
+  "indexIdentificationPatient": 7,
+  "commentaireIdentification": "Avant la mise en fabrication (index 7), le parcours est anonyme : aucune donnée identifiante n'est requise sauf préallocation explicite.",
+  "processus": [
+    {
+      "n": 1,
+      "code": "ACCES_TRAITEMENT",
+      "nom": "Demande d'accès au traitement",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Décision et autorisation",
+          "points": [
+            {
+              "libelle": "Décision de RCP tracée au dossier",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date de la RCP",
+              "type": "date",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Éligibilité au protocole vérifiée",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Accord de prise en charge / autorisation d'accès",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Compte rendu de RCP joint au dossier",
+              "type": "photo",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "code": "COMMANDE_MTI",
+      "nom": "Commande MTI",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Jalons cliniques",
+          "points": [
+            {
+              "libelle": "Date d'aphérèse",
+              "sousLibelle": "Si applicable — produit autologue",
+              "type": "date",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Date de lymphodéplétion",
+              "sousLibelle": "Si applicable",
+              "type": "date",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Date de réception prévue du produit",
+              "type": "date",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Créneau réservé au planning de réception",
+              "sousLibelle": "Planning de réception — attendu en phase 2",
+              "type": "ouinon",
+              "obligatoire": false
+            }
+          ]
+        },
+        {
+          "titre": "2 — Commande fabricant",
+          "points": [
+            {
+              "libelle": "N° de commande fabricant",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Créneau de fabrication confirmé par le fabricant",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Accusé de commande archivé",
+              "type": "photo",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Transmission au pharmacien référent",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "code": "RATTACHEMENT",
+      "nom": "Rattachement patient / prescription",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Contrôles de cohérence",
+          "points": [
+            {
+              "libelle": "Prescription réalisée",
+              "sousLibelle": "Le jalon du dossier se règle dans l'en-tête",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Concordance produit prescrit / produit du dossier",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Identité patient vérifiée si préallocation",
+              "sousLibelle": "Sans objet tant que le dossier est en attente d'allocation",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Rattachement enregistré",
+              "type": "auto",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "code": "RECEPTION",
+      "nom": "Réception (+/- préallocation)",
+      "gabarit": "reception",
+      "externe": false,
+      "preallocationPossible": true,
+      "sections": [
+        {
+          "titre": "1 — Réception du conteneur",
+          "points": [
+            {
+              "num": "1.1",
+              "libelle": "Vérification intégrité du conteneur (pas de choc, fuite, humidité)",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "1.2",
+              "libelle": "Concordance étiquetage produit / bon de livraison",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false,
+              "doubleValidation": true
+            },
+            {
+              "num": "1.3",
+              "libelle": "Alarme température SMART PACK I — seuil < −150 °C",
+              "sousLibelle": "Relever la valeur affichée sur l'enregistreur",
+              "type": "valeur",
+              "obligatoire": true,
+              "multi": false,
+              "seuil": -150,
+              "doubleValidation": true
+            },
+            {
+              "num": "1.4",
+              "libelle": "Alarme température SMART PACK II — seuil < −150 °C",
+              "sousLibelle": "Si second enregistreur présent",
+              "type": "valeur",
+              "obligatoire": false,
+              "multi": false,
+              "seuil": -150
+            },
+            {
+              "num": "1.5",
+              "libelle": "Vérification visuelle état externe conteneur",
+              "sousLibelle": "Photo obligatoire — à prendre avant ouverture",
+              "type": "photo",
+              "obligatoire": true,
+              "multi": "photo"
+            },
+            {
+              "num": "1.6",
+              "libelle": "Vérification accès site dédié fabricant (tracking expédition)",
+              "type": "ouinon",
+              "obligatoire": false,
+              "multi": false
+            }
+          ]
+        },
+        {
+          "titre": "2 — Vérification cuves d'azote",
+          "points": [
+            {
+              "num": "2.1",
+              "libelle": "Niveau azote liquide cuve ≥ seuil minimum",
+              "type": "valeur",
+              "obligatoire": true,
+              "multi": "cuve"
+            },
+            {
+              "num": "2.2",
+              "libelle": "Température cuve d'azote — seuil < −160 °C",
+              "sousLibelle": "Relever la valeur affichée sur le contrôleur",
+              "type": "valeur",
+              "obligatoire": true,
+              "multi": "cuve",
+              "seuil": -160
+            },
+            {
+              "num": "2.3",
+              "libelle": "Alarme température cuve activée et fonctionnelle",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": "cuve"
+            }
+          ]
+        },
+        {
+          "titre": "3 — Extraction produit du dryshipper",
+          "points": [
+            {
+              "num": "3.1",
+              "libelle": "Minuteur T0 — démarré à l'extraction du dryshipper",
+              "sousLibelle": "Le délai maximal d'administration est compté depuis T0",
+              "type": "timer",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "3.2",
+              "libelle": "Aspect de la poche produit — absence de particules / coloration anormale",
+              "sousLibelle": "Photo avant et après extraction",
+              "type": "photo",
+              "obligatoire": true,
+              "multi": "photo"
+            },
+            {
+              "num": "3.3",
+              "libelle": "Concordance N° lot étiquette produit / documents",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false,
+              "doubleValidation": true
+            },
+            {
+              "num": "3.4",
+              "libelle": "Vérification date de péremption non dépassée",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false
+            }
+          ]
+        },
+        {
+          "titre": "4 — Vérification documents (CoA / BPP)",
+          "points": [
+            {
+              "num": "4.1",
+              "libelle": "Certificat de conformité (CoA) présent et complet",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "4.2",
+              "libelle": "Numération cellulaire ≥ seuil prescrit",
+              "sousLibelle": "Valeur CoA à reporter",
+              "type": "valeur",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "4.3",
+              "libelle": "Viabilité cellulaire ≥ seuil prescrit",
+              "sousLibelle": "Valeur CoA à reporter",
+              "type": "valeur",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "4.4",
+              "libelle": "Concordance identité patient / étiquette produit (2 concordances)",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false,
+              "doubleValidation": true
+            }
+          ]
+        },
+        {
+          "titre": "5 — Stockage cryogénique",
+          "points": [
+            {
+              "num": "5.1",
+              "libelle": "Identification emplacement dans la cuve d'azote",
+              "sousLibelle": "Indiquer cuve / rack / position",
+              "type": "texte",
+              "obligatoire": true,
+              "multi": "cuve"
+            },
+            {
+              "num": "5.2",
+              "libelle": "Enregistrement position dans logiciel PUI",
+              "type": "auto",
+              "obligatoire": true,
+              "multi": "cuve"
+            },
+            {
+              "num": "5.3",
+              "libelle": "Photo étiquetage emplacement cuve après stockage",
+              "type": "photo",
+              "obligatoire": false,
+              "multi": "photo"
+            }
+          ]
+        },
+        {
+          "titre": "6 — Gestion informatique",
+          "points": [
+            {
+              "num": "6.1",
+              "libelle": "Enregistrement réception dans logiciel PUI",
+              "type": "auto",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "6.2",
+              "libelle": "Prescription saisie dans logiciel prescriptions",
+              "type": "ouinon",
+              "obligatoire": true,
+              "multi": false
+            },
+            {
+              "num": "6.3",
+              "libelle": "Médecin référent informé de la réception",
+              "type": "ouinon",
+              "obligatoire": false,
+              "multi": false
+            },
+            {
+              "num": "6.4",
+              "libelle": "Bon de retour conteneur complété",
+              "sousLibelle": "Retourner dans les délais impartis au transporteur",
+              "type": "ouinon",
+              "obligatoire": false,
+              "multi": false
+            }
+          ]
+        },
+        {
+          "titre": "7 — Kit de contrôle qualité",
+          "kits": [
+            {
+              "id": "CQ_CD4_CD8",
+              "nom": "Kit CQ CD4 / CD8",
+              "composition": "1 boîte = 3 tubes CD4 + 2 tubes CD8"
+            }
+          ],
+          "points": [
+            {
+              "num": "7.1",
+              "libelle": "Tube CD4 — intégrité et étiquetage",
+              "type": "ouinon",
+              "obligatoire": true,
+              "kit": "CQ_CD4_CD8",
+              "exemplaires": 3,
+              "numeroSerie": true
+            },
+            {
+              "num": "7.2",
+              "libelle": "Tube CD8 — intégrité et étiquetage",
+              "type": "ouinon",
+              "obligatoire": true,
+              "kit": "CQ_CD4_CD8",
+              "exemplaires": 2,
+              "numeroSerie": true
+            },
+            {
+              "num": "7.3",
+              "libelle": "Nombre de tubes conforme au bordereau",
+              "sousLibelle": "5 tubes attendus : 3 CD4 + 2 CD8",
+              "type": "ouinon",
+              "obligatoire": true,
+              "kit": "CQ_CD4_CD8",
+              "doubleValidation": true
+            },
+            {
+              "num": "7.4",
+              "libelle": "Envoi des tubes au laboratoire de contrôle qualité",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "code": "STOCKAGE_LEUCA",
+      "nom": "Stockage",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Stockage matériel leucaphérèse",
+          "points": [
+            {
+              "libelle": "Température cuve azote (relevé)",
+              "type": "valeur"
+            },
+            {
+              "libelle": "Emplacement cuve noté",
+              "type": "texte"
+            },
+            {
+              "libelle": "Photo jauge azote",
+              "type": "photo"
+            },
+            {
+              "libelle": "Entrée en stock logiciel PUI",
+              "type": "auto",
+              "valeurAuto": "À la validation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "code": "DESTOCKAGE",
+      "nom": "Déstockage",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Déstockage pour envoi fabricant",
+          "points": [
+            {
+              "libelle": "Concordance identité produit / bon de sortie",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Intégrité emballage cryogénique",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Sortie de stock logiciel PUI",
+              "type": "auto",
+              "valeurAuto": "À la validation"
+            },
+            {
+              "libelle": "Heure de déstockage notée",
+              "type": "texte"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 7,
+      "code": "DECONGELATION",
+      "nom": "Décongélation",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Décongélation matériel leucaphérèse",
+          "points": [
+            {
+              "libelle": "Démarrage minuteur décongélation",
+              "type": "timer"
+            },
+            {
+              "libelle": "Décongélation bain-marie 37 °C",
+              "type": "timer"
+            },
+            {
+              "libelle": "Aspect post-décongélation conforme",
+              "type": "photo"
+            },
+            {
+              "libelle": "Viabilité cellulaire mesurée",
+              "type": "valeur"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 8,
+      "code": "MISE_EN_FABRICATION",
+      "nom": "Mise en fabrication",
+      "gabarit": "standard",
+      "externe": true,
+      "identifiePatient": true,
+      "sections": [
+        {
+          "titre": "Transfert vers site de fabrication",
+          "points": [
+            {
+              "libelle": "Dossier patient transmis au fabricant",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Bon de commande fabricant confirmé",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Matériel confié au transporteur",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "N° suivi envoi",
+              "type": "texte"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 9,
+      "code": "FABRICATION",
+      "nom": "Fabrication",
+      "gabarit": "standard",
+      "externe": true,
+      "sections": [
+        {
+          "titre": "Fabrication (site externe)",
+          "points": [
+            {
+              "libelle": "Réception matériel leucaphérèse confirmée",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "N° lot attribué",
+              "type": "texte"
+            },
+            {
+              "libelle": "Conditionnement cryogénique effectué",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Durée fabrication",
+              "type": "auto",
+              "valeurAuto": "À renseigner"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 10,
+      "code": "LIBERATION",
+      "nom": "Libération",
+      "gabarit": "standard",
+      "externe": true,
+      "sections": [
+        {
+          "titre": "Contrôle libération (AQ fabricant)",
+          "points": [
+            {
+              "libelle": "Certificat de conformité (CoA) émis",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Stérilité / mycoplasmose négatifs",
+              "type": "auto",
+              "valeurAuto": "Résultat externe"
+            },
+            {
+              "libelle": "Viabilité cellulaire conforme",
+              "type": "valeur"
+            },
+            {
+              "libelle": "Autorisation d'expédition confirmée",
+              "type": "ouinon"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 11,
+      "code": "STOCKAGE_FABRICANT",
+      "nom": "Stockage",
+      "gabarit": "standard",
+      "externe": true,
+      "sections": [
+        {
+          "titre": "Stockage site fabricant (pré-expédition)",
+          "points": [
+            {
+              "libelle": "Stockage cryogénique confirmé",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Température cuve expéditeur",
+              "type": "valeur"
+            },
+            {
+              "libelle": "Alarmes actives",
+              "type": "ouinon"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 12,
+      "code": "ENVOI",
+      "nom": "Envoi",
+      "gabarit": "standard",
+      "externe": true,
+      "sections": [
+        {
+          "titre": "Expédition",
+          "points": [
+            {
+              "libelle": "Conteneur dryshipper qualifié",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Température embarquement",
+              "type": "valeur"
+            },
+            {
+              "libelle": "Alarmes activées",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Bon de retour édité",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "N° suivi expédition",
+              "type": "texte"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 13,
+      "code": "RECEPTION_SERVICE",
+      "nom": "Réception service",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Traçabilité de réception",
+          "points": [
+            {
+              "libelle": "Date et heure de réception",
+              "type": "auto",
+              "valeurAuto": "Horodatage automatique"
+            },
+            {
+              "libelle": "Identité du réceptionnaire",
+              "type": "texte"
+            },
+            {
+              "libelle": "Conformité globale de la livraison",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Accusé de réception transmis",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Entrée en stock logiciel PUI",
+              "type": "auto",
+              "valeurAuto": "À la validation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 14,
+      "code": "ADMINISTRATION",
+      "nom": "Administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Administration au patient",
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée (2 concordances)",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Prémédication administrée",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Voie veineuse vérifiée",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Administration réalisée",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Durée perfusion enregistrée",
+              "type": "valeur"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 15,
+      "code": "POST_ADMINISTRATION",
+      "nom": "Post-administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "Surveillance & traçabilité",
+          "points": [
+            {
+              "libelle": "Surveillance patient ≥ 1h post-administration",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Traçabilité dans logiciel prescriptions",
+              "type": "auto",
+              "valeurAuto": "À la validation"
+            },
+            {
+              "libelle": "Bon de retour conteneur complété",
+              "type": "ouinon"
+            },
+            {
+              "libelle": "Suivi J8 / J15 planifié",
+              "type": "texte"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

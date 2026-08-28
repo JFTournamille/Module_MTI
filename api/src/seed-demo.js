@@ -43,18 +43,39 @@ if (!supprimer && production && process.env.SEED_DEMO !== 'oui') {
   process.exit(1)
 }
 
-/** Identités fictives — les huit premières viennent des maquettes. */
+/**
+ * Identités fictives : `[reference, nom, prenom, initiales, naissance, ipp,
+ * identifiants]`.
+ *
+ * Les patronymes sont choisis peu courants à dessein. Les dix noms de famille
+ * les plus fréquents de France — MARTIN, BERNARD, DUBOIS… — étaient certes
+ * anonymes, mais une démonstration devant un public y reconnaît toujours
+ * quelqu'un. Aucun de ceux-ci ne désigne une personne réelle connue du projet.
+ *
+ * `ipp` est le pointeur vers le dossier du SIH ; les `identifiants` portent
+ * leur propre libellé, modifiable, d'où deux exemples qui ne sont pas des
+ * « N° patient 1 » : c'est ce que la démonstration doit montrer.
+ */
 const PATIENTS = [
-  ['DEMO-00123', 'MARTIN', 'Sophie', 'MS', '1978-03-12'],
-  ['DEMO-00456', 'DURAND', 'Jean-Pierre', 'DJ', '1965-07-04'],
-  ['DEMO-00789', 'BERNARD', 'Claire', 'BC', '1982-11-22'],
-  ['DEMO-01011', 'PETIT', 'Marie', 'PM', '1991-05-09'],
-  ['DEMO-01234', 'ROBERT', 'Alain', 'RA', '1955-01-30'],
-  ['DEMO-01567', 'DUBOIS', 'Nathalie', 'DN', '1970-09-18'],
-  ['DEMO-01890', 'MOREAU', 'Antoine', 'MA', '1988-12-03'],
-  ['DEMO-02123', 'LEROY', 'Isabelle', 'LI', '1962-04-27'],
-  ['DEMO-02456', 'GARCIA', 'Luis', 'GL', '1969-03-19'],
-  ['DEMO-02789', 'NGUYEN', 'Thi', 'NT', '1976-08-11']
+  ['DEMO-00123', 'VAUTHIER', 'Sophie', 'VS', '1978-03-12', '80412907',
+    [{ libelle: 'N° patient 1', valeur: 'A-2026-0141' }]],
+  ['DEMO-00456', 'ESCANDE', 'Jean-Pierre', 'EJ', '1965-07-04', '80398214',
+    [{ libelle: 'N° patient 1', valeur: 'A-2026-0158' },
+      { libelle: 'N° séjour', valeur: 'SEJ-441209' }]],
+  ['DEMO-00789', 'TRÉMOULET', 'Claire', 'TC', '1982-11-22', '80455063',
+    [{ libelle: 'N° essai clinique', valeur: 'ZUMA-7-FR-0032' }]],
+  ['DEMO-01011', 'BOURGAREL', 'Marie', 'BM', '1991-05-09', '80471338',
+    [{ libelle: 'N° patient 1', valeur: 'A-2025-0907' }]],
+  ['DEMO-01234', 'SENECHAUD', 'Alain', 'SA', '1955-01-30', '80206741',
+    [{ libelle: 'N° patient 1', valeur: 'A-2025-0834' },
+      { libelle: 'N° protocole', valeur: 'PROT-CART-11' }]],
+  ['DEMO-01567', 'LAVERGNADE', 'Nathalie', 'LN', '1970-09-18', '80319552',
+    [{ libelle: 'N° patient 1', valeur: 'A-2024-0663' }]],
+  ['DEMO-01890', 'PEYRICHOU', 'Antoine', 'PA', '1988-12-03', '80488170',
+    [{ libelle: 'N° patient 1', valeur: 'A-2024-0512' }]],
+  ['DEMO-02123', 'MONTEFIORE', 'Isabelle', 'MI', '1962-04-27', '80174829', []],
+  ['DEMO-02456', 'ZARAGOZA', 'Luis', 'ZL', '1969-03-19', '80503644', []],
+  ['DEMO-02789', 'PHAM', 'Thi', 'PT', '1976-08-11', '80527091', []]
 ]
 
 /**
@@ -63,61 +84,79 @@ const PATIENTS = [
  * Le préfixe `demo.` n'est pas décoratif : c'est ce qui les rend repérables par
  * requête, faute de colonne `source` sur `mti.utilisateur`.
  */
+/* Aucun de ces noms ne désigne une personne réelle du projet ou de son
+   entourage professionnel : c'est la seule contrainte qui compte ici. Une
+   démonstration où l'auditoire reconnaît des collègues — ou l'auteur du
+   logiciel — détourne l'attention de ce qu'elle est censée montrer. */
 const COMPTES = [
-  ['demo.jtournamille', 'TOURNAMILLE', 'Jean-François', 'Dr', 'pharmacien hospitalier', 'pharmacien'],
-  ['demo.ewolff', 'WOLFF', 'Élise', 'Dr', 'pharmacien praticien', 'pharmacien'],
-  ['demo.mvasseur', 'VASSEUR', 'Marc', 'Dr', 'pharmacien assistant', 'pharmacien'],
-  ['demo.mpinturaud', 'PINTURAUD', 'Marion', 'Mme', 'préparatrice référente MTI', 'preparateur'],
-  ['demo.mcarvalho', 'CARVALHO', 'Miguel', 'M.', 'préparateur', 'preparateur'],
-  ['demo.agrand', 'GRAND', 'Alice', 'Mme', 'IDE hématologie 4B', 'ide'],
-  ['demo.pnoel', 'NOEL', 'Pierre', 'M.', 'IDE hématologie 4A', 'ide'],
-  ['demo.cmetz', 'METZ', 'Camille', 'Mme', 'assurance qualité', 'qualite'],
-  ['demo.srunel', 'RUNEL', 'Sarah', 'Dr', 'hématologue prescripteur', null],
-  ['demo.ladmin', 'LAMBERT', 'Olivier', 'M.', 'administrateur applicatif', 'administrateur']
+  ['demo.hfauchereau', 'FAUCHEREAU', 'Hélène', 'Dr', 'pharmacien hospitalier', 'pharmacien'],
+  ['demo.sandrieux', 'ANDRIEUX', 'Samuel', 'Dr', 'pharmacien praticien', 'pharmacien'],
+  ['demo.nbelkacemi', 'BELKACEMI', 'Naïma', 'Dr', 'pharmacien assistant', 'pharmacien'],
+  ['demo.cpommereau', 'POMMEREAU', 'Céline', 'Mme', 'préparatrice référente MTI', 'preparateur'],
+  ['demo.tleguyader', 'LE GUYADER', 'Tristan', 'M.', 'préparateur', 'preparateur'],
+  ['demo.lchavannes', 'CHAVANNES', 'Léa', 'Mme', 'IDE hématologie 4B', 'ide'],
+  ['demo.jvilleret', 'VILLERET', 'Jérôme', 'M.', 'IDE hématologie 4A', 'ide'],
+  ['demo.smercadier', 'MERCADIER', 'Sonia', 'Mme', 'assurance qualité', 'qualite'],
+  ['demo.abeauchesne', 'BEAUCHESNE', 'Antoine', 'Dr', 'hématologue prescripteur', null],
+  ['demo.fdelaunoy', 'DELAUNOY', 'Franck', 'M.', 'administrateur applicatif', 'administrateur']
 ]
 
 /**
  * Dix scénarios, étalés sur le parcours pour que le tableau de bord montre
  * quelque chose : des dossiers en attente d'allocation, d'autres alloués, deux
- * clos, un avec une alarme de seuil, deux contresignés.
+ * clos, un avec une alarme de seuil, trois contresignés.
  *
- * `rang` est l'ordre du processus EN COURS ; tous les précédents sont validés.
+ * `enCours` est le CODE du processus en cours ; tous ceux qui le précèdent sont
+ * validés. Un code, pas un rang : le rang se décale à chaque version du modèle
+ * — le retrait de l'aphérèse en v3 a fait glisser douze processus d'un cran —
+ * et un rang codé en dur aurait silencieusement désigné le voisin. Un code
+ * absent du modèle fait échouer le seed bruyamment, ce qui est le but.
+ *
+ * `apherese` / `information` alimentent les nouveaux champs d'en-tête : ils ne
+ * sont pas posés partout, sinon on ne verrait pas la différence entre un
+ * dossier qui porte une alerte et un dossier ordinaire.
  */
 const SCENARIOS = [
-  { ref: '0001', produit: 'KYMRIAH®', lot: null, rang: 2, patient: null,
+  { ref: '0001', produit: 'KYMRIAH®', lot: null, enCours: 'COMMANDE_MTI', patient: null,
     prescription: false, jours: 2,
     note: 'commande passée, produit pas encore commandé au fabricant' },
-  { ref: '0002', produit: 'YESCARTA®', lot: null, rang: 3, patient: null,
-    prescription: true, jours: 5,
-    note: 'aphérèse en cours, prescription faite mais pas encore de rattachement' },
-  { ref: '0003', produit: 'CARVYKTI®', lot: 'LOT-CA-2606-A', rang: 5, patient: 0,
-    prescription: true, preallocation: true, jours: 8,
+  { ref: '0002', produit: 'YESCARTA®', lot: null, enCours: 'RATTACHEMENT', patient: null,
+    prescription: true, apherese: true, jours: 5,
+    note: 'aphérèse faite, rattachement patient en cours' },
+  { ref: '0003', produit: 'CARVYKTI®', lot: 'LOT-CA-2606-A', enCours: 'RECEPTION', patient: 0,
+    prescription: true, preallocation: true, apherese: true, jours: 8,
     note: 'réception en cours, patient préalloué' },
-  { ref: '0004', produit: 'TECARTUS®', lot: 'LOT-TE-2606-B', rang: 5, patient: null,
-    prescription: false, alarme: true, jours: 9,
-    note: 'réception avec alarme de température — le cas à montrer' },
-  { ref: '0005', produit: 'KYMRIAH®', lot: 'LOT-KY-2506-C', rang: 6, patient: 1,
-    prescription: true, preallocation: true, contresigne: true, jours: 12,
+  { ref: '0004', produit: 'TECARTUS®', lot: 'LOT-TE-2606-B', enCours: 'RECEPTION', patient: null,
+    prescription: false, alarme: true, apherese: true, jours: 9,
+    note: 'réception avec alarme de température — le cas à montrer',
+    information: 'Relevé hors seuil à la réception : conteneur consigné, '
+      + 'litige transporteur ouvert. Ne pas déstocker sans accord pharmacien.' },
+  { ref: '0005', produit: 'KYMRIAH®', lot: 'LOT-KY-2506-C', enCours: 'STOCKAGE_LEUCA', patient: 1,
+    prescription: true, preallocation: true, contresigne: true, apherese: true, jours: 12,
     note: 'réception contresignée par une 2e personne' },
   /* ABECMA® n'est pas au catalogue des produits de référence : le dossier
      porte donc une désignation libre et `produit_id` à NULL. C'est voulu — un
      MTI commandé avant d'être référencé est un cas réel, et c'est le seul
      scénario qui exerce ce chemin. */
-  { ref: '0006', produit: 'ABECMA®', lot: 'LOT-AB-2506-A', rang: 9, patient: 2,
-    prescription: true, jours: 16,
+  { ref: '0006', produit: 'ABECMA®', lot: 'LOT-AB-2506-A', enCours: 'MISE_EN_FABRICATION',
+    patient: 2, prescription: true, apherese: true, jours: 16,
     note: 'produit hors catalogue ; mise en fabrication : identité patient exigée' },
-  { ref: '0007', produit: 'YESCARTA®', lot: 'LOT-YE-2405-F', rang: 14, patient: 3,
-    prescription: true, contresigne: true, jours: 21,
-    note: 'produit revenu du fabricant, réception service en cours' },
-  { ref: '0008', produit: 'KYMRIAH®', lot: 'LOT-KY-2405-D', rang: 15, patient: 4,
-    prescription: true, jours: 25,
+  { ref: '0007', produit: 'YESCARTA®', lot: 'LOT-YE-2405-F', enCours: 'RECEPTION_SERVICE',
+    patient: 3, prescription: true, contresigne: true, apherese: true, jours: 21,
+    note: 'produit revenu du fabricant, réception service en cours',
+    information: 'Administration programmée en hématologie 4B. Prévenir l\'IDE '
+      + 'référente 30 min avant décongélation.' },
+  { ref: '0008', produit: 'KYMRIAH®', lot: 'LOT-KY-2405-D', enCours: 'ADMINISTRATION',
+    patient: 4, prescription: true, apherese: true, jours: 25,
     note: 'administration en cours' },
-  { ref: '0009', produit: 'CARVYKTI®', lot: 'LOT-CA-2304-B', rang: 16, patient: 5,
-    prescription: true, contresigne: true, clos: 'conforme', jours: 34,
+  { ref: '0009', produit: 'CARVYKTI®', lot: 'LOT-CA-2304-B', patient: 5,
+    prescription: true, contresigne: true, apherese: true, clos: 'conforme', jours: 34,
     note: 'dossier clos conforme — consultable, figé' },
-  { ref: '0010', produit: 'TECARTUS®', lot: 'LOT-TE-2204-A', rang: 16, patient: 6,
-    prescription: true, clos: 'non_conforme', jours: 41,
-    note: 'dossier clos non conforme : rupture de chaîne du froid au transport' }
+  { ref: '0010', produit: 'TECARTUS®', lot: 'LOT-TE-2204-A', patient: 6,
+    prescription: true, apherese: true, clos: 'non_conforme', jours: 41,
+    note: 'dossier clos non conforme : rupture de chaîne du froid au transport',
+    information: 'Dossier clos NON CONFORME. Produit détruit, déclaration ANSM '
+      + 'transmise le lendemain. Conservé pour la traçabilité.' }
 ]
 
 /** Date décalée de n jours dans le passé, à heure fixe pour rester reproductible. */
@@ -258,7 +297,8 @@ try {
 
     // ── Patients ──
     const patients = []
-    for (const [reference, nom, prenom, initiales, naissance] of PATIENTS) {
+    for (const [reference, nom, prenom, initiales, naissance, ipp, identifiants]
+      of PATIENTS) {
       const { rows } = await client.query(
         `INSERT INTO mti.patient (reference, source) VALUES ($1, $2)
          ON CONFLICT (source, reference) DO NOTHING RETURNING id`, [reference, SOURCE])
@@ -266,13 +306,16 @@ try {
         'SELECT id FROM mti.patient WHERE source = $1 AND reference = $2',
         [SOURCE, reference])).rows[0].id
       await client.query(
-        `INSERT INTO mti.patient_identite (patient_id, nom, prenom, initiales, date_naissance)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO mti.patient_identite
+           (patient_id, nom, prenom, initiales, date_naissance, ipp, identifiants)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
          ON CONFLICT (patient_id) DO UPDATE
            SET nom = EXCLUDED.nom, prenom = EXCLUDED.prenom,
                initiales = EXCLUDED.initiales, date_naissance = EXCLUDED.date_naissance,
+               ipp = EXCLUDED.ipp, identifiants = EXCLUDED.identifiants,
                maj_le = now()`,
-        [id, nom, prenom, initiales, naissance])
+        [id, nom, prenom, initiales, naissance, ipp ?? null,
+          JSON.stringify(identifiants ?? [])])
       patients.push({ id, reference, nom, prenom })
     }
 
@@ -316,19 +359,40 @@ try {
         ? null : patients[sc.patient]
       const creeLe = jadis(sc.jours)
 
+      /* L'aphérèse précède tout le reste : elle est datée avant la création du
+         dossier, sinon la chronologie de l'en-tête contredirait celle des
+         processus. La contrainte de base refuse d'ailleurs une date sans jalon. */
+      const dateApherese = sc.apherese ? iso(jadis(sc.jours + 21)) : null
+
       const { rows: [dossier] } = await client.query(
         `INSERT INTO mti.dossier
            (reference, modele_parcours_id, produit_id, designation_produit, numero_lot,
-            patient_id, preallocation, prescription_faite, cree_par, cree_le, commentaire)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+            patient_id, preallocation, prescription_faite, cree_par, cree_le, commentaire,
+            information_importante, apherese_faite, date_apherese)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
         [reference, modele.id, produit?.id ?? null, sc.produit, sc.lot,
           patient?.id ?? null, sc.preallocation === true, sc.prescription === true,
-          auteur.id, creeLe, sc.note])
+          auteur.id, creeLe, sc.note,
+          sc.information ?? null, sc.apherese === true, dateApherese])
 
       /* Sur un dossier clos, tous les processus sont validés : un dossier
          validé dont le dernier processus serait encore « en cours » n'existe
          pas dans le parcours réel. */
-      const rangCourant = sc.clos ? processusModele.length + 1 : sc.rang
+      /* Résolu par CODE, et bruyamment : un scénario qui désigne un processus
+         absent du modèle actif est un scénario faux, pas un scénario à placer
+         au hasard. Mieux vaut arrêter le seed que peupler la démonstration de
+         dossiers arrêtés au mauvais endroit. */
+      let rangCourant = processusModele.length + 1
+      if (!sc.clos) {
+        const k = processusModele.findIndex((p) => p.code === sc.enCours)
+        if (k < 0) {
+          throw new Error(
+            `Scénario ${reference} : le processus « ${sc.enCours} » n'existe pas ` +
+            `dans le modèle ${modele.code ?? ''} actif. Processus disponibles : ` +
+            processusModele.map((p) => p.code).join(', '))
+        }
+        rangCourant = k + 1
+      }
 
       // ── Processus, avec l'état correspondant au scénario ──
       const processusIds = []

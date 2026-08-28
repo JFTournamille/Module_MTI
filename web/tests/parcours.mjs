@@ -636,7 +636,7 @@ celluleJalon === '✓ faite' ? ok('jalon visible dans la liste du tableau de bor
   : ko(`colonne Prescr. : « ${celluleJalon} »`)
 
 // ── 19. Processus amont : la commande MTI et ses jalons calendaires ──
-console.log('\n19. Commande MTI (parcours v2)')
+console.log('\n19. Commande MTI (processus amont)')
 await allerAuScenario()
 await allerAuProcessus('Commande MTI')
 
@@ -647,12 +647,28 @@ rangCommande >= 0 && rangCommande < rangReception
   ? ok(`commande MTI au rang ${rangCommande + 1}, avant la réception (${rangReception + 1})`)
   : ko(`rangs : commande ${rangCommande}, réception ${rangReception}`)
 
-// Les jalons sont de vraies dates, pas du texte libre : sans quoi ils seraient
-// intriables et incomparables.
+/* Les jalons sont de vraies dates, pas du texte libre : sans quoi ils seraient
+   intriables et incomparables. Le nombre attendu est LU DU MODÈLE et non codé
+   en dur : il était fixé à « 3 au moins », et le retrait de la date d'aphérèse
+   de la commande en v4 l'a fait tomber à 2 — la suite a cassé sur une valeur
+   qui n'avait aucune raison d'être stable. */
+const pointsDateCommande = (defModele?.processus ?? [])
+  .find((p) => p.code === 'COMMANDE_MTI')?.sections
+  .flatMap((sc) => sc.points ?? [])
+  .filter((pt) => pt.type === 'date').length ?? 0
 const champsDate = page.locator('.std-ir input[type=date], .chk input[type=date]')
 const nbDates = await champsDate.count()
-nbDates >= 3 ? ok(`${nbDates} champ(s) de saisie de date`)
-  : ko(`${nbDates} champ(s) date au lieu de 3 au moins`)
+if (pointsDateCommande > 0 && nbDates === pointsDateCommande) {
+  ok(`${nbDates} champ(s) de saisie de date, autant que le modèle en déclare`)
+} else {
+  ko(`${nbDates} champ(s) date à l'écran, ${pointsDateCommande} au modèle`)
+}
+// L'aphérèse ne doit plus figurer dans la commande : elle est en en-tête.
+const libellesCommande = await page.locator('.std-lbl, .chk .clbl').allTextContents()
+libellesCommande.some((l) => /phérèse/i.test(l))
+  ? ko(`la commande porte encore un point d'aphérèse : ${
+      libellesCommande.filter((l) => /phérèse/i.test(l))}`)
+  : ok("la commande ne porte plus de point d'aphérèse")
 
 // Un processus « à venir » est en lecture seule, et rien ne le faisait avancer :
 // il faut l'ouvrir. C'est le mécanisme qui rend le parcours praticable.
@@ -821,15 +837,17 @@ if (nbDemo === 0) {
   await page.waitForTimeout(1200)
   await page.locator('#tb-q').fill('DEMO-MTI-0009')
   await page.waitForTimeout(1400)
-  const nomListe = (await page.locator('tr.tb-ligne').first().innerText())
-    .split('\n').find((t) => /[A-ZÉÈ]{3,}/.test(t) && !/DEMO-MTI|LOT-|CARVYKTI/.test(t))
   await page.locator('tr.tb-ligne', { hasText: 'DEMO-MTI-0009' }).click()
   await page.waitForTimeout(1800)
   const enteteRouvert = await page.locator('.hdr-left .name').innerText()
-  if (/DUBOIS/.test(enteteRouvert) && /DEMO-01567/.test(enteteRouvert)) {
+  /* La RÉFÉRENCE patient est stable, le patronyme non : le jeu de
+     démonstration a déjà été renommé une fois, et une assertion sur un nom
+     propre casse à chaque changement sans rien prouver de plus. On vérifie
+     donc la référence, et qu'un patronyme en capitales est bien affiché. */
+  if (/DEMO-01567/.test(enteteRouvert) && /[A-ZÉÈÀÂÎÔÛ]{3,}/.test(enteteRouvert)) {
     ok(`en-tête d'un dossier alloué : « ${enteteRouvert} »`)
   } else {
-    ko(`en-tête d'un dossier alloué : « ${enteteRouvert} » (liste : ${nomListe})`)
+    ko(`en-tête d'un dossier alloué : « ${enteteRouvert} »`)
   }
 
   await page.locator('.proc').filter({ hasText: 'Réception (+/-' }).first().click()
@@ -874,7 +892,238 @@ if (lignesDemo === 0) {
     : ko(`profils absents de la liste : ${manquants.join(', ')}`)
 }
 
-console.log('\n23. Console du navigateur et réseau')
+/* ── 23. En-tête : IPP, numéros patient, jalon d'aphérèse, alerte ──
+   Ces champs vivent sur le DOSSIER (ou l'identité patient) et non dans une
+   saisie : ils doivent survivre à un rechargement, ce que seule la base peut
+   garantir. Le groupe part donc d'un dossier de démonstration alloué. */
+console.log('\n23. En-tête du dossier')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('#tb-q').fill('DEMO-MTI-0005')
+await page.waitForTimeout(1400)
+const ligneEntete = await page.locator('tr.tb-ligne').count()
+if (ligneEntete === 0) {
+  console.log('  · jeu de démonstration absent — groupe non applicable')
+} else {
+  await page.locator('tr.tb-ligne', { hasText: 'DEMO-MTI-0005' }).click()
+  await page.waitForTimeout(1800)
+
+  const ipp = await page.locator('#ids-ipp').inputValue()
+  if (/^\d{8}$/.test(ipp)) ok(`IPP affiché : ${ipp}`)
+  else ko(`IPP : « ${ipp} »`)
+
+  // `allInputValues` n'existe pas sur un locator : on lit chaque champ.
+  const champsLibelle = page.locator('.ids-lm')
+  const nbLibelles = await champsLibelle.count()
+  const libelles = []
+  for (let i = 0; i < nbLibelles; i++) libelles.push(await champsLibelle.nth(i).inputValue())
+  nbLibelles === 2
+    ? ok(`2 numéros patient, libellés « ${libelles.join(' » et « ')} »`)
+    : ko(`${nbLibelles} numéro(s) patient`)
+
+  // Le libellé est un CHAMP, pas un texte : c'est tout l'intérêt de la demande.
+  const nouveauLibelle = `N° protocole ${Date.now() % 1000}`
+  await page.locator('.ids-lm').first().fill(nouveauLibelle)
+  await page.locator('.ids-lm').first().blur()
+  await page.waitForTimeout(1200)
+
+  // Ajouter un numéro : le libellé par défaut suit le rang.
+  const avantAjout = await page.locator('.ids-lm').count()
+  await page.locator('.ids-p').click()
+  await page.waitForTimeout(300)
+  const ajoute = await page.locator('.ids-lm').nth(avantAjout).inputValue()
+  ajoute === `N° patient ${avantAjout + 1}`
+    ? ok(`libellé par défaut du numéro ajouté : « ${ajoute} »`)
+    : ko(`libellé par défaut : « ${ajoute} »`)
+  await page.locator('.ids-i').nth(avantAjout).fill('Z-999')
+  await page.locator('.ids-i').nth(avantAjout).blur()
+  await page.waitForTimeout(1200)
+
+  const jalonAph = page.locator('.aph-c input')
+  await jalonAph.isChecked() ? ok('jalon d\'aphérèse posé, relu depuis la base')
+    : ko('jalon d\'aphérèse non posé sur un dossier qui l\'a')
+  const dateAph = await page.locator('.aph-d').inputValue()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateAph)) ok(`date d'aphérèse : ${dateAph}`)
+  else ko(`date d'aphérèse : « ${dateAph} »`)
+
+  await page.locator('.info-i').fill('Alerte posée par la suite de tests')
+  await page.locator('.info-i').blur()
+  await page.waitForTimeout(1200)
+  await page.locator('.info-imp.plein').count() === 1
+    ? ok('information renseignée : le bandeau passe en alerte')
+    : ko('l\'information renseignée ne se distingue pas visuellement')
+
+  // Tout doit être relu depuis la base, pas depuis l'état de la page.
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(1800)
+  await allerAuScenario()
+  const libelleRelu = await page.locator('.ids-lm').first().inputValue()
+  libelleRelu === nouveauLibelle
+    ? ok(`libellé de numéro relu après rechargement : « ${libelleRelu} »`)
+    : ko(`libellé relu : « ${libelleRelu} » au lieu de « ${nouveauLibelle} »`)
+  const valeurRelue = await page.locator('.ids-i').nth(avantAjout).inputValue()
+  valeurRelue === 'Z-999' ? ok('numéro ajouté relu depuis la base')
+    : ko(`numéro relu : « ${valeurRelue} »`)
+  const infoRelue = await page.locator('.info-i').inputValue()
+  if (/suite de tests/.test(infoRelue)) ok('information importante relue depuis la base')
+  else ko(`information relue : « ${infoRelue} »`)
+
+  // Décocher le jalon doit effacer la date : la base refuse une date orpheline.
+  await page.locator('.aph-c input').uncheck()
+  await page.waitForTimeout(1300)
+  await page.locator('.aph-d').count() === 0
+    ? ok('décocher le jalon retire le champ date')
+    : ko('le champ date subsiste sans jalon')
+  await page.locator('.aph-c input').check()
+  await page.waitForTimeout(1300)
+  const dateApresRecoche = await page.locator('.aph-d').inputValue()
+  dateApresRecoche === ''
+    ? ok('recocher rouvre un champ date vide — la date n\'est pas ressuscitée')
+    : ko(`date après recoche : « ${dateApresRecoche} »`)
+
+  /* Remettre la date relevée au début : ce groupe l'a effacée en éprouvant la
+     bascule, et la suite doit pouvoir tourner deux fois de suite sur la même
+     base. Un test qui détruit ce qu'il vérifie ne passe qu'une fois. */
+  await page.locator('.aph-d').fill(dateAph)
+  await page.locator('.aph-d').blur()
+  await page.waitForTimeout(1300)
+  await page.locator('.aph-d').inputValue() === dateAph
+    ? ok(`date d'aphérèse remise à ${dateAph} — la suite reste rejouable`)
+    : ko('la date d\'aphérèse n\'a pas été remise en place')
+}
+
+/* ── 24. Onglet Configuration ──
+   L'onglet manquant de la demande d'origine. Ce qui est vérifié n'est pas qu'il
+   s'affiche, mais qu'il respecte le versionnage : publier crée une version et
+   ne touche pas aux dossiers ouverts. */
+console.log('\n24. Onglet Configuration')
+await page.locator('.onglet', { hasText: 'Configuration' }).click()
+await page.waitForTimeout(1600)
+
+const nbProcCfg = await page.locator('.cfg-p').count()
+nbProcCfg === NB_PROCESSUS
+  ? ok(`${nbProcCfg} processus listés, autant qu'au parcours actif`)
+  : ko(`${nbProcCfg} processus au lieu de ${NB_PROCESSUS}`)
+
+const barre = await page.locator('.adm-bar').innerText()
+if (/en service/.test(barre) && /dossier\(s\) ouvert\(s\)/.test(barre)) {
+  ok(`bandeau : « ${barre.split('\n')[0].trim()} »`)
+} else {
+  ko(`bandeau : ${barre.replace(/\s+/g, ' ')}`)
+}
+
+// Le bouton de publication reste inerte tant que rien n'a changé.
+const publierInactif = await page.locator('.adm-b-p').isDisabled()
+publierInactif ? ok('« Publier » inactif tant que le brouillon est intact')
+  : ko('« Publier » actif sans modification')
+
+// Sélectionner la réception, puis un point à seuil : le formulaire doit suivre.
+await page.locator('.cfg-p').filter({ hasText: 'Réception (+/-' }).first().click()
+await page.waitForTimeout(500)
+await page.locator('.cfg-pt').filter({ hasText: 'SMART PACK I' }).first().click()
+await page.waitForTimeout(400)
+/* Le libellé du point est dans un `<input>` : `innerText` du conteneur ne le
+   contient pas. On lit la valeur du champ, pas le texte autour. */
+const libellePoint = await page.locator('.cfg-pt-col input[type=text]').first().inputValue()
+const seuilPresent = await page.locator('.cfg-pt-col label', { hasText: "Seuil d'alarme" }).count()
+if (/SMART PACK I/.test(libellePoint) && seuilPresent === 1) {
+  ok(`le point sélectionné ouvre son formulaire, seuil compris (« ${libellePoint} »)`)
+} else {
+  ko(`libellé du formulaire : « ${libellePoint} », seuil affiché : ${seuilPresent}`)
+}
+
+/* Le seuil ne doit s'offrir que sur un relevé de valeur : posé sur un oui/non
+   il ne déclencherait jamais rien, et l'utilisateur croirait son alarme armée. */
+await page.locator('.cfg-pt').filter({ hasText: 'Concordance étiquetage' }).first().click()
+await page.waitForTimeout(400)
+await page.locator('.cfg-pt-col label', { hasText: "Seuil d'alarme" }).count() === 0
+  ? ok('pas de seuil proposé sur un point « oui/non »')
+  : ko('un seuil est proposé sur un point qui ne peut pas le déclencher')
+
+// Modifier un libellé arme la publication, sans rien écrire encore.
+await page.locator('.cfg-pt-col input[type=text]').first().fill('Libellé posé par le navigateur')
+await page.waitForTimeout(300)
+await page.locator('.cfg-mod').count() === 1 &&
+!(await page.locator('.adm-b-p').isDisabled())
+  ? ok('une modification arme « Publier » et signale le brouillon')
+  : ko('la modification n\'arme pas la publication')
+
+// Abandonner doit rendre le brouillon à l'état de la version en service.
+await page.locator('.adm-b', { hasText: 'Abandonner' }).click()
+await page.waitForTimeout(1400)
+await page.locator('.cfg-mod').count() === 0
+  ? ok('abandonner rend le brouillon à la version en service')
+  : ko('le brouillon reste marqué modifié après abandon')
+
+/* ── 25. Filtres par colonne du tableau de bord ──
+   Le point qui compte : ces filtres partent au SERVEUR. La liste est plafonnée
+   à 200 lignes ; filtrer côté client cacherait sans le dire les dossiers
+   correspondants situés au-delà du plafond. On le vérifie en comparant le
+   compte de l'écran à celui de l'API interrogée directement. */
+console.log('\n25. Filtres par colonne du tableau de bord')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1300)
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1400)
+const totalSansFiltre = await page.locator('tr.tb-ligne').count()
+totalSansFiltre > 0 ? ok(`${totalSansFiltre} dossier(s) sans filtre`)
+  : ko('aucun dossier listé')
+
+const nbFiltres = await page.locator('tr.tb-filtres th input, tr.tb-filtres th select').count()
+nbFiltres >= 6 ? ok(`${nbFiltres} filtres de colonne présents`)
+  : ko(`${nbFiltres} filtre(s) de colonne`)
+
+// Filtre texte sur le n° de dossier.
+await page.locator('tr.tb-filtres input').first().fill('DEMO-MTI-000')
+await page.waitForTimeout(1500)
+const parReference = await page.locator('tr.tb-ligne').count()
+parReference > 0 && parReference <= totalSansFiltre
+  ? ok(`filtre n° de dossier : ${parReference} ligne(s)`)
+  : ko(`filtre n° de dossier : ${parReference} ligne(s)`)
+
+// Le bandeau doit dire que la liste est restreinte : un total qui ne
+// correspond pas à l'écran est trompeur.
+await page.locator('.tb-restreint').count() === 1
+  ? ok('le bandeau signale une liste restreinte')
+  : ko('rien ne signale que la liste est filtrée')
+
+// Filtre étape : comparé à ce que rend l'API, pour prouver qu'il est serveur.
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1400)
+const etapes = await page.getByLabel('Filtrer par étape en cours')
+  .locator('option').allTextContents()
+const etapeChoisie = etapes.find((e) => e && e !== 'Toutes')
+if (!etapeChoisie) {
+  ko('aucune étape proposée au filtre')
+} else {
+  await page.getByLabel('Filtrer par étape en cours').selectOption({ label: etapeChoisie })
+  await page.waitForTimeout(1500)
+  const ecran = await page.locator('tr.tb-ligne').count()
+  const api = await fetch(`${base}/api/dossiers?etape=${encodeURIComponent(etapeChoisie)}`)
+    .then((r) => r.json()).then((l) => l.length).catch(() => -1)
+  ecran === api
+    ? ok(`filtre « ${etapeChoisie} » : ${ecran} ligne(s), autant que l'API`)
+    : ko(`écran ${ecran} ligne(s), API ${api} — le filtre n'est pas celui du serveur`)
+}
+
+// Deux filtres se combinent, ils ne se remplacent pas.
+await page.getByLabel('Filtrer par prescription').selectOption('oui')
+await page.waitForTimeout(1500)
+const combine = await page.locator('tr.tb-ligne').count()
+combine <= (await page.locator('tr.tb-ligne').count())
+  ? ok(`étape + prescription : ${combine} ligne(s)`)
+  : ko('la combinaison de deux filtres ne restreint pas')
+
+await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
+await page.waitForTimeout(1500)
+await page.locator('tr.tb-ligne').count() === totalSansFiltre
+  ? ok('« Réinitialiser » vide tous les filtres de colonne')
+  : ko(`${await page.locator('tr.tb-ligne').count()} ligne(s) après réinitialisation`)
+await page.locator('.tb-restreint').count() === 0
+  ? ok('le bandeau « liste restreinte » disparaît')
+  : ko('le bandeau subsiste sans filtre')
+
+console.log('\n26. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

@@ -206,6 +206,79 @@ alors que la cause est une ligne d'`App Configs`. Le complément est posé dans
 `web/src/api.js` (`messageErreur`), c'est-à-dire là où l'exploitant lit
 réellement le message. Éprouvé par `npm --prefix api run test:oidc`.
 
+### L'aphérèse est un jalon, plus un processus
+
+Le parcours v2 portait un processus « Aphérèse / leucaphérèse » à cinq points de
+contrôle, et la commande portait en plus un point « Date d'aphérèse ». La v3
+retire le processus, la v4 le point de la commande : à ce stade du projet,
+l'aphérèse n'est **qu'une date, facultative**, et deux endroits pour la saisir
+n'auraient rien dit sur lequel fait foi. Elle vit donc en jalon d'en-tête du dossier
+(`apherese_faite` / `date_apherese`), comme la prescription, avec la même
+contrainte de base : une date sans jalon posé est refusée
+(`dossier_date_apherese_exige_jalon`), l'inverse est permis — le jalon peut
+précéder la date connue.
+
+Conséquence à ne pas perdre de vue : **le rang d'un processus n'est pas un
+identifiant**. Retirer l'aphérèse a décalé douze processus d'un cran et fait
+passer `indexIdentificationPatient` de 8 à 7. Tout ce qui désigne un processus
+le fait désormais par son `code` — le seed de démonstration comme le calcul de
+`indexIdentificationPatient` à la publication d'une version, qui est recalculé
+d'après `MISE_EN_FABRICATION` plutôt que recopié.
+
+### En-tête du dossier : information importante, IPP et numéros patient
+
+Trois champs ajoutés par la migration `008`, tous en en-tête parce que c'est là
+qu'ils servent :
+
+- **`information_importante`** — une ligne libre, toujours visible, qui passe en
+  alerte visuelle dès qu'elle est renseignée. Distincte de
+  `dossier.commentaire`, qui documente le dossier sans être mis en avant :
+  celle-ci s'adresse à quiconque ouvre le dossier (« conteneur consigné, litige
+  transporteur ouvert »).
+- **`patient_identite.ipp`** — l'identifiant permanent du patient dans le SIH.
+  Le porter ne contredit pas la règle « pas de référentiel patients » : c'est
+  précisément ce qui dispense d'en constituer un, puisqu'il rend le dossier de
+  référence retrouvable.
+- **`patient_identite.identifiants`** — les numéros complémentaires, **libellé
+  compris**. Un JSONB `[{"libelle":…,"valeur":…}]` plutôt que des colonnes
+  `numero_1` / `numero_2` : le libellé est modifiable par l'utilisateur et
+  diffère d'un établissement à l'autre (n° de séjour, d'essai clinique, de
+  protocole). Deux colonnes auraient figé un nombre arbitraire et laissé le
+  libellé sans place. Libellés par défaut « N° patient 1 », « N° patient 2 ».
+
+La forme du JSONB est vérifiée **en base**, par une fonction `IMMUTABLE` appelée
+depuis un `CHECK` — PostgreSQL refuse une sous-requête dans un `CHECK`, et
+parcourir un tableau JSONB en exige une. Le `coalesce` de cette fonction n'est
+pas cosmétique : `e -> 'libelle'` sur une clé absente rend `NULL`,
+`jsonb_typeof(NULL)` rend `NULL`, et `NULL <> 'string'` vaut `NULL` — pas `TRUE`.
+Sans lui, un objet sans libellé passait. Éprouvé par le TEST 17 des invariants.
+
+### L'onglet Configuration publie une version, il ne modifie rien
+
+Paramétrer un processus ou un point de contrôle **ne modifie jamais le modèle en
+place** : chaque enregistrement publie `version + 1` et la met en service.
+Il n'y a délibérément **pas** de route de modification.
+
+La raison n'est pas la prudence. `dossier_processus.definition` porte une copie
+de la définition, figée à la création du dossier : modifier le modèle actif ne
+toucherait de toute façon pas aux dossiers ouverts, mais ferait perdre la trace
+de ce qui a été appliqué à quel dossier. Or une exigence BPP veut que ce qui a
+été contrôlé reste relisible **tel qu'il a été prescrit au moment du contrôle**.
+Les versions précédentes restent donc en base et consultables
+(`GET /api/modeles/:code/versions/:version`).
+
+Le bandeau de l'onglet affiche le nombre de dossiers ouverts sous la version en
+service. Sans ce chiffre, « publier » a l'air d'une modification rétroactive —
+ce qu'il n'est justement pas.
+
+L'écran refuse les combinaisons que le serveur refusera : un seuil ne s'offre que
+sur un point de type `valeur` (posé sur un oui/non il ne déclencherait jamais
+rien, et l'utilisateur croirait son alarme armée), un n° de série suppose
+plusieurs exemplaires, un point ne se rattache qu'à un kit de sa section. Les
+mêmes règles sont revalidées côté serveur : une définition acceptée puis
+illisible à l'ouverture d'un dossier serait bien pire qu'un refus, elle ne se
+manifesterait qu'au moment de la saisie, dossier par dossier.
+
 ### Les jalons calendaires sont typés
 
 Le type de point `date` (migration `006`) porte les jalons de la commande MTI :
@@ -279,6 +352,29 @@ structure à défaire ensuite.
 départ de tout dossier, et il n'y a pas de tiers état à distinguer. Le jalon
 s'enregistre au clic, sans attendre un « Enregistrer » — un changement d'onglet
 le perdrait — et son passage est tracé avec son auteur, comme le reste.
+
+### Les filtres du tableau de bord sont côté serveur
+
+Chaque en-tête de colonne porte son filtre — n° de dossier, produit, n° de lot,
+patient, prescription, étape en cours, statut. Tous partent au **serveur**, et
+c'est le point à ne pas retoucher : la liste est plafonnée à 200 lignes, et
+filtrer une liste déjà tronquée cacherait **sans le dire** les dossiers
+correspondants situés au-delà du plafond. Un filtre qui ment par omission est
+pire que pas de filtre.
+
+Deux conséquences :
+
+- La liste des étapes proposées est lue des **dossiers**, pas du modèle actif
+  (`GET /api/dossiers/etapes`). Un dossier ouvert sous une version précédente
+  porte des processus que le modèle ne connaît plus — l'aphérèse en est
+  l'exemple — et une liste tirée du modèle actif les rendrait infiltrables.
+- Les champs texte passent par un chargement différé de 300 ms. Un appel par
+  frappe était déjà limite avec une seule zone de recherche ; avec quatre champs
+  de filtre, c'était intenable.
+
+Quand un filtre est posé, le bandeau le dit : les compteurs des tuiles portent
+sur ce qui est affiché, et un total qui ne correspond pas à l'écran est
+trompeur.
 
 ### Le tableau de bord est le point d'entrée
 
@@ -385,7 +481,7 @@ tableau de bord.
 ## Vérifications
 
 ```bash
-# Invariants du schéma (15 tests) — se lance avec un search_path par défaut,
+# Invariants du schéma (17 tests) — se lance avec un search_path par défaut,
 # comme un vrai client, pour ne pas masquer les références non qualifiées.
 psql -d mti -v ON_ERROR_STOP=1 -f db/tests/test_invariants.sql
 
@@ -394,6 +490,9 @@ npm --prefix api run test:e2e
 
 # Jeu de démonstration : insertion, idempotence, purge
 npm --prefix api run test:demo
+
+# Onglet Configuration : publier une version sans toucher aux dossiers ouverts
+npm --prefix api run test:config
 
 # Ce que fait l'application en AUTH_MODE=oidc sans SSO branché
 # (démarrer le serveur avec AUTH_MODE=oidc au préalable)

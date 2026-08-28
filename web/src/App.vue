@@ -6,6 +6,7 @@ import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
 import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
+import PanneauConfiguration from './components/PanneauConfiguration.vue'
 import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
 import { useSession } from './stores/session.js'
@@ -19,7 +20,8 @@ const onglet = ref('bord')
 const TITRES = {
   bord: 'Tableau de bord MTI',
   scenario: 'Scénario MTI — Processus chronologique',
-  utilisateurs: 'Administration — Utilisateurs'
+  utilisateurs: 'Administration — Utilisateurs',
+  configuration: 'Configuration — Processus et points de contrôle'
 }
 
 /** Ouvre un dossier depuis le tableau de bord et bascule sur le scénario. */
@@ -87,6 +89,10 @@ const blocages = computed(() => {
               :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
         Scénario
       </button>
+      <button class="onglet" :class="{ act: onglet === 'configuration' }" role="tab"
+              :aria-selected="onglet === 'configuration'" @click="onglet = 'configuration'">
+        Configuration
+      </button>
       <button class="onglet" :class="{ act: onglet === 'utilisateurs' }" role="tab"
               :aria-selected="onglet === 'utilisateurs'" @click="onglet = 'utilisateurs'">
         Utilisateurs
@@ -113,6 +119,33 @@ const blocages = computed(() => {
           </template>
           &nbsp;|&nbsp; Péremption : {{ store.dossier.datePeremption || '—' }}
         </div>
+        <!-- Identifiants du patient : l'IPP pointe vers le dossier du SIH, les
+             autres numéros portent un libellé modifiable. Rien ne s'affiche
+             tant qu'aucun patient n'est rattaché — l'anonymat vaut ici aussi. -->
+        <div v-if="store.dossier.patient" class="ids-pat">
+          <label class="ids-l" for="ids-ipp">IPP</label>
+          <input id="ids-ipp" class="ids-i" type="text" placeholder="—"
+                 v-model="store.dossier.patient.ipp"
+                 :disabled="store.lectureSeule"
+                 @change="store.enregistrerIdentifiants()">
+          <template v-for="(num, i) in store.dossier.patient.identifiants ?? []" :key="i">
+            <!-- Le libellé est un champ, pas un texte : c'est tout l'intérêt. -->
+            <input class="ids-lm" type="text" v-model="num.libelle"
+                   :disabled="store.lectureSeule"
+                   title="Libellé du numéro — modifiable"
+                   @change="store.enregistrerIdentifiants()">
+            <input class="ids-i" type="text" placeholder="—" v-model="num.valeur"
+                   :disabled="store.lectureSeule"
+                   @change="store.enregistrerIdentifiants()">
+            <button v-if="!store.lectureSeule" class="ids-x" title="Retirer ce numéro"
+                    @click="store.retirerIdentifiant(i); store.enregistrerIdentifiants()">−</button>
+          </template>
+          <!-- « + N° » et non « + » seul : le bouton doit dire ce qu'il ajoute,
+               il est entouré d'autres champs. -->
+          <button v-if="!store.lectureSeule" class="ids-p" title="Ajouter un numéro patient"
+                  @click="store.ajouterIdentifiant()">+&nbsp;N°</button>
+        </div>
+
         <div v-if="store.dossierId" class="presc-jalon">
           <button class="presc-b" :class="{ faite: store.dossier.prescriptionFaite }"
                   :disabled="store.lectureSeule"
@@ -121,6 +154,34 @@ const blocages = computed(() => {
                   @click="store.basculerPrescription()">
             {{ store.dossier.prescriptionFaite ? '✓ Prescription réalisée' : '○ Prescription non réalisée' }}
           </button>
+          <!-- L'aphérèse n'est plus un processus : c'est une date facultative,
+               qui n'apparaît que si le jalon est posé. -->
+          <label class="aph-c" :title="store.lectureSeule ? 'Dossier validé — lecture seule'
+                   : 'Aphérèse réalisée ?'">
+            <input type="checkbox" :checked="store.dossier.aphereseFaite"
+                   :disabled="store.lectureSeule"
+                   @change="store.basculerApherese()">
+            Aphérèse&nbsp;?
+          </label>
+          <input v-if="store.dossier.aphereseFaite" class="aph-d" type="date"
+                 v-model="store.dossier.dateApherese"
+                 :disabled="store.lectureSeule"
+                 title="Date de l'aphérèse"
+                 @change="store.enregistrerEntete()">
+        </div>
+
+        <!-- Information importante : une ligne libre, toujours visible. Vide,
+             elle ne prend pas de place ; renseignée, elle doit se voir. -->
+        <div v-if="store.dossierId" class="info-imp" :class="{ plein: !!store.dossier.informationImportante }">
+          <span class="info-ic" aria-hidden="true">⚑</span>
+          <!-- `title` en plus du champ : une alerte plus longue que la largeur
+               disponible doit rester lisible au survol. -->
+          <input class="info-i" type="text"
+                 :placeholder="store.lectureSeule ? '—' : 'Information importante à signaler…'"
+                 :title="store.dossier.informationImportante || ''"
+                 v-model="store.dossier.informationImportante"
+                 :disabled="store.lectureSeule"
+                 @change="store.enregistrerEntete()">
         </div>
       </div>
       <div class="op-badge">
@@ -247,6 +308,7 @@ const blocages = computed(() => {
     </div>
     </template>
 
+    <PanneauConfiguration v-else-if="onglet === 'configuration'" />
     <PanneauUtilisateurs v-else-if="onglet === 'utilisateurs'" />
   </div>
 

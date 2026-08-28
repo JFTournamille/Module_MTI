@@ -28,6 +28,12 @@ réglementaires, pas à des préférences techniques.
   `UPDATE`/`DELETE` dessus, et c'est volontaire.
 - **Un dossier validé est en lecture seule.** Toute correction passe par une
   nouvelle version, jamais par un `UPDATE`.
+- **Un modèle de parcours ne se modifie pas : on en publie une version.**
+  L'onglet Configuration crée `version + 1` et la met en service ; les dossiers
+  ouverts conservent la définition figée à leur création. Il n'y a pas de route
+  de modification, et c'est volontaire.
+- **Le rang d'un processus n'est pas un identifiant.** Retirer l'aphérèse en v3
+  a décalé douze processus. Désigner un processus se fait par son `code`.
 - **Une migration appliquée ne se modifie pas.** `api/src/migrer.js` vérifie
   l'empreinte SHA-256 et refuse un fichier altéré : créer une nouvelle
   migration.
@@ -58,7 +64,7 @@ Un point de contrôle :
 }
 ```
 
-- `type` : `ouinon` | `valeur` | `photo` | `timer` | `texte` | `auto`
+- `type` : `ouinon` | `valeur` | `photo` | `timer` | `texte` | `auto` | `date`
   (aligné sur l'enum `mti.type_point`)
 - `multi` : `false` | `"photo"` | `"cuve"` — duplication par n exemplaires
 - `seuil` : déclenche l'alarme de température, figée à l'enregistrement dans

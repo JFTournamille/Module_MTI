@@ -122,7 +122,10 @@ export default async function dossiers (app) {
       patientId: 'patient_id',
       preallocation: 'preallocation',
       prescriptionFaite: 'prescription_faite',
-      commentaire: 'commentaire'
+      commentaire: 'commentaire',
+      informationImportante: 'information_importante',
+      aphereseFaite: 'apherese_faite',
+      dateApherese: 'date_apherese'
     }
     const corps = request.body ?? {}
     const colonnes = []
@@ -138,7 +141,8 @@ export default async function dossiers (app) {
         }
         v = n
       }
-      if ((cle === 'preallocation' || cle === 'prescriptionFaite') && typeof v !== 'boolean') {
+      if (['preallocation', 'prescriptionFaite', 'aphereseFaite'].includes(cle) &&
+          typeof v !== 'boolean') {
         return reply.code(400).send({ erreur: `${cle} doit valoir true ou false.` })
       }
       valeurs.push(v)
@@ -151,6 +155,15 @@ export default async function dossiers (app) {
     if (corps.preallocation === false && corps.patientId === undefined) {
       valeurs.push(null)
       colonnes.push(`patient_id = $${valeurs.length + 1}`)
+    }
+
+    /* Décocher « aphérèse faite » efface la date : la base refuserait de toute
+       façon une date sans jalon (dossier_date_apherese_exige_jalon), et un 409
+       de contrainte serait un mauvais message pour un geste qui a un sens
+       évident. On l'applique ici plutôt que de laisser le client s'en souvenir. */
+    if (corps.aphereseFaite === false && corps.dateApherese === undefined) {
+      valeurs.push(null)
+      colonnes.push(`date_apherese = $${valeurs.length + 1}`)
     }
 
     const { rows } = await transaction(
@@ -367,17 +380,81 @@ export default async function dossiers (app) {
   // n'est joint que si le dossier porte un patient — préallocation explicite ou
   // allocation à la mise en fabrication. Sinon la ligne est « en attente
   // d'allocation », et aucune donnée identifiante ne quitte la base.
+  /**
+   * Étapes en cours réellement présentes, pour peupler le filtre de colonne.
+   *
+   * Lues des DOSSIERS et non du modèle actif : un dossier ouvert sous une
+   * version précédente porte des processus que le modèle actif ne connaît plus
+   * — l'aphérèse en est l'exemple. Filtrer sur une liste tirée du modèle actif
+   * laisserait ces dossiers infiltrables.
+   */
+  app.get('/api/dossiers/etapes', async () => {
+    const { rows } = await requete(
+      `SELECT DISTINCT etape FROM (
+         SELECT (SELECT dp.nom FROM mti.dossier_processus dp
+                  WHERE dp.dossier_id = d.id AND dp.etat <> 'valide'
+                  ORDER BY dp.ordre LIMIT 1) AS etape
+           FROM mti.dossier d
+       ) e
+        WHERE etape IS NOT NULL
+        ORDER BY etape`)
+    return rows.map((r) => r.etape)
+  })
+
   app.get('/api/dossiers', async (request) => {
     const q = String(request.query.q ?? '').trim()
     const produit = String(request.query.produit ?? '').trim()
     const patient = String(request.query.patient ?? '').trim()
     const statut = String(request.query.statut ?? '').trim()
+    /* Filtres par colonne du tableau de bord. Ils sont appliqués ICI et non
+       côté front : la liste est plafonnée à 200 lignes, et filtrer une liste
+       déjà tronquée donnerait des résultats faux sans le dire — un dossier
+       correspondant au filtre mais au-delà du plafond serait simplement
+       invisible. */
+    const reference = String(request.query.reference ?? '').trim()
+    const lot = String(request.query.lot ?? '').trim()
+    const etape = String(request.query.etape ?? '').trim()
+    const prescription = String(request.query.prescription ?? '').trim()
 
     const conditions = []
     const params = []
 
     if (produit) { params.push(produit); conditions.push(`d.produit_id = $${params.length}`) }
-    if (patient) { params.push(patient); conditions.push(`d.patient_id = $${params.length}`) }
+    /* `patient` accepte un UUID (lien direct depuis une fiche) ou du texte (le
+       filtre de colonne). Distinguer sur la forme évite d'avoir deux paramètres
+       pour la même colonne, et de casser un appelant qui passerait un id. */
+    if (patient) {
+      const estUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        .test(patient)
+      if (estUuid) {
+        params.push(patient)
+        conditions.push(`d.patient_id = $${params.length}`)
+      } else {
+        params.push(`%${patient}%`)
+        const n = params.length
+        conditions.push(`(pat.reference ILIKE $${n} OR i.nom ILIKE $${n} OR i.prenom ILIKE $${n})`)
+      }
+    }
+    if (reference) {
+      params.push(`%${reference}%`)
+      conditions.push(`d.reference ILIKE $${params.length}`)
+    }
+    if (lot) {
+      params.push(`%${lot}%`)
+      conditions.push(`d.numero_lot ILIKE $${params.length}`)
+    }
+    /* L'étape est le nom du premier processus non validé — la même expression
+       que la colonne affichée. La recopier ici plutôt que de filtrer sur la
+       valeur calculée : PostgreSQL n'autorise pas un alias de SELECT dans le
+       WHERE, et une sous-requête corrélée reste lisible. */
+    if (etape) {
+      params.push(etape)
+      conditions.push(`(SELECT dp.nom FROM mti.dossier_processus dp
+                         WHERE dp.dossier_id = d.id AND dp.etat <> 'valide'
+                         ORDER BY dp.ordre LIMIT 1) = $${params.length}`)
+    }
+    if (prescription === 'oui') conditions.push('d.prescription_faite')
+    else if (prescription === 'non') conditions.push('NOT d.prescription_faite')
 
     // `attente` n'est pas un statut stocké : c'est l'absence de patient sur un
     // dossier encore ouvert. Le calculer ici évite de dupliquer la règle côté
@@ -517,7 +594,8 @@ export default async function dossiers (app) {
     if (rows[0].patient_id) {
       const { rows: p } = await requete(
         `SELECT pat.id, pat.reference, pat.source,
-                i.nom, i.prenom, i.initiales, i.date_naissance
+                i.nom, i.prenom, i.initiales, i.date_naissance,
+                i.ipp, i.identifiants
            FROM mti.patient pat
            LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
           WHERE pat.id = $1`,
@@ -529,7 +607,9 @@ export default async function dossiers (app) {
           source: p[0].source,
           nom: [p[0].nom, p[0].prenom].filter(Boolean).join(' ') || null,
           initiales: p[0].initiales,
-          dateNaissance: p[0].date_naissance
+          dateNaissance: p[0].date_naissance,
+          ipp: p[0].ipp ?? null,
+          identifiants: p[0].identifiants ?? []
         }
       }
     }

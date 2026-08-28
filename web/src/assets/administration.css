@@ -171,3 +171,116 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
   border-radius:2px;background:#4a3880;color:#fff;cursor:pointer;}
 .contre-b:disabled{opacity:.5;cursor:default;}
 .contre-emp{font-family:'Courier New',monospace;font-size:10px;color:#2e7d32;}
+
+/* ── En-tête du dossier : identifiants patient, jalon d'aphérèse, alerte ──
+   Ces règles vivent ici et non dans scenario.css, qui est repris verbatim de
+   la maquette de référence et dont le rendu a été validé par les
+   utilisateurs. */
+.ids-pat{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;}
+.ids-l{font-size:11px;color:#c8b8f8;letter-spacing:.04em;}
+.ids-i{font-size:12px;padding:2px 6px;width:118px;border:1px solid #6045a0;
+  border-radius:3px;background:#fff;color:#2a1a4a;}
+.ids-lm{font-size:11px;padding:2px 5px;width:104px;border:1px dashed #8a72c8;
+  border-radius:3px;background:#f3eeff;color:#4a3580;font-style:italic;}
+.ids-i:disabled,.ids-lm:disabled{background:#efeaf8;color:#6a5a8a;font-style:normal;}
+.ids-x{font-size:13px;line-height:1;width:20px;height:20px;cursor:pointer;
+  border:none;border-radius:3px;color:#fff;background:#6045a0;}
+/* « + N° » porte un libellé : une largeur fixe de 20px le tronquerait. */
+.ids-p{font-size:11px;line-height:1;height:20px;padding:0 7px;cursor:pointer;
+  border:none;border-radius:3px;color:#fff;background:#6045a0;font-family:inherit;
+  white-space:nowrap;}
+.ids-x{background:#8a6a6a;}
+.ids-p:hover{background:#7a5ac0;}
+
+.aph-c{display:inline-flex;align-items:center;gap:5px;margin-left:10px;
+  font-size:12px;color:#e8e0ff;cursor:pointer;}
+.aph-c input:disabled{cursor:default;}
+.aph-d{font-size:12px;padding:2px 6px;margin-left:6px;border:1px solid #6045a0;
+  border-radius:3px;background:#fff;color:#2a1a4a;}
+
+/* `.hdr` est un flex `space-between` et `.hdr-left` n'y prend que sa largeur
+   naturelle : sans `flex:1` sur le conteneur gauche, l'alerte était rognée à
+   ~360 px et illisible. Posé ici, pas dans scenario.css, qui est repris
+   verbatim de la maquette validée. */
+.hdr-left{flex:1;min-width:0;margin-right:14px;}
+.info-imp{display:flex;align-items:center;gap:6px;margin-top:5px;}
+.info-ic{font-size:12px;color:#8a72c8;}
+.info-i{flex:1;min-width:0;font-size:12px;padding:3px 7px;border-radius:3px;
+  border:1px dashed #6045a0;background:transparent;color:#e8e0ff;}
+.info-i::placeholder{color:#9a86c8;font-style:italic;}
+/* Renseignée, l'information doit sauter aux yeux : c'est sa seule raison
+   d'être en en-tête plutôt que dans le commentaire du dossier. */
+.info-imp.plein .info-i{background:#fff3e0;border:1px solid #e0a030;
+  color:#7a4f00;font-weight:600;}
+.info-imp.plein .info-ic{color:#e0a030;}
+
+/* ── Onglet Configuration : modèle de parcours et points de contrôle ────── */
+.adm-msg-ok{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;}
+.cfg-aide{font-size:12px;color:#666;line-height:1.55;margin:10px 14px;padding:9px 12px;
+  background:#f8f6ff;border-left:3px solid #6045a0;border-radius:0 3px 3px 0;}
+.cfg-v{font-size:13px;font-weight:bold;color:#4a3880;}
+.cfg-mod{font-size:12px;color:#e65100;font-weight:bold;}
+
+/* Trois colonnes : structure du parcours, processus et ses points, détail du
+   point sélectionné. `flex-wrap` plutôt qu'une grille figée : sous 1200 px la
+   troisième colonne passe dessous au lieu d'être écrasée. */
+.cfg{display:flex;gap:0;align-items:stretch;border-top:1px solid #e4dcf8;flex-wrap:wrap;}
+.cfg-col{width:300px;min-width:300px;border-right:1px solid #e4dcf8;}
+.cfg-det{flex:1;min-width:420px;padding:0 14px 20px;}
+.cfg-pt-col{width:390px;min-width:390px;border-left:1px solid #e4dcf8;
+  background:#fcfbff;padding:0 14px 20px;}
+.cfg-pt-col .cfg-h{margin:0 -14px 10px;padding-left:14px;}
+.cfg-pt-col .cfg-f>label:first-child{width:112px;}
+.cfg-pt-col .cfg-f input[type=text],.cfg-pt-col .cfg-f select{min-width:0;flex:1;}
+.cfg-h{font-size:13px;font-weight:bold;color:#4a3880;padding:10px 12px 6px;
+  background:#f6f3ff;border-bottom:1px solid #e4dcf8;margin-bottom:8px;}
+.cfg-det .cfg-h{margin:14px -14px 10px;padding-left:14px;}
+
+.cfg-liste{max-height:520px;overflow-y:auto;}
+.cfg-p{display:grid;grid-template-columns:22px 1fr auto;gap:2px 7px;padding:6px 10px;
+  cursor:pointer;border-bottom:1px solid #f2eeff;font-size:12px;align-items:center;}
+.cfg-p:hover{background:#faf8ff;}
+.cfg-p.sel{background:#efe9ff;border-left:3px solid #6045a0;padding-left:7px;}
+.cfg-n{font-size:11px;color:#8878c0;font-weight:bold;text-align:right;}
+.cfg-nm{font-weight:bold;color:#3a2870;}
+.cfg-d{grid-column:2;font-size:11px;color:#8a80a8;}
+/* Les boutons occupent la 3e colonne sur les DEUX lignes : sans `grid-row`,
+   ils retombaient sous le code du processus au lieu de rester à droite. */
+.cfg-mv{grid-column:3;grid-row:1/3;align-self:center;display:flex;gap:3px;}
+.cfg-mv button{font-size:11px;line-height:1;width:18px;height:18px;cursor:pointer;
+  border:1px solid #c8b8e8;background:#fff;color:#4a3880;border-radius:2px;}
+.cfg-mv button:disabled{opacity:.35;cursor:default;}
+.cfg-mv button.sup{color:#c62828;border-color:#e8c0c0;}
+
+.cfg-f{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap;}
+.cfg-f>label:first-child{width:132px;flex-shrink:0;font-size:12px;color:#4a3880;font-weight:bold;}
+.cfg-f input[type=text],.cfg-f input[type=number],.cfg-f select{font-size:13px;padding:4px 8px;
+  border:1px solid #a090cc;border-radius:2px;min-width:180px;}
+.cfg-f .meta{font-size:11px;color:#888;}
+.cfg-cb{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#444;cursor:pointer;}
+
+.cfg-sec{border:1px solid #e4dcf8;border-radius:3px;margin-bottom:8px;}
+.cfg-sh{display:flex;gap:7px;align-items:center;padding:6px 8px;background:#f6f3ff;
+  border-bottom:1px solid #e4dcf8;}
+.cfg-sh input{flex:1;font-size:12px;font-weight:bold;padding:3px 7px;
+  border:1px solid #c8b8e8;border-radius:2px;color:#3a2870;}
+.cfg-pt{display:flex;align-items:center;gap:9px;padding:5px 9px;cursor:pointer;
+  border-bottom:1px solid #f6f3ff;font-size:12px;}
+.cfg-pt:hover{background:#faf8ff;}
+.cfg-pt.sel{background:#efe9ff;border-left:3px solid #6045a0;padding-left:6px;}
+.cfg-pl{flex:1;min-width:0;color:#3a2870;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cfg-pd{font-size:11px;color:#8a80a8;white-space:nowrap;}
+.cfg-x{font-size:12px;line-height:1;width:18px;height:18px;cursor:pointer;border-radius:2px;
+  border:1px solid #e8c0c0;background:#fff;color:#c62828;}
+.cfg-x:disabled{opacity:.35;cursor:default;}
+
+/* ── Filtres par colonne du tableau de bord ─────────────────────────────── */
+table.adm-t thead tr.tb-filtres{background:#f6f3ff;}
+tr.tb-filtres th{padding:4px 6px;font-weight:normal;}
+tr.tb-filtres input,tr.tb-filtres select{width:100%;min-width:0;font-size:11px;
+  padding:2px 5px;border:1px solid #c8b8e8;border-radius:2px;color:#3a2870;
+  background:#fff;font-family:inherit;}
+tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
+/* Un total qui ne correspond pas à l'écran est trompeur : quand un filtre est
+   posé, le dire explicitement. */
+.tb-restreint{font-size:11px;color:#e65100;font-weight:bold;}
