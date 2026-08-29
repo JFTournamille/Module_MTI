@@ -150,7 +150,7 @@ bascule sur `src/data/*.json`, affiche un bandeau « Mode hors-ligne » et reste
 saisissable. **La persistance différée des saisies reste à faire** (voir
 Reste à faire).
 
-En ligne, en revanche, la saisie est désormais persistée : l'onglet Scénario
+En ligne, en revanche, la saisie est désormais persistée : l'onglet du parcours
 travaille sur un **dossier**, et sans dossier ouvert il affiche un état vide
 plutôt qu'un formulaire qui n'enregistrerait rien. Trois gestes écrivent :
 `PATCH /api/dossiers/:id` pour l'en-tête, `PUT /api/processus/:id/saisies` pour
@@ -384,6 +384,28 @@ l'objet du double contrôle est qu'un second regard s'exerce.
 > tant que l'authentification réelle n'est pas branchée. Deux identités
 > authentifiées distinctes sont un prérequis, pas une évolution.
 
+### L'anatomie d'une ligne de contrôle
+
+Reprise de la maquette v12 : **★ · N° · point de contrôle · type · action ·
+commentaire · heure · opérateur**.
+
+- **L'étoile en premier** : c'est le premier tri que fait l'œil sur une liste de
+  trente points. Elle est pleine (★) ou creuse (☆), pas seulement colorée — un
+  daltonien ne distingue pas #cc2200 de #ccc.
+- **Le commentaire a sa colonne**, au lieu d'être glissé sous le libellé où il
+  se confondait avec les marqueurs du point.
+- **Oui / Non sont deux boutons**, pas deux radios. Une radio se vise mal et se
+  lit mal de loin ; deux boutons dont l'un s'allume disent l'état de la ligne
+  d'un coup d'œil.
+- **Une valeur hors seuil rougit dans le champ**, pas seulement dans la
+  pastille à côté : c'est le champ qu'on relit avant de valider.
+- Les marqueurs du point (2 pers., ×n, n° de série, kit) sont des pastilles
+  sous le libellé : ils qualifient le point, pas la saisie.
+
+La table est en `table-layout:fixed` : les largeurs qui font foi sont celles du
+`<colgroup>`, pas celles portées par les `<th>`. Un colgroup resté à l'ancien
+ordre écrasait la colonne du libellé pendant que « Heure » s'étalait.
+
 ### Prescription : un jalon, pas un référentiel
 
 `mti.dossier.prescription_faite` (migration `005`) répond à un besoin simple —
@@ -395,6 +417,14 @@ Rattacher une prescription **identifiée** — sa référence, son protocole, so
 prescripteur — suppose de décider où elle vit et qui en répond. **Cette décision
 est reportée**, et le booléen ne la préempte pas : il n'introduit aucune
 structure à défaire ensuite.
+
+**Cocher « prescription réalisée » impose de rattacher un patient.** Une
+prescription est nominative par nature : poser le jalon sur un dossier anonyme
+laisserait une affirmation qui ne se rattache à personne. La recherche patient
+s'ouvre donc au moment où le jalon est posé, en disant pourquoi, et le patient
+choisi pose le jalon dans le même geste. Le retrait du jalon, lui, ne demande
+rien. C'est la seule exception à l'anonymat par défaut qui soit déclenchée par
+un geste plutôt que par le rang d'un processus.
 
 `false` signifie « pas encore réalisée », pas « inconnue » : c'est l'état de
 départ de tout dossier, et il n'y a pas de tiers état à distinguer. Le jalon
@@ -475,7 +505,7 @@ recherche libre (référence, lot, produit, nom de patient), filtre par produit,
 tuiles de comptage, et démarrage d'un scénario avec son produit et son n° de lot
 en un seul appel — un dossier créé sans son produit parce qu'un second appel a
 échoué serait une incohérence gratuite. Un clic sur une ligne ouvre le dossier
-dans l'onglet Scénario. Les dossiers terminés restent listés et consultables :
+dans son onglet de parcours. Les dossiers terminés restent listés et consultables :
 ils sont figés, pas effacés.
 
 Deux règles d'affichage sont calculées **côté serveur**, pour ne pas être
@@ -484,6 +514,33 @@ d'allocation » (absence de patient sur un dossier ouvert) et « Parcours clos �
 (dossier validé). L'anonymat vaut dans la liste comme ailleurs — aucun objet
 patient n'est renvoyé tant que le dossier n'en porte pas, alors que la recherche
 porte bien sur le nom, parce que c'est l'usage réel.
+
+### Le n° de dossier est attribué par la base
+
+`MTI-000001`, `MTI-000002`, … Une séquence PostgreSQL
+(`mti.dossier_reference_seq`, migration `009`) et un `DEFAULT` sur
+`dossier.reference` : la référence n'est plus proposée par le navigateur.
+
+Elle l'était, à partir de l'horodatage (`MTI-2026-0829-1030`). Deux dossiers
+créés dans la même minute sur deux postes se voyaient proposer **la même**
+référence, et le second échouait sur la contrainte d'unicité — un refus que
+l'utilisateur ne pouvait ni comprendre ni corriger. `nextval` est atomique :
+c'est le seul mécanisme qui reste juste sous concurrence.
+
+Deux conséquences assumées :
+
+- **La série comporte des trous.** Une transaction annulée ne rend pas son
+  numéro. C'est le bon arbitrage : un numéro réattribué ferait pointer deux
+  dossiers d'audit vers la même référence, ce qu'aucune numérotation de
+  traçabilité ne peut se permettre. Un trou se constate, une collision se subit.
+- **La référence reste imposable** à l'insertion — c'est un `DEFAULT`, pas un
+  trigger. Le jeu de démonstration écrit `DEMO-MTI-…`, les suites de test
+  `MTI-NAV-…`. Le générateur saute les numéros déjà pris, pour qu'un numéro
+  imposé à la main ne fasse pas échouer la création suivante.
+
+Le formulaire de création n'a donc plus de champ « Référence » : il affiche
+« MTI-000XXX — attribué automatiquement ». Proposer un champ modifiable
+laisserait croire à un choix qui n'en est pas un.
 
 ### Comptes et profils
 
@@ -573,7 +630,7 @@ tableau de bord.
 ## Vérifications
 
 ```bash
-# Invariants du schéma (17 tests) — se lance avec un search_path par défaut,
+# Invariants du schéma (18 tests) — se lance avec un search_path par défaut,
 # comme un vrai client, pour ne pas masquer les références non qualifiées.
 psql -d mti -v ON_ERROR_STOP=1 -f db/tests/test_invariants.sql
 

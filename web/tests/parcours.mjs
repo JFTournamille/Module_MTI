@@ -95,12 +95,17 @@ async function ouvrirDepuisBord (reference) {
    dépendent. La création passe désormais par le tableau de bord — c'est le seul
    chemin, le formulaire du panneau vide ayant été retiré comme doublon. */
 console.log('\nPréalable : ouverture d\'un dossier')
-const refDossier = `MTI-NAV-${Date.now()}`
+/* Le n° de dossier n'est plus saisi : la base l'attribue (MTI-000001, …).
+   La suite le RELIT donc de l'onglet ouvert par la création, au lieu de le
+   fabriquer — c'est aussi la seule façon de vérifier qu'il a bien été
+   attribué. */
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1200)
 await page.locator('.adm-b-p', { hasText: 'Démarrer un parcours' }).click()
 await page.waitForTimeout(400)
-await page.locator('#tb-ref').fill(refDossier)
+await page.locator('#tb-ref').count() === 0
+  ? ok('aucun champ de référence : le n° de dossier est attribué par la base')
+  : ko('le n° de dossier est encore saisissable à la main')
 /* Le parcours est choisi explicitement : plusieurs sont livrés, et le premier
    de la liste n'est pas celui que cette suite éprouve. S'en remettre au défaut
    faisait passer la suite sur le parcours allogénique — 8 processus au lieu de
@@ -108,9 +113,12 @@ await page.locator('#tb-ref').fill(refDossier)
 await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
 await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
 await page.waitForTimeout(2000)
+const refDossier = (await page.locator('.onglet-doss').innerText()).replace(/^▸\s*/, '').trim()
 await page.locator('.vide-dossier').count() === 0
   ? ok(`dossier ${refDossier} ouvert — la saisie sera enregistrée`)
   : ko('aucun dossier ouvert : la saisie ne serait pas enregistrée')
+if (/^MTI-\d{6}$/.test(refDossier)) ok(`n° de dossier incrémenté par la base : ${refDossier}`)
+else ko(`n° de dossier inattendu : « ${refDossier} »`)
 // La réception n'est plus le premier processus : la v2 ajoute quatre processus
 // amont. Les groupes qui suivent portent sur elle, il faut l'ouvrir.
 await allerAuProcessus('Réception (+/-')
@@ -151,7 +159,10 @@ nbLignes === nbLignesAttendues(1) ? ok(`${nbLignes} points de contrôle (n=1)`)
    appel. Un appel sans le point la crée sans son caractère obligatoire, et le
    modèle ne s'applique plus jamais — la validation cesse alors de bloquer, en
    silence. C'est arrivé, d'où ce contrôle. */
-const nbObl = await page.locator('.cobtn.on').count()
+/* Le bouton « obligatoire » s'appelle `.etoile` depuis la reprise de
+   l'ergonomie v12, et il est plein (★) ou creux (☆) plutôt que seulement
+   coloré — un daltonien ne distingue pas #cc2200 de #ccc. */
+const nbObl = await page.locator('.etoile.on').count()
 nbObl === NB_OBLIGATOIRES
   ? ok(`${nbObl} point(s) obligatoire(s), hérités du modèle`)
   : ko(`${nbObl} obligatoire(s) au lieu de ${NB_OBLIGATOIRES} — le défaut du modèle est perdu`)
@@ -165,8 +176,12 @@ nbLignes = await page.locator('.chk .crow').count()
 // portent leur propre compte (les tubes du kit) n'en dépendent pas.
 nbLignes === nbLignesAttendues(3) ? ok(`${nbLignes} lignes avec n=3`)
   : ko(`${nbLignes} lignes au lieu de ${nbLignesAttendues(3)}`)
-const badgesEx = await page.locator('.chk .cmul').filter({ hasText: 'Ex. 2/3' }).count()
-badgesEx > 0 ? ok(`badges « Ex. 2/3 » présents (${badgesEx})`) : ko('badges exemplaire absents')
+/* Le rang de l'exemplaire est passé sous le NUMÉRO du point (« 2/3 »), là où
+   la maquette v12 le place : sous le libellé il se confondait avec les
+   marqueurs qui qualifient le point, pas la ligne. */
+const badgesEx = await page.locator('.chk .cnc-ex').filter({ hasText: '2/3' }).count()
+badgesEx > 0 ? ok(`rang d'exemplaire « 2/3 » affiché (${badgesEx})`)
+  : ko('rang d\'exemplaire absent')
 await page.locator('.ch-meta input[type=number]').fill('1')
 await page.waitForTimeout(200)
 nbLignes = await page.locator('.chk .crow').count()
@@ -195,18 +210,20 @@ await page.locator('.chk .crow').first().locator('.cadd').click()
 await page.waitForTimeout(150)
 let op2 = await page.locator('.chk .crow.op2r').count()
 op2 === 1 ? ok('ligne Op.2 ajoutée') : ko(`${op2} ligne(s) Op.2`)
-const radiosOp1 = await page.locator('.chk .crow').first().locator('input[type=radio]').first()
-    .getAttribute('name')
-const radiosOp2 = await page.locator('.chk .crow.op2r').first().locator('input[type=radio]').first()
-    .getAttribute('name')
-radiosOp1 !== radiosOp2 ? ok(`radios indépendants (${radiosOp1} ≠ ${radiosOp2})`)
-  : ko('les radios Op.1 et Op.2 partagent le même name')
-// Vérifier l'indépendance réelle des réponses
-await page.locator('.chk .crow').first().locator('input[value=oui]').check()
-await page.locator('.chk .crow.op2r').first().locator('input[value=non]').check()
-const vOp1 = await page.locator('.chk .crow').first().locator('input[value=oui]').isChecked()
-const vOp2 = await page.locator('.chk .crow.op2r').first().locator('input[value=non]').isChecked()
-vOp1 && vOp2 ? ok('Op.1 = Oui et Op.2 = Non coexistent') : ko('les réponses interfèrent')
+/* Oui / Non sont deux boutons depuis la reprise de l'ergonomie v12 : il n'y a
+   plus d'attribut `name` à comparer. On éprouve donc l'indépendance réelle des
+   deux réponses plutôt que le moyen technique qui la garantissait — ce qui est
+   de toute façon le meilleur test des deux. */
+await page.locator('.chk .crow').first().locator('.ctl-b', { hasText: 'Oui' }).click()
+await page.waitForTimeout(150)
+await page.locator('.chk .crow.op2r').first().locator('.ctl-b', { hasText: 'Non' }).click()
+await page.waitForTimeout(150)
+const vOp1 = await page.locator('.chk .crow').first()
+  .locator('.ctl-b.on', { hasText: 'Oui' }).count()
+const vOp2 = await page.locator('.chk .crow.op2r').first()
+  .locator('.ctl-b.no.on', { hasText: 'Non' }).count()
+vOp1 === 1 && vOp2 === 1 ? ok('Op.1 = Oui et Op.2 = Non coexistent')
+  : ko(`les réponses interfèrent (Op.1 oui : ${vOp1}, Op.2 non : ${vOp2})`)
 await page.locator('.chk .crow').first().locator('.cadd').click()
 await page.waitForTimeout(150)
 op2 = await page.locator('.chk .crow.op2r').count()
@@ -474,7 +491,13 @@ await allerAuProcessus('Réception (+/-')
 
 const ligneIntegrite = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
 const ligneTemp = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
-await ligneIntegrite.locator('.roi').check()
+/* Les boutons Oui/Non basculent : recliquer « Oui » sur une ligne déjà à
+   « oui » l'efface. Le groupe 6 a répondu sur cette même ligne, donc on
+   n'appuie que si la réponse n'y est pas déjà — sinon la suite testerait la
+   persistance d'une saisie vide. */
+if (await ligneIntegrite.locator('.ctl-b.on', { hasText: 'Oui' }).count() === 0) {
+  await ligneIntegrite.locator('.ctl-b', { hasText: 'Oui' }).click()
+}
 await ligneTemp.locator('input[type=number]').fill('-140')
 await page.waitForTimeout(300)
 await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
@@ -502,7 +525,7 @@ await allerAuProcessus('Réception (+/-')
 
 const ligneIntegrite2 = page.locator('.chk .crow').filter({ hasText: 'intégrité du conteneur' }).first()
 const ligneTemp2 = page.locator('.chk .crow').filter({ hasText: 'SMART PACK I' }).first()
-await ligneIntegrite2.locator('.roi').isChecked()
+await ligneIntegrite2.locator('.ctl-b.on', { hasText: 'Oui' }).count() === 1
   ? ok('la réponse Oui/Non revient de la base')
   : ko('la réponse Oui/Non est perdue')
 const tempRelue = await ligneTemp2.locator('input[type=number]').inputValue()
@@ -569,10 +592,8 @@ await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
 await page.waitForTimeout(1200)
 
 // Démarrer un parcours, produit et lot compris, en un seul geste.
-const refBord = `MTI-BORD-${Date.now()}`
 await page.locator('.adm-b-p', { hasText: 'Démarrer un parcours' }).click()
 await page.waitForTimeout(400)
-await page.locator('#tb-ref').fill(refBord)
 await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
 const nbProduits = await page.locator('#tb-nprod option').count()
 nbProduits >= 2 ? ok(`${nbProduits - 1} produit(s) de référence proposés`)
@@ -583,10 +604,17 @@ await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
 await page.waitForTimeout(1800)
 
 const ongletApresCreation = await page.locator('.onglet.act').innerText()
-if (new RegExp(refBord).test(ongletApresCreation)) {
-  ok('la création bascule sur le parcours du nouveau dossier')
+const refBord = ongletApresCreation.replace(/^▸\s*/, '').trim()
+if (/^MTI-\d{6}$/.test(refBord)) {
+  ok(`la création bascule sur le parcours du nouveau dossier (${refBord})`)
 }
 else ko(`onglet actif : ${ongletApresCreation}`)
+/* Le n° du 2e dossier suit celui du 1er : la séquence avance, elle ne rejoue
+   pas. Deux dossiers créés à la même minute portaient auparavant la même
+   référence proposée. */
+Number(refBord.slice(4)) > Number(refDossier.slice(4))
+  ? ok(`n° incrémenté depuis ${refDossier} : ${refBord}`)
+  : ko(`n° non incrémenté : ${refDossier} puis ${refBord}`)
 const enteteApresCreation = await page.locator('.hdr .meta').innerText()
 if (/LOT-BORD-1/.test(enteteApresCreation)) ok('le n° de lot saisi à la création arrive dans l\'en-tête')
 else ko(`en-tête : ${enteteApresCreation}`)
@@ -633,6 +661,16 @@ else ko(`état de départ inattendu : « ${jalonAvant} »`)
 
 await jalon.click()
 await page.waitForTimeout(1200)
+/* Le dossier est anonyme à ce stade (le groupe 13 a retiré la préallocation,
+   et ce retrait est enregistré) : cocher la prescription ouvre donc la
+   recherche patient, une prescription étant nominative. On la satisfait ici —
+   c'est le groupe 25 qui éprouve la règle elle-même. */
+if (await page.locator('.cmodal-ov.show').count() === 1) {
+  await page.locator('.cmodal-bd input').fill('VAUTHIER')
+  await page.waitForTimeout(1500)
+  await page.locator('.cmodal-row').first().click()
+  await page.waitForTimeout(1800)
+}
 const jalonApres = (await jalon.innerText()).trim()
 if (/✓ Prescription réalisée/.test(jalonApres)) ok(`bascule : « ${jalonApres} »`)
 else ko(`après bascule : « ${jalonApres} »`)
@@ -740,7 +778,7 @@ lignesCD4 === 3 && lignesCD8 === 2
   ? ok(`${lignesCD4} tubes CD4 et ${lignesCD8} tubes CD8, comptés séparément`)
   : ko(`${lignesCD4} CD4 / ${lignesCD8} CD8 au lieu de 3 / 2`)
 
-const badgesDbl = await page.locator('.cdbl').count()
+const badgesDbl = await page.locator('.tagl-dbl').count()
 badgesDbl >= 4 ? ok(`${badgesDbl} point(s) marqués « 2 pers. »`)
   : ko(`${badgesDbl} badge(s) de double validation`)
 
@@ -1116,7 +1154,89 @@ await page.locator('.cfg-mod').count() === 0
   ? ok('abandonner rend le brouillon à la version en service')
   : ko('le brouillon reste marqué modifié après abandon')
 
-console.log('\n25. Filtres par colonne du tableau de bord')
+/* ── 25. Cocher la prescription impose un patient ──
+   Une prescription est nominative par nature : déclarer la prescription
+   réalisée sur un dossier sans patient laisserait un jalon qui ne se rattache
+   à personne. Le rattachement est imposé au moment où le jalon est posé,
+   plutôt que de laisser l'incohérence s'installer. */
+console.log('\n25. Prescription : le patient devient obligatoire')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1300)
+await page.locator('#tb-q').fill('DEMO-MTI-0001')
+await page.waitForTimeout(1400)
+if (await page.locator('tr.tb-ligne').count() === 0) {
+  console.log('  · jeu de démonstration absent — groupe non applicable')
+} else {
+  await page.locator('tr.tb-ligne', { hasText: 'DEMO-MTI-0001' }).click()
+  await page.waitForTimeout(1800)
+  const enteteAvant = await page.locator('.hdr-left .name').innerText()
+  if (/En attente d'allocation/.test(enteteAvant)) ok('dossier de départ sans patient')
+  else ko(`en-tête : ${enteteAvant}`)
+
+  await page.locator('.presc-b').click()
+  await page.waitForTimeout(900)
+  await page.locator('.cmodal-ov.show').count() === 1
+    ? ok('cocher la prescription ouvre la recherche patient')
+    : ko('aucune modale : le jalon a pu être posé sans patient')
+  const motif = await page.locator('.cmodal-motif').innerText().catch(() => '')
+  if (/nominative/.test(motif)) ok(`la modale dit pourquoi : « ${motif.trim()} »`)
+  else ko(`motif affiché : « ${motif} »`)
+
+  // Le jalon ne doit PAS avoir basculé tant qu'aucun patient n'est choisi.
+  const enteteDurant = await page.locator('.hdr-left .name').innerText()
+  const prescDurant = await page.locator('.presc-b').innerText()
+  if (/non réalisée/.test(prescDurant) && /En attente/.test(enteteDurant)) {
+    ok('le jalon reste en attente tant que le patient n\'est pas choisi')
+  } else {
+    ko(`jalon « ${prescDurant.trim()} », en-tête « ${enteteDurant.trim()} »`)
+  }
+
+  await page.locator('.cmodal-bd input').fill('VAUTHIER')
+  await page.waitForTimeout(1500)
+  await page.locator('.cmodal-row').first().click()
+  await page.waitForTimeout(1800)
+  const prescApres = await page.locator('.presc-b').innerText()
+  const enteteApres = await page.locator('.hdr-left .name').innerText()
+  if (/réalisée/.test(prescApres) && !/non réalisée/.test(prescApres)) {
+    ok('choisir le patient pose le jalon dans le même geste')
+  } else {
+    ko(`jalon après choix : « ${prescApres.trim()} »`)
+  }
+  if (/VAUTHIER/.test(enteteApres)) ok(`patient rattaché : « ${enteteApres.trim()} »`)
+  else ko(`en-tête après choix : « ${enteteApres.trim()} »`)
+
+  // Et tout doit avoir été écrit en base, pas seulement à l'écran.
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(1900)
+  await allerAuScenario()
+  const relu = await page.locator('.hdr-left .name').innerText()
+  if (/VAUTHIER/.test(relu)) ok('rattachement relu depuis la base après rechargement')
+  else ko(`en-tête relu : « ${relu.trim()} »`)
+
+  /* Remise en état : ce groupe alloue un patient à un dossier du jeu de
+     démonstration, et l'allocation est maintenant PERSISTÉE. Sans ce retour
+     en arrière, la suite ne serait jouable qu'une fois — le groupe 21 compte
+     les dossiers anonymes, et celui-ci ne le serait plus. */
+  const listeDemo = await fetch(`${base}/api/dossiers?reference=DEMO-MTI-0001`)
+    .then((r) => r.json()).catch(() => null)
+  const idDemo = listeDemo?.[0]?.id
+  if (idDemo) {
+    const remise = await fetch(`${base}/api/dossiers/${idDemo}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ preallocation: false, prescriptionFaite: false })
+    })
+    const apres = await fetch(`${base}/api/dossiers?reference=DEMO-MTI-0001`)
+      .then((r) => r.json()).catch(() => null)
+    remise.ok && apres?.[0]?.patient === null
+      ? ok('dossier de démonstration rendu à l\'anonymat — la suite reste rejouable')
+      : ko('le dossier de démonstration reste alloué : la suite ne rejouera pas')
+  } else {
+    ko('dossier DEMO-MTI-0001 introuvable pour la remise en état')
+  }
+}
+
+console.log('\n26. Filtres par colonne du tableau de bord')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)
 await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
@@ -1179,7 +1299,7 @@ await page.locator('.tb-restreint').count() === 0
   ? ok('le bandeau « liste restreinte » disparaît')
   : ko('le bandeau subsiste sans filtre')
 
-console.log('\n26. Console du navigateur et réseau')
+console.log('\n27. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

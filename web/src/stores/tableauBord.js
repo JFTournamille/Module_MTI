@@ -115,15 +115,21 @@ export const useTableauBord = defineStore('tableauBord', () => {
     filtreReference.value.trim() || filtreLot.value.trim() ||
     filtrePatient.value.trim() || filtreEtape.value || filtrePrescription.value))
 
-  /** Crée un dossier en un seul appel : produit et lot partent avec. */
+  /**
+   * Crée un dossier en un seul appel : produit et lot partent avec.
+   *
+   * Le n° de dossier n'est pas envoyé : c'est la base qui l'attribue depuis sa
+   * séquence. `reference` reste accepté pour les appelants qui en imposent un
+   * (jeu de démonstration, suites de test).
+   */
   async function demarrerScenario ({ reference, codeModele, produitId, numeroLot }) {
     erreur.value = ''
     try {
       const r = await appel('/api/dossiers', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reference, codeModele, produitId: produitId || null,
-          numeroLot: numeroLot || null })
+        body: JSON.stringify({ reference: reference || undefined, codeModele,
+          produitId: produitId || null, numeroLot: numeroLot || null })
       })
       if (!r.ok) { erreur.value = await messageDe(r, `Création refusée (${r.status}).`); return null }
       const { id } = await r.json()

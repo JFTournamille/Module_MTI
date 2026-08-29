@@ -404,6 +404,48 @@ BEGIN
   RAISE NOTICE '  ✓ objet nu (hors tableau) refusé';
 END $$;
 
+\echo ''
+\echo 'TEST 18 — Le n° de dossier est attribué par la base, sans collision'
+DO $$
+DECLARE
+  v_modele uuid;
+  v_auteur uuid;
+  v_a text; v_b text; v_impose text;
+BEGIN
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  SELECT id INTO v_auteur FROM mti.utilisateur ORDER BY cree_le LIMIT 1;
+
+  /* Le ROLLBACK final annule les dossiers, PAS la séquence : `nextval` n'est
+     jamais rejoué, même annulé. Ce test consomme donc quelques numéros — c'est
+     le comportement voulu, celui qui interdit qu'un n° serve deux fois. */
+  INSERT INTO mti.dossier (modele_parcours_id, cree_par) VALUES (v_modele, v_auteur)
+  RETURNING reference INTO v_a;
+  INSERT INTO mti.dossier (modele_parcours_id, cree_par) VALUES (v_modele, v_auteur)
+  RETURNING reference INTO v_b;
+
+  IF v_a !~ '^MTI-[0-9]{6}$' OR v_b !~ '^MTI-[0-9]{6}$' THEN
+    RAISE EXCEPTION 'ÉCHEC : n° hors forme MTI-nnnnnn (% / %)', v_a, v_b;
+  END IF;
+  IF substring(v_b from 5)::bigint <> substring(v_a from 5)::bigint + 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : la séquence n''avance pas (% puis %)', v_a, v_b;
+  END IF;
+  RAISE NOTICE '  ✓ n° attribués et incrémentés : % puis %', v_a, v_b;
+
+  /* Le cas qui rendrait la séquence inutilisable : quelqu'un impose à la main
+     le numéro que la séquence servira au tour suivant. Le générateur doit le
+     sauter, pas échouer sur l'unicité. */
+  v_impose := 'MTI-' || lpad((substring(v_b from 5)::bigint + 1)::text, 6, '0');
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES (v_impose, v_modele, v_auteur);
+
+  INSERT INTO mti.dossier (modele_parcours_id, cree_par) VALUES (v_modele, v_auteur)
+  RETURNING reference INTO v_a;
+  IF v_a = v_impose THEN
+    RAISE EXCEPTION 'ÉCHEC : n° réattribué alors qu''il était déjà pris (%)', v_a;
+  END IF;
+  RAISE NOTICE '  ✓ n° déjà pris (%) sauté, dossier numéroté %', v_impose, v_a;
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

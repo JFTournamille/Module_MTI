@@ -544,7 +544,16 @@ export const useParcours = defineStore('parcours', () => {
     if (!p || p.gabarit !== 'reception') return []
     const lignes = []
     p.sections.forEach((section, idxSection) => {
-      lignes.push({ genre: 'section', titre: section.titre, cle: `s${idxSection}` })
+      /* Le nombre de points et de kits accompagne le titre de section : la
+         maquette v12 l'affiche en bout de bande, et c'est ce qui permet de
+         savoir ce qui reste avant de dérouler. */
+      lignes.push({
+        genre: 'section',
+        titre: section.titre,
+        nbPoints: section.points.length,
+        nbKits: (section.kits ?? []).length,
+        cle: `s${idxSection}`
+      })
       let kitCourant = null
       section.points.forEach((point, idxPoint) => {
         /* En-tête de kit : les étapes propres à chaque composant restent
@@ -581,7 +590,16 @@ export const useParcours = defineStore('parcours', () => {
       : [{ titre: p.nom, points: [{ libelle: 'Points de contrôle à définir', type: 'texte' }] }]
     const lignes = []
     sections.forEach((section, idxSection) => {
-      lignes.push({ genre: 'section', titre: section.titre, cle: `s${idxSection}` })
+      /* Le nombre de points et de kits accompagne le titre de section : la
+         maquette v12 l'affiche en bout de bande, et c'est ce qui permet de
+         savoir ce qui reste avant de dérouler. */
+      lignes.push({
+        genre: 'section',
+        titre: section.titre,
+        nbPoints: section.points.length,
+        nbKits: (section.kits ?? []).length,
+        cle: `s${idxSection}`
+      })
       let kitCourant = null
       section.points.forEach((point, idxPoint) => {
         if (point.kit && point.kit !== kitCourant) {
@@ -805,13 +823,28 @@ export const useParcours = defineStore('parcours', () => {
   const ordonnancierVisible = computed(() =>
     selection.value >= (modele.value?.indexIdentificationPatient ?? Infinity))
 
-  function basculerPreallocation (actif) {
+  /**
+   * Bascule la préallocation patient.
+   *
+   * Le RETRAIT est enregistré aussitôt : il détache le patient, et ce
+   * détachement doit atteindre la base — sinon le tableau de bord continue
+   * d'afficher un nom sur un dossier redevenu anonyme, ce qui est exactement
+   * l'inverse de la règle d'anonymat.
+   *
+   * L'ACTIVATION, elle, ne s'enregistre qu'une fois le patient choisi :
+   * `dossier_preallocation_coherente` interdit en base une préallocation sans
+   * patient. Activer puis enregistrer dans le même geste ferait échouer
+   * l'écriture sur une contrainte que l'utilisateur est justement en train de
+   * satisfaire.
+   */
+  async function basculerPreallocation (actif) {
     dossier.preallocation = actif
     if (!actif) {
       dossier.patient = null
       dossier.initiales = ''
       dossier.dateNaissance = ''
     }
+    if (!actif || dossier.patient) await enregistrerEntete()
   }
 
   function choisirPatient (patient) {

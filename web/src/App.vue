@@ -42,6 +42,39 @@ async function ouvrirDepuisBord (id) {
 /** Referme le parcours et revient à la liste. */
 function retourAuBord () { onglet.value = 'bord' }
 const modalePatient = ref(false)
+/* Quand la modale est ouverte pour poser le jalon de prescription, le patient
+   choisi doit AUSSI faire basculer le jalon : c'est un seul geste pour
+   l'utilisateur, même s'il traverse deux écrans. */
+const patientPourPrescription = ref(false)
+
+/**
+ * Bascule le jalon de prescription.
+ *
+ * Déclarer une prescription réalisée sur un dossier sans patient laisserait un
+ * jalon qui ne se rattache à personne : une prescription est nominative par
+ * nature. On impose donc le rattachement au moment où le jalon est posé, plutôt
+ * que de laisser l'incohérence s'installer et d'avoir à la rattraper plus tard.
+ * Le retrait du jalon, lui, ne demande rien.
+ */
+async function basculerPrescription () {
+  if (!store.dossier.prescriptionFaite && !store.dossier.patient) {
+    patientPourPrescription.value = true
+    modalePatient.value = true
+    return
+  }
+  await store.basculerPrescription()
+}
+
+/** Patient choisi dans la modale : on le rattache, et on pose le jalon si
+ *  c'est lui qu'on cherchait à poser. */
+async function patientChoisi (patient) {
+  store.choisirPatient(patient)
+  if (patientPourPrescription.value) {
+    patientPourPrescription.value = false
+    store.dossier.prescriptionFaite = true
+  }
+  await store.enregistrerEntete()
+}
 const modaleCatalogue = ref(false)
 
 onMounted(async () => {
@@ -148,7 +181,7 @@ const blocages = computed(() => {
                   :disabled="store.lectureSeule"
                   :title="store.lectureSeule ? 'Dossier validé — lecture seule'
                     : 'Basculer le jalon de prescription'"
-                  @click="store.basculerPrescription()">
+                  @click="basculerPrescription()">
             {{ store.dossier.prescriptionFaite ? '✓ Prescription réalisée' : '○ Prescription non réalisée' }}
           </button>
           <!-- L'aphérèse n'est plus un processus : c'est une date facultative,
@@ -313,8 +346,11 @@ const blocages = computed(() => {
 
   <ModalePatient
     :ouvert="modalePatient"
-    @fermer="modalePatient = false"
-    @choisir="store.choisirPatient"
+    :motif="patientPourPrescription
+      ? 'Une prescription est nominative : choisir le patient auquel elle se rattache.'
+      : ''"
+    @fermer="modalePatient = false; patientPourPrescription = false"
+    @choisir="patientChoisi"
   />
   <ModaleCatalogue
     :ouvert="modaleCatalogue"

@@ -241,3 +241,66 @@ input[type=radio].ron{accent-color:#cc2200;}
 .proc.done{background:var(--vert-done);border-left-color:var(--vert-vif);}
 .proc.done .pname{color:#d8f0e0;}
 .proc.pending{opacity:.42;}
+
+/* ── 5. Anatomie de la ligne, reprise de la v12 ────────────────────────────
+   Ordre des colonnes : ★ · N° · point · type · action · commentaire · heure ·
+   opérateur. L'étoile d'abord parce que c'est le premier tri que fait l'œil ;
+   le commentaire dans sa propre colonne au lieu d'être glissé sous le libellé,
+   où il se confondait avec les marqueurs du point. */
+.chk table td.c,.chk table th.c{text-align:center;}
+.chk .cth{font-size:var(--fs-sm);}
+
+/* Bande de section : titre à gauche, décompte à droite — savoir ce qui reste
+   sans avoir à dérouler. */
+.chk .csec td{padding:8px 12px;}
+.chk .csec-t{font-weight:bold;}
+.chk .csec-n{float:right;font-weight:normal;font-size:var(--fs-xs);opacity:.75;}
+
+.chk .cnc{font-size:var(--fs-sm);color:#666;text-align:center;white-space:nowrap;}
+.chk .cnc-ex{font-size:var(--fs-xs);color:#8060c0;}
+
+/* Étoile « obligatoire » : pleine ou creuse, pas seulement colorée. Un daltonien
+   ne distingue pas #cc2200 de #ccc ; ★ et ☆ se distinguent toujours. */
+.etoile{cursor:pointer;font-size:var(--fs-lg);line-height:1;background:none;
+  border:none;padding:2px;font-family:inherit;}
+.etoile.on{color:#4a3880;}
+.etoile.off{color:#ccc;}
+.etoile:disabled{cursor:default;}
+
+/* Marqueurs du point, sous le libellé. */
+.chk .cflags{margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.tagl{display:inline-flex;align-items:center;gap:4px;border-radius:9px;padding:1px 8px;
+  font-size:var(--fs-xs);white-space:nowrap;}
+.tagl-dbl{background:#e8e4ff;border:1px solid #b0a0e0;color:#4a3880;}
+.tagl-dup,.tagl-ser{background:#fff3e0;border:1px solid #e0a030;color:#7a4f00;}
+
+/* Oui / Non : deux boutons dont l'un s'allume. Une radio se vise mal et se lit
+   mal de loin ; un opérateur qui parcourt trente points lit l'état d'une ligne
+   d'un coup d'œil. */
+.ctl-b{font-size:var(--fs-sm);padding:4px 14px;border:1px solid var(--pied-bord);
+  background:#fff;border-radius:2px;cursor:pointer;font-family:inherit;color:#333;}
+.ctl-b:hover:not(:disabled){background:var(--bande);}
+.ctl-b:disabled{opacity:.5;cursor:default;}
+.ctl-b.on{background:var(--vio);color:#fff;border-color:var(--vio);font-weight:500;}
+.ctl-b.no.on{background:#c62828;border-color:#c62828;}
+.cval{display:inline-flex;align-items:center;gap:7px;}
+/* Une valeur hors seuil se voit dans le champ lui-même, pas seulement dans la
+   pastille à côté : c'est le champ qu'on relit avant de valider. */
+.cfi.hors-seuil{background:#ffebee;border-color:#c62828;color:#c62828;font-weight:bold;}
+
+.chk .ccmt-b{background:none;border:none;cursor:pointer;padding:3px;line-height:1;
+  color:#c8b8e8;font-size:var(--fs-md);}
+.chk .ccmt-b.plein{color:var(--vio-clair);}
+.chk .ccmt-b:hover{color:var(--vio);}
+
+/* Largeurs de colonnes de la table de saisie, dans l'ordre de la v12. Le
+   libellé prend le reste : c'est la colonne qu'on lit, les autres ont une
+   taille bornée par leur contenu. */
+.chk col.c-obl{width:36px}
+.chk col.c-num{width:52px}
+.chk col.c-lbl{width:auto}
+.chk col.c-typ{width:92px}
+.chk col.c-act{width:220px}
+.chk col.c-cmt{width:40px}
+.chk col.c-heu{width:172px}
+.chk col.c-ope{width:196px}

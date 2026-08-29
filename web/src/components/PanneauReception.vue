@@ -119,31 +119,47 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
 
     <div class="ch-scroll">
       <table>
+        <!-- La table est en `table-layout:fixed` : ce sont CES largeurs qui
+             font foi, pas celles portées par les `th`. Le colgroup était resté
+             à l'ancien ordre en sept colonnes — le libellé s'en trouvait
+             écrasé pendant que « Heure » s'étalait. -->
         <colgroup>
-          <col class="cn"><col class="cl"><col class="ct"><col class="co">
-          <col class="cd"><col class="cdt"><col class="cop">
+          <col class="c-obl"><col class="c-num"><col class="c-lbl"><col class="c-typ">
+          <col class="c-act"><col class="c-cmt"><col class="c-heu"><col class="c-ope">
         </colgroup>
         <thead>
+          <!-- Ordre des colonnes repris de la maquette v12 : l'étoile
+               d'abord — c'est le premier tri que fait l'œil — puis le numéro,
+               le libellé, le type, la saisie. Le commentaire prend sa propre
+               colonne au lieu d'être glissé sous le libellé, où il se
+               confondait avec les marqueurs du point. -->
           <tr>
-            <th class="cth">#</th>
+            <th class="cth c" style="width:34px;" title="Obligatoire">★</th>
+            <th class="cth c" style="width:50px;">N°</th>
             <th class="cth l">Point de contrôle</th>
-            <th class="cth">Type</th>
-            <th class="cth" title="Obligatoire">Obl.</th>
-            <th class="cth l">Valeur / Détail</th>
-            <th class="cth">Date &amp; Heure</th>
-            <th class="cth l">Opérateur</th>
+            <th class="cth c" style="width:96px;">Type</th>
+            <th class="cth l" style="width:210px;">Action / Valeur</th>
+            <th class="cth c" style="width:40px;" title="Commentaire libre">🗨</th>
+            <th class="cth c" style="width:150px;">Heure</th>
+            <th class="cth l" style="width:180px;">Opérateur</th>
           </tr>
         </thead>
         <tbody>
           <template v-for="ligne in store.lignesReception" :key="ligne.cle">
             <tr v-if="ligne.genre === 'section'" class="csec">
-              <td colspan="7">{{ ligne.titre }}</td>
+              <td colspan="8">
+                <span class="csec-t">{{ ligne.titre }}</span>
+                <span class="csec-n">
+                  {{ ligne.nbPoints }} point(s)<template v-if="ligne.nbKits">
+                    · {{ ligne.nbKits }} kit(s)</template>
+                </span>
+              </td>
             </tr>
 
             <!-- En-tête de kit : la composition reste sous les yeux de
                  l'opérateur, sinon « 3 tubes » ne veut rien dire. -->
             <tr v-else-if="ligne.genre === 'kit'" class="ckit">
-              <td colspan="7">
+              <td colspan="8">
                 <span class="ckit-b">⊞ Kit</span>
                 <strong>{{ ligne.kit.nom }}</strong>
                 <span class="ckit-c">— {{ ligne.kit.composition }}</span>
@@ -152,51 +168,49 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
 
             <template v-else>
               <tr class="crow">
-                <td class="cnc">
-                  {{ ligne.point.num }}
-                  <template v-if="ligne.copies > 1">
-                    <br><span style="font-size:9px;color:#8060c0">
-                      {{ ligne.exemplaire }}/{{ ligne.copies }}
-                    </span>
-                  </template>
-                </td>
-                <td>
-                  <div class="clbl">
-                    {{ ligne.point.libelle }}
-                    <span v-if="ligne.copies > 1" class="cmul">
-                      (Ex. {{ ligne.exemplaire }}/{{ ligne.copies }})
-                    </span>
-                  </div>
-                  <div v-if="ligne.point.sousLibelle" class="csub">{{ ligne.point.sousLibelle }}</div>
-                  <div v-if="ligne.point.multi && ligne.exemplaire === 1" class="cmul">
-                    × {{ ligne.copies }} {{ uniteMulti(ligne.point.multi) }}
-                  </div>
-                  <div class="cflags">
-                    <span v-if="ligne.point.doubleValidation" class="cdbl"
-                          title="Point soumis à double validation : contresigné par une 2e personne">
-                      👥 2 pers.
-                    </span>
-                    <button class="ccmt-b"
-                            :class="{ plein: store.saisie(ligne.cle, ligne.point).commentaire }"
-                            :title="store.saisie(ligne.cle, ligne.point).commentaire
-                              || 'Ajouter un commentaire'"
-                            @click="store.basculerCommentaire(ligne.cle)">💬</button>
-                  </div>
-                </td>
-                <td style="text-align:center">
-                  <span class="ctb" :class="badge[ligne.point.type]?.[0] ?? 't-au'">
-                    {{ badge[ligne.point.type]?.[1] ?? ligne.point.type }}
-                  </span>
-                </td>
-                <td class="cobl">
+                <td class="c">
                   <button
-                    class="cobtn"
+                    class="etoile"
                     :class="store.saisie(ligne.cle, ligne.point).obligatoire ? 'on' : 'off'"
                     :title="store.saisie(ligne.cle, ligne.point).obligatoire
                       ? 'Point obligatoire' : 'Point optionnel'"
                     :disabled="lectureSeule"
                     @click="store.basculerObligatoire(ligne.cle, ligne.point)"
-                  >★</button>
+                  >{{ store.saisie(ligne.cle, ligne.point).obligatoire ? '★' : '☆' }}</button>
+                </td>
+                <td class="cnc">
+                  {{ ligne.point.num }}
+                  <template v-if="ligne.copies > 1">
+                    <br><span class="cnc-ex">{{ ligne.exemplaire }}/{{ ligne.copies }}</span>
+                  </template>
+                </td>
+                <td>
+                  <div class="clbl">{{ ligne.point.libelle }}</div>
+                  <div v-if="ligne.point.sousLibelle" class="csub">{{ ligne.point.sousLibelle }}</div>
+                  <!-- Les marqueurs du point, en pastilles sous le libellé :
+                       ils qualifient le point, pas la saisie. -->
+                  <div class="cflags">
+                    <span v-if="ligne.point.doubleValidation" class="tagl tagl-dbl"
+                          title="Point soumis à double validation : contresigné par une 2e personne">
+                      👥 2 pers.
+                    </span>
+                    <span v-if="ligne.copies > 1" class="tagl tagl-dup"
+                          :title="`Exemplaire ${ligne.exemplaire} sur ${ligne.copies}`">
+                      ⧉ ×{{ ligne.copies }}
+                    </span>
+                    <span v-if="ligne.point.multi && ligne.exemplaire === 1" class="tagl tagl-dup">
+                      ⧉ {{ uniteMulti(ligne.point.multi) }}
+                    </span>
+                    <span v-if="ligne.point.numeroSerie" class="tagl tagl-ser"
+                          title="Un n° de série est enregistré par exemplaire, en complément du n° de lot">
+                      ⬚ n° série
+                    </span>
+                  </div>
+                </td>
+                <td class="c">
+                  <span class="ctb" :class="badge[ligne.point.type]?.[0] ?? 't-au'">
+                    {{ badge[ligne.point.type]?.[1] ?? ligne.point.type }}
+                  </span>
                 </td>
                 <td>
                   <CelluleControle :point="ligne.point" :cle="ligne.cle" :lecture-seule="lectureSeule" />
@@ -208,6 +222,13 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                            v-model="store.saisie(ligne.cle, ligne.point).numeroSerie"
                            :disabled="lectureSeule">
                   </div>
+                </td>
+                <td class="c">
+                  <button class="ccmt-b"
+                          :class="{ plein: store.saisie(ligne.cle, ligne.point).commentaire }"
+                          :title="store.saisie(ligne.cle, ligne.point).commentaire
+                            || 'Ajouter un commentaire'"
+                          @click="store.basculerCommentaire(ligne.cle)">🗨</button>
                 </td>
                 <td>
                   <input class="cdf" type="datetime-local"
@@ -241,7 +262,7 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                    dans une case à cocher. -->
               <tr v-if="store.commentaireOuvert(ligne.cle)" class="crow ccmt-r">
                 <td></td>
-                <td colspan="6">
+                <td colspan="7">
                   <div class="ccmt-t">Commentaire — {{ ligne.point.num }} · restitué en bulle</div>
                   <textarea rows="2" class="ccmt-z" placeholder="Observation, écart, réserve…"
                             v-model="store.saisie(ligne.cle, ligne.point).commentaire"

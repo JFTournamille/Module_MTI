@@ -57,6 +57,10 @@ table.adm-t tr.inactif .ident{text-decoration:line-through;}
 .adm-r input[type=text],.adm-r select{font-size:13px;padding:4px 8px;border:1px solid #a090cc;
   border-radius:2px;min-width:210px;}
 .adm-aide{font-size:12px;color:#777;line-height:1.5;margin:-4px 0 10px 129px;}
+/* Valeur attribuée par la base, montrée mais non saisissable : le rendu doit
+   dire « information » et non « champ vide », d'où l'absence de bordure. */
+.adm-auto{font-size:13px;color:#6b5aa0;font-family:'Courier New',monospace;
+  background:#f2eeff;border:1px dashed #b0a0e0;border-radius:2px;padding:4px 8px;}
 
 .adm-msg{margin:10px 14px;padding:8px 12px;border-radius:4px;font-size:13px;}
 .adm-msg-ko{background:#ffebee;border:1px solid #ef9a9a;color:#c62828;}
@@ -340,3 +344,7 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
 /* Onglet contextuel du parcours ouvert : présent seulement tant qu'un dossier
    l'est, d'où la distinction visuelle avec les onglets permanents. */
 .onglet-doss{font-family:'Courier New',monospace;font-size:12px;}
+/* Motif d'ouverture de la modale patient : dire pourquoi on la demande, quand
+   ce n'est pas l'utilisateur qui l'a ouverte de lui-même. */
+.cmodal-motif{background:#fff3e0;border-bottom:1px solid #e0a030;color:#7a4f00;
+  font-size:12px;padding:8px 12px;line-height:1.45;}

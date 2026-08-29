@@ -9,7 +9,13 @@
 import { appel } from '../api.js'
 import { ref, watch } from 'vue'
 
-const props = defineProps({ ouvert: { type: Boolean, required: true } })
+const props = defineProps({
+  ouvert: { type: Boolean, required: true },
+  /* Pourquoi la modale s'ouvre. Vide quand c'est un rattachement ordinaire ;
+     renseigné quand un autre geste l'exige — poser le jalon de prescription,
+     par exemple — pour que l'utilisateur sache ce qu'il est en train de faire. */
+  motif: { type: String, default: '' }
+})
 const emit = defineEmits(['fermer', 'choisir'])
 
 const requete = ref('')
@@ -50,6 +56,7 @@ watch(() => props.ouvert, (ouvert) => {
         <span>Recherche patient</span>
         <span style="cursor:pointer" @click="emit('fermer')">✕</span>
       </div>
+      <div v-if="props.motif" class="cmodal-motif">{{ props.motif }}</div>
       <div class="cmodal-bd">
         <input
           type="text" placeholder="Nom, prénom ou N° patient…"

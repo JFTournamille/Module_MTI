@@ -10,10 +10,16 @@ export default async function dossiers (app) {
     /* Le produit et le n° de lot sont acceptés dès la création : les renseigner
        par un PATCH séparé exposait à un dossier créé mais sans produit, si le
        second appel échouait. */
-    const { codeModele, reference, produitId, designationProduit, numeroLot } =
+    const { codeModele, produitId, designationProduit, numeroLot } =
       request.body ?? {}
-    if (!codeModele || !reference) {
-      return reply.code(400).send({ erreur: 'codeModele et reference sont requis' })
+    /* La référence est FACULTATIVE : sans elle, la base l'attribue depuis sa
+       séquence (MTI-000001, MTI-000002, …). Elle reste imposable — le jeu de
+       démonstration et les suites de test s'en servent — mais l'application
+       ne la propose plus : une référence calculée par le navigateur n'est
+       unique que par chance. */
+    const reference = String(request.body?.reference ?? '').trim()
+    if (!codeModele) {
+      return reply.code(400).send({ erreur: 'codeModele est requis' })
     }
 
     const { rows: modeles } = await requete(
@@ -24,14 +30,26 @@ export default async function dossiers (app) {
     const modele = modeles[0]
 
     return transaction(request.utilisateur.id, request.ip, async (client) => {
-      const { rows } = await client.query(
-        `INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par,
-                                  produit_id, designation_produit, numero_lot)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [reference, modele.id, request.utilisateur.id,
-          produitId || null, designationProduit || null, numeroLot || null]
-      )
+      /* Deux formes d'insertion plutôt qu'un COALESCE : passer `reference` à
+         NULL heurterait le NOT NULL sans jamais atteindre le DEFAULT. Omettre
+         la colonne est le seul moyen de laisser la base numéroter. */
+      const { rows } = reference
+        ? await client.query(
+          `INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par,
+                                    produit_id, designation_produit, numero_lot)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, reference`,
+          [reference, modele.id, request.utilisateur.id,
+            produitId || null, designationProduit || null, numeroLot || null]
+        )
+        : await client.query(
+          `INSERT INTO mti.dossier (modele_parcours_id, cree_par,
+                                    produit_id, designation_produit, numero_lot)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id, reference`,
+          [modele.id, request.utilisateur.id,
+            produitId || null, designationProduit || null, numeroLot || null]
+        )
       const dossierId = rows[0].id
+      const referenceAttribuee = rows[0].reference
 
       // La définition de chaque processus est FIGÉE dans le dossier : une
       // évolution ultérieure du modèle ne doit pas réécrire l'historique.
@@ -47,7 +65,7 @@ export default async function dossiers (app) {
         )
       }
       reply.code(201)
-      return { id: dossierId, reference, nbProcessus: processus.length }
+      return { id: dossierId, reference: referenceAttribuee, nbProcessus: processus.length }
     })
   })
 

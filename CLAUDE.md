@@ -20,7 +20,13 @@ réglementaires, pas à des préférences techniques.
 ## Règles de fond
 
 - **Le parcours est anonyme par défaut.** `dossier.patient_id` reste `NULL`
-  jusqu'à la mise en fabrication, sauf préallocation explicite.
+  jusqu'à la mise en fabrication, sauf préallocation explicite. Deux exceptions
+  déclenchées par un geste : la préallocation, et **cocher « prescription
+  réalisée »**, qui impose le rattachement — une prescription est nominative.
+- **Le n° de dossier est attribué par la base.** Séquence
+  `mti.dossier_reference_seq` et `DEFAULT` sur `dossier.reference` :
+  `MTI-000001`, `MTI-000002`, … Ne pas le calculer côté navigateur — c'est ce
+  qui produisait des collisions. La série a des trous, c'est voulu.
 - **Toute écriture passe par `api/src/db.js:transaction()`.** C'est ce qui
   renseigne l'auteur pour le trigger d'audit. Une écriture hors de cette
   fonction produit une trace sans auteur.

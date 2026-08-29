@@ -41,8 +41,25 @@ r.statut === 201 && r.corps.nbProcessus === NB_PROCESSUS
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 const dossierId = r.corps.id
 
+/* Sans référence, la base numérote : MTI-000001, MTI-000002, … Deux créations
+   de suite éprouvent l'incrémentation, pas seulement la forme — c'est la
+   collision entre deux dossiers créés dans la même minute que la séquence
+   remplace. */
 r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE' })
-r.statut === 400 ? ok('création sans référence refusée (400)') : ko(`statut ${r.statut}`)
+const refAuto1 = r.corps?.reference
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE' })
+const refAuto2 = r.corps?.reference
+if (/^MTI-\d{6}$/.test(refAuto1 ?? '') && /^MTI-\d{6}$/.test(refAuto2 ?? '')) {
+  ok(`n° attribués automatiquement : ${refAuto1} puis ${refAuto2}`)
+} else {
+  ko(`n° automatiques inattendus : ${refAuto1} / ${refAuto2}`)
+}
+Number(String(refAuto2).slice(4)) === Number(String(refAuto1).slice(4)) + 1
+  ? ok('la séquence avance d\'une unité, sans rejouer un n°')
+  : ko(`séquence : ${refAuto1} puis ${refAuto2}`)
+
+r = await j('POST', '/api/dossiers', { reference: `DOS-E2E-B-${Date.now()}` })
+r.statut === 400 ? ok('création sans modèle refusée (400)') : ko(`statut ${r.statut}`)
 
 console.log('\n2. Le dossier est anonyme à la création')
 r = await j('GET', `/api/dossiers/${dossierId}`)

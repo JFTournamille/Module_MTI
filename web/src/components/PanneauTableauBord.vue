@@ -6,19 +6,13 @@ const store = useTableauBord()
 const emit = defineEmits(['ouvrir'])
 
 const formulaireOuvert = ref(false)
-const nouveau = reactive({ reference: '', codeModele: '', produitId: '', numeroLot: '' })
+const nouveau = reactive({ codeModele: '', produitId: '', numeroLot: '' })
 
 onMounted(async () => {
   await store.charger()
   if (!nouveau.codeModele && store.modeles.length) nouveau.codeModele = store.modeles[0].code
 })
 
-/** Référence lisible et unique sans avoir à interroger la base. */
-function referenceProposee () {
-  const n = new Date()
-  const p = (v) => String(v).padStart(2, '0')
-  return `MTI-${n.getFullYear()}-${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`
-}
 
 /* Deux dossiers clos ne se valent pas : la non-conformité est la conclusion du
    parcours, pas un détail à ouvrir le dossier pour découvrir. */
@@ -53,14 +47,13 @@ function choisirTuile (t) {
 
 async function demarrer () {
   const id = await store.demarrerScenario({
-    reference: (nouveau.reference || '').trim() || referenceProposee(),
     codeModele: nouveau.codeModele,
     produitId: nouveau.produitId,
     numeroLot: (nouveau.numeroLot || '').trim()
   })
   if (id) {
     formulaireOuvert.value = false
-    Object.assign(nouveau, { reference: '', produitId: '', numeroLot: '' })
+    Object.assign(nouveau, { produitId: '', numeroLot: '' })
     emit('ouvrir', id)
   }
 }
@@ -100,8 +93,12 @@ const dateCourte = (v) => v
     <div v-if="formulaireOuvert && !store.indisponible" class="adm-form">
       <div class="adm-form-t">Nouveau dossier MTI</div>
       <div class="adm-r">
-        <label for="tb-ref">Référence</label>
-        <input id="tb-ref" type="text" v-model="nouveau.reference" :placeholder="referenceProposee()"/>
+        <label>N° de dossier</label>
+        <!-- Pas de champ : le numéro est attribué par la base à la création
+             (séquence MTI-000001, MTI-000002, …). Le proposer ici laisserait
+             croire qu'il est modifiable, et un numéro calculé côté navigateur
+             n'est unique que par chance. -->
+        <span class="adm-auto">MTI-000XXX — attribué automatiquement</span>
       </div>
       <div class="adm-r">
         <label for="tb-mod">Parcours</label>

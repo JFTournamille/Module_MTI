@@ -30,28 +30,28 @@ function heure (epoch) {
 </script>
 
 <template>
-  <!-- Oui / Non -->
+  <!-- Oui / Non — deux boutons, pas deux radios.
+       Une radio se vise mal et se lit mal de loin ; deux boutons dont l'un
+       s'allume disent l'état de la ligne d'un coup d'œil, ce qu'un opérateur
+       qui parcourt trente points fait en permanence. C'est le choix de la
+       maquette v12. -->
   <div v-if="point.type === 'ouinon'" class="cyn">
-    <label>
-      <input
-        type="radio" class="roi" :name="cle" value="oui"
-        v-model="saisie.reponse" :disabled="lectureSeule"
-      > Oui
-    </label>
-    <label>
-      <input
-        type="radio" class="ron" :name="cle" value="non"
-        v-model="saisie.reponse" :disabled="lectureSeule"
-      > Non
-    </label>
+    <button
+      class="ctl-b" :class="{ on: saisie.reponse === 'oui' }" :disabled="lectureSeule"
+      @click="saisie.reponse = saisie.reponse === 'oui' ? null : 'oui'"
+    >Oui</button>
+    <button
+      class="ctl-b no" :class="{ on: saisie.reponse === 'non' }" :disabled="lectureSeule"
+      @click="saisie.reponse = saisie.reponse === 'non' ? null : 'non'"
+    >Non</button>
   </div>
 
   <!-- Valeur numérique, avec alarme de seuil -->
-  <div v-else-if="point.type === 'valeur'" style="display:flex;align-items:center;gap:3px;">
+  <div v-else-if="point.type === 'valeur'" class="cval">
     <input
-      class="cfi" type="number" step="0.1"
-      :placeholder="point.seuil !== undefined ? '°C' : 'Valeur'"
-      style="width:64px;"
+      class="cfi" :class="{ 'hors-seuil': alarme?.horsSeuil }" type="number" step="0.1"
+      :placeholder="point.seuil !== undefined ? '− °C' : 'Valeur'"
+      style="width:82px;"
       v-model="saisie.valeurNum" :disabled="lectureSeule"
     >
     <span v-if="alarme" :class="alarme.horsSeuil ? 'calm' : 'cokb'">
