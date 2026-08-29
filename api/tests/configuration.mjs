@@ -14,8 +14,17 @@
  * numéros de version montent donc de deux à chaque passage : c'est le
  * comportement voulu, une version publiée ne s'efface pas.
  */
+import pg from 'pg'
+
 const base = process.env.API_URL ?? 'http://localhost:3000'
 const CODE = 'PARCOURS_CART_AUTOLOGUE'
+
+/* Accès direct à la base pour la seule remise en état : il n'existe pas de
+   route de suppression d'un parcours, et il ne doit pas en exister — effacer
+   un modèle rendrait illisibles les dossiers qui le référencent. Le test
+   nettoie donc ce qu'il a créé lui-même, sans ouvrir cette porte à
+   l'application. */
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 let echec = false
 const ok = (m) => console.log('  ✓', m)
 const ko = (m) => { console.log('  ✗', m); echec = true }
@@ -163,5 +172,94 @@ r.corps.processus.map((p) => p.code).join(',') === origine.processus.map((p) => 
   ? ok(`modèle actif de nouveau conforme à l'origine (${r.corps.processus.length} processus)`)
   : ko(`modèle actif : ${r.corps.processus.length} processus`)
 
+// ── 6. Créer un parcours ──
+//
+// Créer un PARCOURS n'est pas publier une VERSION : le premier ouvre un code
+// nouveau, le second fait évoluer un code existant. Confondre les deux ferait
+// entrer un parcours neuf dans l'historique d'un autre, et le rendrait actif à
+// sa place.
+console.log('\n6. Créer un parcours')
+const CODE_NEUF = `PARCOURS_TEST_${Date.now()}`.slice(0, 60)
+
+/* État de la source relevé JUSTE AVANT la création : les groupes précédents
+   ont publié deux versions, et se comparer à l'état du début de la suite
+   ferait échouer ce contrôle pour une raison étrangère à ce qu'il éprouve. */
+r = await j('GET', `/api/modeles/${CODE}`)
+const sourceAvant = { version: r.corps.version, nb: r.corps.processus.length }
+
+r = await j('POST', '/api/modeles', {
+  code: CODE_NEUF, libelle: 'Parcours de test — reprise partielle',
+  sourceCode: CODE, processusCodes: ['ADMINISTRATION', 'RECEPTION', 'ACCES_TRAITEMENT']
+})
+r.statut === 201 && r.corps.version === 1 && r.corps.nbProcessus === 3
+  ? ok(`parcours ${r.corps.code} créé en v1, 3 processus repris`)
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 160)}`)
+
+/* L'ORDRE demandé fait foi : reprendre un parcours, c'est aussi réordonner ses
+   étapes. S'en remettre à l'ordre de la source rendrait la reprise inutile
+   pour un parcours dont la chronologie diffère. */
+r = await j('GET', `/api/modeles/${CODE_NEUF}`)
+r.corps.processus.map((p) => p.code).join(',') === 'ADMINISTRATION,RECEPTION,ACCES_TRAITEMENT'
+  ? ok('les processus sont repris dans l\'ordre demandé, pas celui de la source')
+  : ko(`ordre obtenu : ${r.corps.processus.map((p) => p.code).join(',')}`)
+
+/* Le parcours source ne doit pas avoir bougé d'un pouce : une reprise qui
+   modifie son modèle d'origine ferait perdre le parcours de référence. */
+r = await j('GET', `/api/modeles/${CODE}`)
+r.corps.version === sourceAvant.version && r.corps.processus.length === sourceAvant.nb
+  ? ok(`le parcours source est intact (v${r.corps.version}, ${r.corps.processus.length} processus)`)
+  : ko(`la source a bougé : v${sourceAvant.version}→${r.corps.version}, ` +
+       `${sourceAvant.nb}→${r.corps.processus.length} processus`)
+
+// Les deux parcours coexistent, chacun actif dans sa propre série de versions.
+r = await j('GET', '/api/modeles')
+const lesDeux = r.corps.filter((m) => m.code === CODE || m.code === CODE_NEUF)
+lesDeux.length === 2 ? ok('les deux parcours coexistent au sélecteur')
+  : ko(`${lesDeux.length} parcours trouvé(s) sur les 2 attendus`)
+
+// Un parcours neuf s'édite comme un autre : publier lui donne sa v2.
+r = await j('GET', `/api/modeles/${CODE_NEUF}`)
+const defNeuve = copie(r.corps)
+defNeuve.processus[0].nom = 'Étape renommée'
+r = await j('POST', `/api/modeles/${CODE_NEUF}/versions`, { definition: defNeuve })
+r.statut === 201 && r.corps.version === 2
+  ? ok('le parcours créé se versionne comme les autres (v2)')
+  : ko(`publication sur le parcours neuf : ${r.statut}`)
+
+console.log('\n7. Créations refusées')
+for (const [libelle, corps, attendu] of [
+  ['code déjà pris', { code: CODE, libelle: 'x', sourceCode: CODE }, 409],
+  ['code avec espaces', { code: 'mon parcours', libelle: 'x', sourceCode: CODE }, 400],
+  ['code accentué', { code: 'PARCOURS_DÉCONGÉLATION', libelle: 'x', sourceCode: CODE }, 400],
+  ['code trop court', { code: 'AB', libelle: 'x', sourceCode: CODE }, 400],
+  ['libellé absent', { code: 'PARCOURS_SANS_LIBELLE', sourceCode: CODE }, 400],
+  ['source inconnue', { code: 'PARCOURS_SOURCE_X', libelle: 'x', sourceCode: 'FANTOME' }, 404],
+  ['processus absent de la source',
+    { code: 'PARCOURS_PROC_X', libelle: 'x', sourceCode: CODE, processusCodes: ['FANTOME'] }, 400],
+  ['ni définition ni source', { code: 'PARCOURS_VIDE_X', libelle: 'x' }, 400],
+  ['définition sans processus',
+    { code: 'PARCOURS_VIDE_Y', libelle: 'x', definition: { processus: [] } }, 400]
+]) {
+  const rep = await j('POST', '/api/modeles', corps)
+  rep.statut === attendu ? ok(`${libelle} → ${attendu}`)
+    : ko(`${libelle} → ${rep.statut} au lieu de ${attendu} (${JSON.stringify(rep.corps).slice(0, 90)})`)
+}
+
+/* Aucun de ces refus ne doit avoir laissé de trace : un parcours à moitié créé
+   apparaîtrait au sélecteur sans être publiable. */
+r = await j('GET', '/api/modeles')
+const fantomes = r.corps.filter((m) => /^PARCOURS_(SANS_LIBELLE|SOURCE_X|PROC_X|VIDE_[XY])$/.test(m.code))
+fantomes.length === 0 ? ok('aucun parcours fantôme après les refus')
+  : ko(`parcours créés à tort : ${fantomes.map((m) => m.code).join(', ')}`)
+
+/* Remise en état : le parcours de test est retiré, sinon chaque passage en
+   laisserait un de plus au sélecteur. */
+await pool.query('DELETE FROM mti.modele_parcours WHERE code = $1', [CODE_NEUF])
+r = await j('GET', '/api/modeles')
+r.corps.some((m) => m.code === CODE_NEUF)
+  ? ko('le parcours de test subsiste : la suite encombrerait le sélecteur')
+  : ok('parcours de test retiré — la suite reste rejouable')
+
+await pool.end()
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

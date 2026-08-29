@@ -312,17 +312,25 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .tagc-seuil{background:#ffebee;border:1px solid #ef9a9a;color:#c62828;}
 
 /* Aperçu de la ligne — une case cochée dans un formulaire ne dit pas ce que
-   l'opérateur verra ; la ligne, si. */
-.apercu{background:#f8f6ff;border:1px solid #ddd8ff;border-radius:4px;
+   l'opérateur verra ; la ligne, si.
+
+   Contraste repris à la hausse : le bandeau lavande sur fond lavande et le
+   liseré #ddd8ff ne se distinguaient pas du formulaire au-dessus, si bien que
+   l'aperçu se lisait comme la suite du formulaire au lieu de se lire comme un
+   rendu. Le bandeau est maintenant plein, la bordure franche, et le numéro
+   comme le sous-libellé passent le seuil de lisibilité. */
+.apercu{background:#fff;border:2px solid #4a3880;border-radius:4px;
   margin-top:20px;overflow:hidden;}
-.apercu-t{background:#f5f2ff;color:#4a3880;font-size:13px;font-weight:500;
-  padding:7px 12px;border-bottom:1px solid #ddd8ff;}
-.apercu-c{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;
+.apercu-t{background:#4a3880;color:#fff;font-size:13px;font-weight:bold;
+  padding:7px 12px;letter-spacing:.2px;}
+.apercu-c{display:flex;align-items:center;gap:10px;padding:12px;background:#fff;
   flex-wrap:wrap;}
-.apercu-n{font-family:'Courier New',monospace;font-size:12px;color:#8878c8;}
-.apercu-l{flex:1;min-width:180px;font-size:14.5px;color:#222;line-height:1.35;}
-.apercu-s{display:block;font-size:13px;color:#666;font-style:italic;}
-.apercu-o{font-size:15px;color:#ccc;}
+.apercu-n{font-family:'Courier New',monospace;font-size:12px;color:#4a3880;
+  font-weight:bold;background:#f0eeff;border:1px solid #b0a0e0;border-radius:2px;
+  padding:1px 5px;}
+.apercu-l{flex:1;min-width:180px;font-size:14.5px;color:#111;line-height:1.35;}
+.apercu-s{display:block;font-size:13px;color:#555;font-style:italic;}
+.apercu-o{font-size:15px;color:#b8b0d0;}
 .apercu-o.on{color:#cc2200;}
 
 /* Tableau des versions. */
@@ -348,3 +356,46 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
    ce n'est pas l'utilisateur qui l'a ouverte de lui-même. */
 .cmodal-motif{background:#fff3e0;border-bottom:1px solid #e0a030;color:#7a4f00;
   font-size:12px;padding:8px 12px;line-height:1.45;}
+
+
+/* ── Aide au survol ────────────────────────────────────────────────────────
+   Un `title` natif se déclenche après une seconde, ne se voit pas tant qu'on
+   ne survole pas, et n'est pas atteignable au clavier. Ces trois réglages
+   engagent le parcours entier : ils méritent un repère visible, et une bulle
+   qui s'ouvre aussi à la tabulation. */
+.aide-i{display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;margin-left:5px;border-radius:50%;
+  background:#4a3880;color:#fff;font-size:10px;font-weight:bold;
+  cursor:help;position:relative;vertical-align:middle;}
+.aide-i:hover,.aide-i:focus{background:#6a52b0;outline:none;}
+.aide-i::after{
+  content:attr(data-aide);
+  position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-12px);
+  width:340px;padding:9px 11px;border-radius:4px;
+  background:#2c2140;color:#fff;font-size:12px;font-weight:normal;
+  line-height:1.45;text-align:left;letter-spacing:0;
+  box-shadow:0 4px 14px rgba(0,0,0,.28);
+  opacity:0;visibility:hidden;transition:opacity .12s;z-index:50;pointer-events:none;}
+.aide-i::before{
+  content:'';position:absolute;left:50%;top:calc(100% + 2px);
+  border:6px solid transparent;border-bottom-color:#2c2140;
+  opacity:0;visibility:hidden;transition:opacity .12s;z-index:51;}
+.aide-i:hover::after,.aide-i:focus::after,
+.aide-i:hover::before,.aide-i:focus::before{opacity:1;visibility:visible;}
+
+/* ── Création d'un parcours ────────────────────────────────────────────── */
+.cfg-crea{border:1px solid #b0a0e0;border-radius:4px;background:#faf9ff;
+  padding:12px 12px 4px;margin-bottom:14px;}
+.cfg-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:4px;margin:6px 0 0 129px;}
+.cfg-pick-l{display:flex;align-items:baseline;gap:7px;font-size:13px;
+  padding:4px 7px;border:1px solid #e4e0f5;border-radius:3px;background:#fff;
+  cursor:pointer;}
+.cfg-pick-l:hover{border-color:#b0a0e0;background:#f6f3ff;}
+.cfg-pick-l .n{flex:1;color:#222;}
+.cfg-pick-l .d{font-size:11px;color:#8878c8;font-family:'Courier New',monospace;}
+
+/* Le retrait d'un point est une action destructrice : il ne doit pas avoir
+   l'air d'un bouton comme les autres. */
+.adm-b.cfg-sup{border-color:#ef9a9a;color:#c62828;}
+.adm-b.cfg-sup:hover{background:#ffebee;border-color:#c62828;}

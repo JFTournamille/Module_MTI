@@ -41,6 +41,10 @@ réglementaires, pas à des préférences techniques.
   `UPDATE`/`DELETE` dessus, et c'est volontaire.
 - **Un dossier validé est en lecture seule.** Toute correction passe par une
   nouvelle version, jamais par un `UPDATE`.
+- **Un parcours se crée par reprise d'un autre.** `POST /api/modeles` ouvre un
+  code nouveau en v1, le plus souvent en recopiant un parcours voisin réduit
+  aux processus retenus. Pas de route de suppression d'un modèle, et il ne doit
+  pas y en avoir : les dossiers qui le référencent deviendraient illisibles.
 - **Un modèle de parcours ne se modifie pas : on en publie une version.**
   L'onglet Configuration crée `version + 1` et la met en service ; les dossiers
   ouverts conservent la définition figée à leur création. Il n'y a pas de route

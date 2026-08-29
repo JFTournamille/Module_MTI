@@ -592,6 +592,59 @@ ne recommence pas la manipulation. Enfin, la réponse du dossier ne transporte
 jamais les octets : chaque vignette va les chercher par son URL, que le
 navigateur met en cache.
 
+### Créer un parcours, ou en reprendre un
+
+Il n'existait aucun moyen d'ouvrir un parcours **nouveau** depuis l'écran :
+l'onglet Configuration savait publier une *version* d'un parcours existant, pas
+en créer un autre. Il fallait écrire un JSON dans `shared/` et relancer le seed.
+
+`POST /api/modeles` crée un code nouveau, en version 1. Deux formes :
+
+```
+{ code, libelle, definition }                 → définition fournie
+{ code, libelle, sourceCode, processusCodes } → reprise d'un parcours existant
+```
+
+C'est la seconde que sert l'écran, parce que c'est le geste réel : **on part
+rarement d'une page blanche, on part du parcours voisin qu'on ampute**. Un
+CAR-T allogénique se déduit de l'autologue ; une thérapie génique en reprend la
+moitié. Le formulaire présente donc les processus de la source avec une case
+par étape, toutes cochées, et l'on décoche ce qui ne s'applique pas. L'ordre
+demandé fait foi — reprendre un parcours, c'est aussi réordonner ses étapes —
+et le réordonnancement fin se poursuit ensuite dans l'onglet *Processus*.
+
+Trois garde-fous :
+
+- **Le code est contraint** : `^[A-Z][A-Z0-9_]{2,63}$`. Ce n'est pas un libellé,
+  c'est un identifiant qu'on retrouve dans les jeux de données et les
+  scénarios. Il est proposé d'après le libellé, sans doubler le préfixe quand
+  celui-ci commence déjà par « Parcours ».
+- **Un code déjà pris est refusé (409)**, avec le bon conseil : un parcours ne
+  se recrée pas, il se versionne.
+- **Le parcours source n'est pas touché.** Une reprise qui modifierait son
+  modèle d'origine ferait perdre le parcours de référence.
+
+Il n'y a **pas** de route de suppression d'un parcours, et il ne doit pas y en
+avoir : effacer un modèle rendrait illisibles les dossiers qui le référencent.
+Un parcours qu'on n'utilise plus se laisse en place — comme une version retirée
+du service.
+
+### Un point de contrôle porte-t-il sur le médicament ?
+
+Une coche le dit, et elle commande l'affichage de la section « Exemplaires et
+identification ». Un point qui porte sur le dossier, le local ou l'organisation
+— « Date de la RCP », « Autorisation ANSM vérifiée » — n'a ni exemplaires, ni
+n° de série, ni kit ; la section n'avait rien à faire là, et proposer des
+réglages sans objet est une façon de les faire poser au hasard.
+
+La valeur est **déduite quand la coche est absente**, plutôt qu'imposée : les
+parcours déjà publiés ne la portent pas, et exiger le drapeau leur ferait
+perdre leurs exemplaires au premier republiement. Un point qui compte des
+exemplaires, porte un n° de série ou appartient à un kit est lié au médicament,
+qu'on l'ait écrit ou non. Décocher, en revanche, **efface** ce que la section
+portait : laisser un `exemplaires: 3` invisible produirait trois lignes à
+l'écran de saisie sans que rien, dans la configuration, ne l'explique.
+
 ### Comptes et profils
 
 L'onglet *Utilisateurs* gère les comptes : création, correction d'état civil,

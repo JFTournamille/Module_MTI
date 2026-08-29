@@ -1268,12 +1268,118 @@ await page.locator('.cfg-mod').count() === 0
   ? ok('abandonner rend le brouillon à la version en service')
   : ko('le brouillon reste marqué modifié après abandon')
 
-/* ── 25. Cocher la prescription impose un patient ──
+/* Coche « lié au médicament » : elle commande l'affichage de la section
+   Exemplaires. Un point qui porte sur le dossier n'a ni exemplaires, ni n° de
+   série, ni kit — la section n'avait rien à faire là. */
+await page.locator('.cfg-l .ci').filter({ hasText: 'Date de la RCP' }).first().click()
+await page.waitForTimeout(600)
+const medRcp = await page.locator('.cfg-med').isChecked()
+const sectionExRcp = await page.locator('.cfg-r .form-h', { hasText: 'Exemplaires' }).count()
+!medRcp && sectionExRcp === 0
+  ? ok('un point non lié au médicament masque la section « Exemplaires »')
+  : ko(`coche ${medRcp}, section Exemplaires visible ${sectionExRcp} fois`)
+
+await page.locator('.cfg-l .ci').filter({ hasText: 'Température cuve' }).first().click()
+await page.waitForTimeout(600)
+await page.locator('.cfg-r .form-h', { hasText: 'Exemplaires' }).count() === 1
+  ? ok('un point lié au médicament la fait apparaître')
+  : ko('la section « Exemplaires » manque sur un point à exemplaires')
+
+/* Les aides au survol : trois réglages engagent le parcours entier et rien ne
+   disait ce qu'ils font. On vérifie qu'elles portent un texte, pas seulement
+   qu'un rond gris s'affiche. */
+await page.locator('.cfg-sst-b', { hasText: 'Processus' }).click()
+await page.waitForTimeout(700)
+const aides = page.locator('.cfg-r .aide-i')
+const nbAides = await aides.count()
+const textesAides = []
+for (let i = 0; i < nbAides; i++) textesAides.push(await aides.nth(i).getAttribute('data-aide'))
+nbAides >= 3 && textesAides.every((t) => (t ?? '').length > 60)
+  ? ok(`${nbAides} aides au survol renseignées (code, gabarit, réalisation)`)
+  : ko(`aides : ${nbAides}, longueurs ${textesAides.map((t) => (t ?? '').length).join('/')}`)
+
+/* ── 25 bis. Créer un parcours en reprenant un existant ──
+   Il n'existait aucun moyen d'ouvrir un parcours nouveau depuis l'écran : il
+   fallait écrire un JSON dans `shared/` et relancer le seed. Le geste réel
+   n'est pas « partir d'une page blanche » mais « reprendre le parcours voisin
+   et l'amputer ». */
+console.log('\n25. Créer un parcours par reprise')
+await page.locator('.cfg-sst-b', { hasText: 'Parcours' }).click()
+await page.waitForTimeout(700)
+const parcoursAvant = await page.locator('#cfg-parcours option').count()
+await page.locator('.adm-b', { hasText: 'Reprendre ce parcours' }).click()
+await page.waitForTimeout(1500)
+
+const libelleNeuf = `Parcours de recette ${Date.now() % 100000}`
+await page.locator('.cfg-crea input[type=text]').first().fill(libelleNeuf)
+await page.waitForTimeout(400)
+const codeAuto = await page.locator('.cfg-crea input[type=text]').nth(1).inputValue()
+if (/^PARCOURS_[A-Z0-9_]+$/.test(codeAuto) && !/PARCOURS_PARCOURS/.test(codeAuto)) {
+  ok(`code proposé d'après le libellé : ${codeAuto}`)
+} else {
+  ko(`code proposé : « ${codeAuto} »`)
+}
+
+const casesSource = page.locator('.cfg-pick-l input[type=checkbox]')
+const nbSource = await casesSource.count()
+nbSource === NB_PROCESSUS
+  ? ok(`${nbSource} processus proposés à la reprise, tous cochés`)
+  : ko(`${nbSource} processus proposés au lieu de ${NB_PROCESSUS}`)
+
+// On en décoche trois : reprendre, c'est d'abord amputer.
+for (const i of [1, 3, 5]) await casesSource.nth(i).uncheck()
+await page.waitForTimeout(400)
+await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
+await page.waitForTimeout(3000)
+
+const echecCreation = await page.locator('.adm-msg-ko').count()
+if (echecCreation) {
+  ko(`création refusée : ${(await page.locator('.adm-msg-ko').innerText()).trim()}`)
+} else {
+  const bandeauCree = await page.locator('.cfg-v').innerText()
+  if (/Version 1 en service/.test(bandeauCree)) ok('le parcours créé s\'ouvre en v1')
+  else ko(`bandeau après création : « ${bandeauCree.trim()} »`)
+  await page.locator('.cfg-sst-b', { hasText: 'Processus' }).click()
+  await page.waitForTimeout(800)
+  const nbRepris = await page.locator('.cfg-l .ci').count()
+  nbRepris === NB_PROCESSUS - 3
+    ? ok(`${nbRepris} processus repris, les 3 décochés sont absents`)
+    : ko(`${nbRepris} processus au lieu de ${NB_PROCESSUS - 3}`)
+
+  await page.locator('.cfg-sst-b', { hasText: 'Parcours' }).click()
+  await page.waitForTimeout(700)
+  const parcoursApres = await page.locator('#cfg-parcours option').count()
+  parcoursApres === parcoursAvant + 1
+    ? ok(`le sélecteur passe de ${parcoursAvant} à ${parcoursApres} parcours`)
+    : ko(`sélecteur : ${parcoursApres} parcours au lieu de ${parcoursAvant + 1}`)
+
+  /* Le parcours d'origine ne doit pas avoir bougé : une reprise qui modifie sa
+     source ferait perdre le parcours de référence. */
+  const source = await fetch(`${base}/api/modeles/PARCOURS_CART_AUTOLOGUE`).then((x) => x.json())
+  source.processus.length === NB_PROCESSUS
+    ? ok(`le parcours repris est intact (${source.processus.length} processus)`)
+    : ko(`la source a perdu des processus : ${source.processus.length}`)
+
+  /* Ce groupe LAISSE le parcours qu'il a créé : il n'existe pas de route de
+     suppression d'un modèle, et il ne doit pas en exister — effacer un modèle
+     rendrait illisibles les dossiers qui le référencent. La suite reste
+     néanmoins rejouable : les comptes ci-dessus sont relatifs (avant → après),
+     jamais absolus. Sur une base de recette, les parcours « de recette »
+     s'accumulent donc ; c'est le prix de ne pas ouvrir cette porte. */
+  await page.locator('#cfg-parcours').selectOption('PARCOURS_CART_AUTOLOGUE')
+  await page.waitForTimeout(1500)
+  const revenu = await page.locator('#cfg-parcours').inputValue()
+  revenu === 'PARCOURS_CART_AUTOLOGUE'
+    ? ok(`retour au parcours de référence (${codeAuto} reste en base, sans dossier)`)
+    : ko(`sélecteur resté sur « ${revenu} »`)
+}
+
+/* ── 26. Cocher la prescription impose un patient ──
    Une prescription est nominative par nature : déclarer la prescription
    réalisée sur un dossier sans patient laisserait un jalon qui ne se rattache
    à personne. Le rattachement est imposé au moment où le jalon est posé,
    plutôt que de laisser l'incohérence s'installer. */
-console.log('\n25. Prescription : le patient devient obligatoire')
+console.log('\n26. Prescription : le patient devient obligatoire')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)
 await page.locator('#tb-q').fill('DEMO-MTI-0001')
@@ -1355,7 +1461,7 @@ if (await page.locator('tr.tb-ligne').count() === 0) {
    n'existe nulle part. Ce qui est vérifié ici n'est pas qu'un bouton réagit,
    mais qu'une image DÉPOSÉE se retrouve en base et se réaffiche après
    rechargement — une preuve qui ne survit pas au rechargement n'en est pas une. */
-console.log('\n26. Photos : fichier et prise de vue')
+console.log('\n27. Photos : fichier et prise de vue')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1200)
 await page.locator('#tb-q').fill(refDossier)
@@ -1439,7 +1545,7 @@ restantes === nbPhAvant
   ? ok('photos retirées, la ligne est rendue à son état de départ')
   : ko(`${restantes} photo(s) restante(s) au lieu de ${nbPhAvant}`)
 
-console.log('\n27. Filtres par colonne du tableau de bord')
+console.log('\n28. Filtres par colonne du tableau de bord')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)
 await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
@@ -1502,7 +1608,7 @@ await page.locator('.tb-restreint').count() === 0
   ? ok('le bandeau « liste restreinte » disparaît')
   : ko('le bandeau subsiste sans filtre')
 
-console.log('\n28. Console du navigateur et réseau')
+console.log('\n29. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

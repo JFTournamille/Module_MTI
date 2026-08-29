@@ -5,6 +5,87 @@ import { requete, transaction } from '../db.js'
    saisie produirait un modèle publié mais insaisissable. */
 const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date']
 
+/**
+ * Contrôle de forme d'une définition de parcours.
+ *
+ * Partagée par la publication d'une version et par la création d'un parcours :
+ * les deux écrivent la même structure, et deux jeux de règles qui divergent
+ * finiraient par accepter d'un côté ce que l'autre refuse. Retourne la liste
+ * des reproches, vide si tout va bien.
+ *
+ * Une définition acceptée puis illisible à l'ouverture d'un dossier serait bien
+ * pire qu'un refus : elle ne se manifesterait qu'au moment de la saisie,
+ * dossier par dossier.
+ */
+function reprochesDefinition (definition) {
+  const erreurs = []
+  const codesVus = new Set()
+  definition.processus.forEach((p, i) => {
+    const ou = `processus ${i + 1}`
+    if (!p || typeof p !== 'object') { erreurs.push(`${ou} : objet attendu`); return }
+    if (!String(p.code ?? '').trim()) erreurs.push(`${ou} : code manquant`)
+    if (!String(p.nom ?? '').trim()) erreurs.push(`${ou} : nom manquant`)
+    if (p.code) {
+      if (codesVus.has(p.code)) erreurs.push(`${ou} : code « ${p.code} » en double`)
+      codesVus.add(p.code)
+    }
+    if (p.gabarit !== undefined && !['standard', 'reception'].includes(p.gabarit)) {
+      erreurs.push(`${ou} : gabarit inconnu « ${p.gabarit} »`)
+    }
+    const sections = p.sections
+    if (!Array.isArray(sections) || sections.length === 0) {
+      erreurs.push(`${ou} : au moins une section attendue`)
+      return
+    }
+    sections.forEach((sc, j) => {
+      const ouSc = `${ou}, section ${j + 1}`
+      if (!String(sc?.titre ?? '').trim()) erreurs.push(`${ouSc} : titre manquant`)
+      if (!Array.isArray(sc?.points) || sc.points.length === 0) {
+        erreurs.push(`${ouSc} : au moins un point attendu`)
+        return
+      }
+      const idsKits = new Set((Array.isArray(sc.kits) ? sc.kits : []).map((k) => k?.id))
+      sc.points.forEach((pt, k) => {
+        const ouPt = `${ouSc}, point ${k + 1}`
+        if (!String(pt?.libelle ?? '').trim()) erreurs.push(`${ouPt} : libellé manquant`)
+        if (!TYPES_POINT.includes(pt?.type)) {
+          erreurs.push(`${ouPt} : type inconnu « ${pt?.type} »`)
+        }
+        if (pt?.seuil !== undefined && pt.seuil !== null && !Number.isFinite(Number(pt.seuil))) {
+          erreurs.push(`${ouPt} : seuil non numérique`)
+        }
+        /* Un seuil n'a de sens que sur un relevé de valeur : posé sur un
+           oui/non il ne déclencherait jamais rien, et l'utilisateur croirait
+           son alarme armée. */
+        if (pt?.seuil !== undefined && pt.seuil !== null && pt.type !== 'valeur') {
+          erreurs.push(`${ouPt} : un seuil ne s'applique qu'à un point de type « valeur »`)
+        }
+        if (pt?.exemplaires !== undefined && pt.exemplaires !== null) {
+          const n = Number(pt.exemplaires)
+          if (!Number.isInteger(n) || n < 1 || n > 12) {
+            erreurs.push(`${ouPt} : exemplaires doit être un entier de 1 à 12`)
+          }
+        }
+        // Un n° de série se porte PAR exemplaire : sans exemplaires, il n'a
+        // rien à identifier.
+        if (pt?.numeroSerie === true && !(Number(pt.exemplaires) > 1 || pt.multi)) {
+          erreurs.push(`${ouPt} : un n° de série suppose plusieurs exemplaires`)
+        }
+        if (pt?.kit && !idsKits.has(pt.kit)) {
+          erreurs.push(`${ouPt} : kit « ${pt.kit} » absent de la section`)
+        }
+      })
+    })
+  })
+  return erreurs
+}
+
+/** Message unique pour un lot de reproches, tronqué pour rester lisible. */
+function messageReproches (erreurs) {
+  return `Définition refusée : ${erreurs.slice(0, 6).join(' ; ')}` +
+    (erreurs.length > 6 ? ` (et ${erreurs.length - 6} autre(s))` : '')
+}
+
 /** Modèles de parcours et catalogue de processus. */
 export default async function referentiels (app) {
   app.get('/api/modeles/:code', async (request, reply) => {
@@ -127,6 +208,132 @@ export default async function referentiels (app) {
    * Chaque enregistrement crée donc `version + 1`, active la nouvelle et retire
    * l'ancienne du service. L'ancienne reste en base, consultable.
    */
+  /**
+   * Crée un PARCOURS — un code nouveau, en version 1.
+   *
+   * À ne pas confondre avec la publication d'une version : celle-là fait
+   * évoluer un parcours existant, celle-ci en ouvre un autre. Un établissement
+   * ne suit pas qu'un seul parcours (CAR-T autologue, allogénique, thérapie
+   * génique, MTI préparé ponctuellement), et il n'existait aucun moyen d'en
+   * ajouter un sans écrire un JSON dans `shared/` et relancer le seed.
+   *
+   * Deux façons d'en obtenir un :
+   *
+   *   { code, libelle, definition }                → la définition est fournie
+   *   { code, libelle, sourceCode, processusCodes } → copie d'un parcours
+   *                                                   existant, réduite aux
+   *                                                   processus retenus
+   *
+   * La seconde est celle que sert l'écran : on part rarement d'une page
+   * blanche, on part d'un parcours voisin qu'on ampute et qu'on adapte. Les
+   * processus retenus sont désignés par leur CODE et gardent l'ordre demandé —
+   * un rang ne désigne rien de stable.
+   */
+  app.post('/api/modeles', async (request, reply) => {
+    const corps = request.body ?? {}
+    const code = String(corps.code ?? '').trim().toUpperCase()
+    const libelle = String(corps.libelle ?? '').trim()
+
+    /* Le code est un identifiant, pas un libellé : il se retrouve dans les
+       jeux de données, les scénarios de démonstration et les URL. On le
+       contraint plutôt que de laisser passer des espaces et des accents qui
+       se paieraient plus tard. */
+    if (!/^[A-Z][A-Z0-9_]{2,63}$/.test(code)) {
+      return reply.code(400).send({
+        erreur: 'Code invalide : lettres majuscules non accentuées, chiffres et ' +
+          'soulignés, 3 à 64 caractères, commençant par une lettre. Reçu : ' +
+          `« ${corps.code ?? ''} ».`
+      })
+    }
+    if (!libelle) return reply.code(400).send({ erreur: 'libelle est requis.' })
+
+    const { rows: deja } = await requete(
+      'SELECT 1 FROM mti.modele_parcours WHERE code = $1 LIMIT 1', [code])
+    if (deja.length) {
+      return reply.code(409).send({
+        erreur: `Le code « ${code} » est déjà pris. Un parcours ne se recrée pas : ` +
+          'pour le faire évoluer, publier une nouvelle version.'
+      })
+    }
+
+    let definition = corps.definition
+    if (corps.sourceCode) {
+      const { rows: source } = await requete(
+        `SELECT definition FROM mti.modele_parcours
+          WHERE code = $1 AND actif LIMIT 1`, [String(corps.sourceCode).trim().toUpperCase()])
+      if (!source.length) {
+        return reply.code(404).send({
+          erreur: `Aucun parcours en service pour le code ${corps.sourceCode}.`
+        })
+      }
+      const modele = source[0].definition
+      const tous = Array.isArray(modele.processus) ? modele.processus : []
+      const retenus = corps.processusCodes
+      if (retenus !== undefined && !Array.isArray(retenus)) {
+        return reply.code(400).send({ erreur: 'processusCodes doit être un tableau de codes.' })
+      }
+      let processus = tous
+      if (Array.isArray(retenus)) {
+        const absents = retenus.filter((c) => !tous.some((p) => p.code === c))
+        if (absents.length) {
+          return reply.code(400).send({
+            erreur: `Processus absents du parcours source : ${absents.join(', ')}.`
+          })
+        }
+        /* L'ordre demandé fait foi : reprendre un parcours, c'est aussi
+           réordonner ses étapes. */
+        processus = retenus.map((c) => tous.find((p) => p.code === c))
+      }
+      definition = {
+        description: modele.description,
+        commentaireIdentification: modele.commentaireIdentification,
+        ...(corps.definition ?? {}),
+        processus
+      }
+    }
+
+    if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+      return reply.code(400).send({ erreur: 'definition ou sourceCode attendu.' })
+    }
+    if (!Array.isArray(definition.processus) || definition.processus.length === 0) {
+      return reply.code(400).send({ erreur: 'Le parcours doit porter au moins un processus.' })
+    }
+    const erreurs = reprochesDefinition(definition)
+    if (erreurs.length) return reply.code(400).send({ erreur: messageReproches(erreurs) })
+
+    /* Même règle que pour une version : l'index d'identification patient est un
+       RANG, recalculé d'après le code du processus, jamais recopié. Retirer un
+       processus en amont le décalerait sinon en silence. */
+    const iFab = definition.processus.findIndex((p) => p.code === 'MISE_EN_FABRICATION')
+    const definitionFinale = { ...definition, ...(iFab >= 0 ? { indexIdentificationPatient: iFab } : {}) }
+    if (iFab < 0 && definitionFinale.indexIdentificationPatient !== undefined) {
+      const n = Number(definitionFinale.indexIdentificationPatient)
+      if (!Number.isInteger(n) || n < 0 || n > definition.processus.length) {
+        return reply.code(400).send({
+          erreur: 'indexIdentificationPatient hors du parcours, et MISE_EN_FABRICATION absent.'
+        })
+      }
+    }
+
+    const cree = await transaction(request.utilisateur.id, request.ip, async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO mti.modele_parcours (code, version, libelle, definition, actif, publie_le)
+         VALUES ($1, 1, $2, $3::jsonb, true, now())
+         RETURNING code, version, libelle, publie_le`,
+        [code, libelle, JSON.stringify({ ...definitionFinale, code, version: 1, libelle })])
+      return rows[0]
+    })
+
+    return reply.code(201).send({
+      code: cree.code,
+      version: cree.version,
+      libelle: cree.libelle,
+      publieLe: cree.publie_le,
+      nbProcessus: definition.processus.length,
+      indexIdentificationPatient: definitionFinale.indexIdentificationPatient ?? null
+    })
+  })
+
   app.post('/api/modeles/:code/versions', async (request, reply) => {
     const corps = request.body ?? {}
     const definition = corps.definition
@@ -137,73 +344,9 @@ export default async function referentiels (app) {
       return reply.code(400).send({ erreur: 'La définition doit porter au moins un processus.' })
     }
 
-    /* Validation de forme avant écriture. Une définition acceptée puis illisible
-       à l'ouverture d'un dossier serait bien pire qu'un refus : elle ne se
-       manifesterait qu'au moment de la saisie, dossier par dossier. */
-    const erreurs = []
-    const codesVus = new Set()
-    definition.processus.forEach((p, i) => {
-      const ou = `processus ${i + 1}`
-      if (!p || typeof p !== 'object') { erreurs.push(`${ou} : objet attendu`); return }
-      if (!String(p.code ?? '').trim()) erreurs.push(`${ou} : code manquant`)
-      if (!String(p.nom ?? '').trim()) erreurs.push(`${ou} : nom manquant`)
-      if (p.code) {
-        if (codesVus.has(p.code)) erreurs.push(`${ou} : code « ${p.code} » en double`)
-        codesVus.add(p.code)
-      }
-      if (p.gabarit !== undefined && !['standard', 'reception'].includes(p.gabarit)) {
-        erreurs.push(`${ou} : gabarit inconnu « ${p.gabarit} »`)
-      }
-      const sections = p.sections
-      if (!Array.isArray(sections) || sections.length === 0) {
-        erreurs.push(`${ou} : au moins une section attendue`)
-        return
-      }
-      sections.forEach((sc, j) => {
-        const ouSc = `${ou}, section ${j + 1}`
-        if (!String(sc?.titre ?? '').trim()) erreurs.push(`${ouSc} : titre manquant`)
-        if (!Array.isArray(sc?.points) || sc.points.length === 0) {
-          erreurs.push(`${ouSc} : au moins un point attendu`)
-          return
-        }
-        const idsKits = new Set((Array.isArray(sc.kits) ? sc.kits : []).map((k) => k?.id))
-        sc.points.forEach((pt, k) => {
-          const ouPt = `${ouSc}, point ${k + 1}`
-          if (!String(pt?.libelle ?? '').trim()) erreurs.push(`${ouPt} : libellé manquant`)
-          if (!TYPES_POINT.includes(pt?.type)) {
-            erreurs.push(`${ouPt} : type inconnu « ${pt?.type} »`)
-          }
-          if (pt?.seuil !== undefined && pt.seuil !== null && !Number.isFinite(Number(pt.seuil))) {
-            erreurs.push(`${ouPt} : seuil non numérique`)
-          }
-          /* Un seuil n'a de sens que sur un relevé de valeur : posé sur un
-             oui/non il ne déclencherait jamais rien, et l'utilisateur croirait
-             son alarme armée. */
-          if (pt?.seuil !== undefined && pt.seuil !== null && pt.type !== 'valeur') {
-            erreurs.push(`${ouPt} : un seuil ne s'applique qu'à un point de type « valeur »`)
-          }
-          if (pt?.exemplaires !== undefined && pt.exemplaires !== null) {
-            const n = Number(pt.exemplaires)
-            if (!Number.isInteger(n) || n < 1 || n > 12) {
-              erreurs.push(`${ouPt} : exemplaires doit être un entier de 1 à 12`)
-            }
-          }
-          // Un n° de série se porte PAR exemplaire : sans exemplaires, il n'a
-          // rien à identifier.
-          if (pt?.numeroSerie === true && !(Number(pt.exemplaires) > 1 || pt.multi)) {
-            erreurs.push(`${ouPt} : un n° de série suppose plusieurs exemplaires`)
-          }
-          if (pt?.kit && !idsKits.has(pt.kit)) {
-            erreurs.push(`${ouPt} : kit « ${pt.kit} » absent de la section`)
-          }
-        })
-      })
-    })
+    const erreurs = reprochesDefinition(definition)
     if (erreurs.length) {
-      return reply.code(400).send({
-        erreur: `Définition refusée : ${erreurs.slice(0, 6).join(' ; ')}` +
-          (erreurs.length > 6 ? ` (et ${erreurs.length - 6} autre(s))` : '')
-      })
+      return reply.code(400).send({ erreur: messageReproches(erreurs) })
     }
 
     /* L'index d'identification patient est un RANG : il se décale dès qu'un

@@ -20,8 +20,8 @@
  * (`.cfg-l`, `.cfg-r`, `.form-h`, `.form-r`, `.aide`, `.apercu`), plus nets et
  * plus contrastés que ce que portait la première version de cet écran.
  */
-import { computed, onMounted, ref } from 'vue'
-import { useConfiguration, TYPES_POINT } from '../stores/configuration.js'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useConfiguration, TYPES_POINT, lieAuMedicament } from '../stores/configuration.js'
 
 const store = useConfiguration()
 /* `garderBrouillon` : ce panneau est démonté à chaque changement d'onglet, et
@@ -37,6 +37,29 @@ const SOUS_ONGLETS = [
 ]
 
 const LIB_TYPE = Object.fromEntries(TYPES_POINT)
+
+/* Aides au survol. Trois champs se règlent d'un clic mais engagent le parcours
+   entier, et rien à l'écran ne disait ce qu'ils font. Le texte est ici plutôt
+   qu'en dur dans le gabarit : il est long, et il est le même à plusieurs
+   endroits. */
+const AIDE = {
+  code: "Identifiant stable du parcours ou du processus. C'est lui que désignent " +
+    'les jeux de données, les scénarios et le jeu de démonstration. Le rang, lui, ' +
+    "change dès qu'un élément est inséré ou retiré : retirer l'aphérèse a décalé " +
+    'douze processus d\'un cran. Majuscules non accentuées, chiffres et soulignés.',
+  gabarit: "Détermine l'écran de saisie. « standard » affiche les sections et leurs " +
+    'points. « réception » y ajoute l\'en-tête produit — désignation, n° de lot, ' +
+    'péremption, code-barres — et la préallocation patient. Un parcours n\'a ' +
+    'normalement qu\'un seul processus de réception.',
+  tiers: 'Le processus reste au parcours et garde ses points de contrôle, mais il ' +
+    "n'est pas saisi ici : il est réalisé ailleurs, par le fabricant, un autre " +
+    'service ou un prestataire. L\'écran le montre en consultation, avec un ' +
+    'bandeau, au lieu d\'ouvrir la saisie.',
+  medicament: 'Un point lié au médicament porte sur le produit lui-même : il se ' +
+    'répète par exemplaire (poche, tube, cuve), peut exiger un n° de série et ' +
+    "appartenir à un kit. Un point qui porte sur le dossier, le local ou " +
+    "l'organisation n'a rien de tout cela — la section reste alors masquée."
+}
 
 /** Nombre de lignes qu'un point produira à l'écran de saisie. */
 const copies = (pt) => Number(pt.exemplaires) || (pt.multi ? '1 à n' : 1)
@@ -59,6 +82,107 @@ function ouvrirPoint (e) {
 }
 
 const nbPoints = computed(() => store.tousLesPoints.length)
+
+/* Message de refus du retrait d'un point : affiché à côté du bouton plutôt que
+   dans le bandeau d'erreur, qui est réservé à ce que dit le serveur. */
+const refusRetrait = ref('')
+function retirerLePoint () {
+  refusRetrait.value = store.retirerPointCourant()
+}
+
+// ── Création d'un parcours ──
+//
+// Le geste réel n'est pas « partir d'une page blanche » mais « reprendre le
+// parcours voisin et l'adapter » : un CAR-T allogénique se déduit de
+// l'autologue, une thérapie génique en reprend la moitié. Le formulaire met
+// donc la reprise en avant, et la page blanche en second.
+const creation = reactive({ ouvert: false, libelle: '', code: '', source: '', retenus: [] })
+const creationEnCours = ref(false)
+
+/**
+ * Code proposé d'après le libellé : majuscules, sans accent, souligné.
+ *
+ * Le préfixe n'est ajouté que s'il manque : les libellés commencent presque
+ * tous par « Parcours MTI — … », et préfixer sans regarder donnait
+ * `PARCOURS_PARCOURS_MTI_…`.
+ */
+function codeDepuisLibelle (libelle) {
+  const slug = libelle
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (!slug) return ''
+  return (slug.startsWith('PARCOURS') ? slug : `PARCOURS_${slug}`).slice(0, 64)
+}
+
+/* Le code suit le libellé tant que l'utilisateur ne l'a pas touché lui-même :
+   le laisser vide obligerait à inventer un identifiant, le figer d'emblée
+   produirait un code qui ne correspond plus au nom. */
+const codeTouche = ref(false)
+const codePropose = computed(() =>
+  codeTouche.value ? creation.code : codeDepuisLibelle(creation.libelle || ''))
+
+/** Processus du parcours repris, pour en choisir les étapes. */
+const processusSource = ref([])
+async function chargerSource () {
+  processusSource.value = []
+  creation.retenus = []
+  if (!creation.source) return
+  const r = await fetch(`/api/modeles/${creation.source}`)
+  if (!r.ok) return
+  const m = await r.json()
+  processusSource.value = (m.processus ?? []).map((p) => ({
+    code: p.code,
+    nom: p.nom,
+    nbPoints: (p.sections ?? []).reduce((t, sc) => t + (sc.points?.length ?? 0), 0)
+  }))
+  creation.retenus = processusSource.value.map((p) => p.code)
+}
+
+function basculerRetenu (code) {
+  const i = creation.retenus.indexOf(code)
+  if (i >= 0) creation.retenus.splice(i, 1)
+  else creation.retenus.push(code)
+}
+
+/* L'ordre de la liste source fait foi, pas l'ordre des clics : cocher au
+   hasard ne doit pas mélanger les étapes du parcours. Le réordonnancement se
+   fait ensuite dans l'onglet Processus, avec les flèches. */
+const retenusOrdonnes = computed(() =>
+  processusSource.value.filter((p) => creation.retenus.includes(p.code)).map((p) => p.code))
+
+function ouvrirCreation (source = '') {
+  Object.assign(creation, { ouvert: true, libelle: '', code: '', source, retenus: [] })
+  codeTouche.value = false
+  if (source) chargerSource()
+}
+
+/** Duplique le parcours ouvert : même chose, source pré-remplie. */
+function dupliquerCourant () {
+  ouvrirCreation(store.code)
+  const actuel = store.parcoursDisponibles.find((m) => m.code === store.code)
+  creation.libelle = `${actuel?.libelle ?? store.code} (copie)`
+}
+
+async function validerCreation () {
+  creationEnCours.value = true
+  try {
+    const ok = await store.creerParcours({
+      nouveauCode: codePropose.value,
+      libelle: creation.libelle.trim(),
+      source: creation.source || null,
+      processusCodes: creation.source ? retenusOrdonnes.value : null
+    })
+    if (ok) {
+      creation.ouvert = false
+      sousOnglet.value = 'processus'
+    }
+  } finally { creationEnCours.value = false }
+}
+
+const creationValide = computed(() =>
+  creation.libelle.trim().length > 2 &&
+  /^[A-Z][A-Z0-9_]{2,63}$/.test(codePropose.value) &&
+  (!creation.source || retenusOrdonnes.value.length > 0))
 </script>
 
 <template>
@@ -138,6 +262,75 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               <span>{{ store.processus.length }} processus · {{ nbPoints }} points de contrôle</span>
             </div>
 
+            <div class="form-h">Ouvrir un autre parcours</div>
+            <div class="aide" style="margin-left:0;">
+              Un parcours nouveau porte un <strong>code nouveau</strong> : il n'entre
+              pas dans l'historique de celui-ci, et aucun dossier ouvert n'en dépend.
+              Le plus souvent on ne part pas d'une page blanche — on reprend le
+              parcours voisin, on retire ce qui ne s'applique pas, et on adapte.
+            </div>
+            <div v-if="!creation.ouvert" class="form-r">
+              <label>Créer</label>
+              <button class="adm-b" @click="ouvrirCreation(store.code)">
+                Reprendre ce parcours
+              </button>
+              <button class="adm-b" @click="dupliquerCourant()">Dupliquer à l'identique</button>
+              <button class="adm-b" @click="ouvrirCreation('')">Partir d'un parcours vide</button>
+            </div>
+
+            <div v-else class="cfg-crea">
+              <div class="form-r">
+                <label>Libellé</label>
+                <input type="text" v-model="creation.libelle" style="min-width:320px;"
+                       placeholder="Parcours MTI — …">
+              </div>
+              <div class="form-r">
+                <label>Code
+                  <span class="aide-i" tabindex="0" :data-aide="AIDE.code">?</span>
+                </label>
+                <input type="text" :value="codePropose" style="min-width:260px;"
+                       @input="codeTouche = true; creation.code = $event.target.value.toUpperCase()">
+                <span class="meta">Proposé d'après le libellé ; modifiable tant qu'il n'est pas créé.</span>
+              </div>
+              <div class="form-r">
+                <label>Reprendre</label>
+                <select v-model="creation.source" @change="chargerSource()">
+                  <option value="">— parcours vide —</option>
+                  <option v-for="m in store.parcoursDisponibles" :key="m.code" :value="m.code">
+                    {{ m.libelle }} — {{ m.nbProcessus }} processus
+                  </option>
+                </select>
+              </div>
+
+              <template v-if="creation.source">
+                <div class="aide" style="margin-left:0;">
+                  Décocher les étapes qui ne s'appliquent pas. L'ordre du parcours
+                  d'origine est conservé ; il se réordonne ensuite dans l'onglet
+                  <strong>Processus</strong>, comme les points de contrôle s'y adaptent.
+                </div>
+                <div class="cfg-pick">
+                  <label v-for="p in processusSource" :key="p.code" class="cfg-pick-l">
+                    <input type="checkbox" :checked="creation.retenus.includes(p.code)"
+                           @change="basculerRetenu(p.code)">
+                    <span class="n">{{ p.nom }}</span>
+                    <span class="d">{{ p.code }} · {{ p.nbPoints }} pt</span>
+                  </label>
+                </div>
+                <div class="meta" style="margin:4px 0 8px 129px;">
+                  {{ retenusOrdonnes.length }} processus retenu(s) sur {{ processusSource.length }}.
+                </div>
+              </template>
+
+              <div class="form-r">
+                <label></label>
+                <button class="adm-b" @click="creation.ouvert = false">Annuler</button>
+                <button class="adm-b-p" :disabled="!creationValide || creationEnCours"
+                        @click="validerCreation()">
+                  {{ creationEnCours ? 'Création…' : 'Créer et ouvrir en édition' }}
+                </button>
+              </div>
+            </div>
+
             <div class="form-h">Versions</div>
             <table class="adm-t cfg-vt">
               <thead>
@@ -207,7 +400,9 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               <input type="text" v-model="store.processusCourant.nom" @input="store.marquer()">
             </div>
             <div class="form-r">
-              <label>Code</label>
+              <label>Code
+                <span class="aide-i" tabindex="0" :data-aide="AIDE.code">?</span>
+              </label>
               <input type="text" v-model="store.processusCourant.code" @input="store.marquer()">
             </div>
             <div class="aide">
@@ -216,14 +411,18 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               retiré.
             </div>
             <div class="form-r">
-              <label>Gabarit</label>
+              <label>Gabarit
+                <span class="aide-i" tabindex="0" :data-aide="AIDE.gabarit">?</span>
+              </label>
               <select v-model="store.processusCourant.gabarit" @change="store.marquer()">
                 <option value="standard">standard</option>
                 <option value="reception">réception (en-tête produit, préallocation)</option>
               </select>
             </div>
             <div class="form-r">
-              <label>Réalisation</label>
+              <label>Réalisation
+                <span class="aide-i" tabindex="0" :data-aide="AIDE.tiers">?</span>
+              </label>
               <label class="lbl-f">
                 <input type="checkbox" v-model="store.processusCourant.externe"
                        @change="store.marquer()">
@@ -350,6 +549,25 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               processus, avec identification nominative et rappel des points concernés.
             </div>
 
+            <div class="form-h">Portée du point</div>
+            <div class="form-r">
+              <label>Lié au médicament
+                <span class="aide-i" tabindex="0" :data-aide="AIDE.medicament">?</span>
+              </label>
+              <label class="lbl-f">
+                <input type="checkbox" class="cfg-med"
+                       :checked="lieAuMedicament(store.pointCourant)"
+                       @change="store.poser('lieAuMedicament', $event.target.checked)">
+                Ce point porte sur le produit lui-même
+              </label>
+            </div>
+            <div class="aide">
+              Un point qui porte sur le dossier, le local ou l'organisation n'a ni
+              exemplaires, ni n° de série, ni kit : décoché, la section ci-dessous
+              disparaît et ce qu'elle portait est effacé.
+            </div>
+
+            <template v-if="lieAuMedicament(store.pointCourant)">
             <div class="form-h">Exemplaires et identification</div>
             <div class="form-r">
               <label>Exemplaires</label>
@@ -385,6 +603,21 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               <input type="text" v-model="k.composition" placeholder="1 boîte = 3 tubes…"
                      @input="store.marquer()">
               <button class="cfg-x" title="Retirer ce kit" @click="store.retirerKit(i)">×</button>
+            </div>
+            </template>
+
+            <div class="form-h">Retirer ce point</div>
+            <div class="form-r">
+              <label></label>
+              <button class="adm-b cfg-sup" @click="retirerLePoint()">
+                × Retirer ce point de contrôle
+              </button>
+              <span class="meta">
+                Le retrait n'est effectif qu'à la publication de la version suivante.
+              </span>
+            </div>
+            <div v-if="refusRetrait" class="adm-msg adm-msg-hs" style="margin:6px 0 10px;">
+              {{ refusRetrait }}
             </div>
 
             <!-- Aperçu : ce que l'opérateur verra. Une case cochée dans un

@@ -58,6 +58,25 @@ function ecrireBrouillonLocal (valeur) {
   } catch { /* navigation privée, quota atteint : on continue sans filet */ }
 }
 
+/**
+ * Un point est-il « lié au médicament » ?
+ *
+ * C'est la coche qui commande l'affichage de la section « Exemplaires et
+ * identification » : un point qui porte sur le dossier ou sur le local n'a ni
+ * exemplaires, ni n° de série, ni kit, et la section n'avait rien à faire là.
+ *
+ * La valeur est DÉDUITE quand la coche est absente, plutôt qu'imposée : les
+ * parcours déjà publiés ne la portent pas, et exiger le drapeau ferait perdre
+ * leurs exemplaires au premier republiement. Un point qui compte des
+ * exemplaires, porte un n° de série ou appartient à un kit est lié au
+ * médicament, qu'on l'ait écrit ou non.
+ */
+export function lieAuMedicament (pt) {
+  if (typeof pt?.lieAuMedicament === 'boolean') return pt.lieAuMedicament
+  return Number(pt?.exemplaires) > 1 || Boolean(pt?.multi) ||
+         pt?.numeroSerie === true || Boolean(pt?.kit)
+}
+
 export const useConfiguration = defineStore('configuration', () => {
   /** Parcours en cours d'édition, et liste des parcours disponibles. */
   const code = ref(CODE_DEFAUT)
@@ -285,6 +304,45 @@ export const useConfiguration = defineStore('configuration', () => {
   }
 
   /**
+   * Retire le point actuellement ouvert, où qu'il soit.
+   *
+   * `retirerPoint` refuse de vider une section — une section sans point n'est
+   * pas publiable. Depuis l'onglet « Point de contrôle » on ne voit pourtant
+   * pas les sections, et un refus muet passerait pour un bouton cassé. Ici, on
+   * emporte donc la section devenue vide, et on ne refuse que le dernier point
+   * du dernier processus : là, il ne resterait plus rien à publier.
+   *
+   * Retourne un message quand le retrait n'a pas eu lieu, sinon une chaîne vide.
+   */
+  function retirerPointCourant () {
+    const p = processusCourant.value
+    const sc = sectionCourante.value
+    if (!p || !sc) return 'Aucun point sélectionné.'
+    if (sc.points.length > 1) {
+      sc.points.splice(iPoint.value, 1)
+      iPoint.value = Math.min(iPoint.value, sc.points.length - 1)
+      marquer()
+      return ''
+    }
+    if (p.sections.length > 1) {
+      p.sections.splice(iSection.value, 1)
+      iSection.value = Math.min(iSection.value, p.sections.length - 1)
+      iPoint.value = 0
+      marquer()
+      return ''
+    }
+    if (processus.value.length > 1) {
+      const i = iProcessus.value
+      processus.value.splice(i, 1)
+      choisirProcessus(Math.min(i, processus.value.length - 1))
+      marquer()
+      return ''
+    }
+    return 'C\'est le dernier point du parcours : un parcours sans point ne se ' +
+      'publie pas. Ajouter un autre point avant de retirer celui-ci.'
+  }
+
+  /**
    * Change une propriété du point courant, en tenant les dépendances.
    *
    * Ces règles sont les mêmes que celles du serveur, appliquées ici pour que
@@ -304,6 +362,16 @@ export const useConfiguration = defineStore('configuration', () => {
     }
     if (champ === 'numeroSerie' && valeur && !(Number(pt.exemplaires) > 1 || pt.multi)) {
       pt.exemplaires = 2
+    }
+    /* Décocher « lié au médicament » ne se contente pas de masquer la section :
+       il efface ce qu'elle portait. Laisser un `exemplaires: 3` invisible
+       produirait trois lignes à l'écran de saisie sans que rien, dans la
+       configuration, ne l'explique. */
+    if (champ === 'lieAuMedicament' && !valeur) {
+      delete pt.exemplaires
+      delete pt.multi
+      delete pt.kit
+      pt.numeroSerie = false
     }
     marquer()
   }
@@ -364,6 +432,59 @@ export const useConfiguration = defineStore('configuration', () => {
     return true
   }
 
+  /**
+   * Crée un parcours : un code nouveau, en version 1.
+   *
+   * `source` désigne le parcours à reprendre, `processusCodes` ceux qu'on en
+   * garde, dans l'ordre voulu. Reprendre puis amputer est le geste réel : on
+   * part rarement d'une page blanche, on part d'un parcours voisin.
+   */
+  async function creerParcours ({ nouveauCode, libelle, source, processusCodes }) {
+    erreur.value = ''
+    message.value = ''
+    const corps = { code: nouveauCode, libelle }
+    if (source) {
+      corps.sourceCode = source
+      if (Array.isArray(processusCodes)) corps.processusCodes = processusCodes
+    } else {
+      /* Un parcours vide n'existe pas côté base : la définition doit porter au
+         moins un processus et un point. On amorce donc le minimum publiable,
+         que l'utilisateur renommera. */
+      corps.definition = {
+        processus: [{
+          code: 'ETAPE_1',
+          nom: 'Première étape',
+          gabarit: 'standard',
+          externe: false,
+          sections: [{
+            titre: 'Section 1',
+            kits: [],
+            points: [{ libelle: 'Premier point de contrôle', type: 'ouinon', obligatoire: false }]
+          }]
+        }]
+      }
+    }
+    const r = await appel('/api/modeles', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(corps)
+    })
+    if (!r.ok) {
+      erreur.value = await messageErreur(r, `Création refusée (${r.status}).`)
+      return false
+    }
+    const cree = await r.json()
+    /* Le brouillon en cours porte sur un AUTRE parcours : le garder ferait
+       publier ses processus sous le nouveau code. */
+    oublierBrouillonLocal()
+    modifie.value = false
+    code.value = cree.code
+    await charger()
+    message.value = `Parcours « ${cree.libelle} » créé (${cree.nbProcessus} processus) ` +
+      'et ouvert en édition. Adapter les processus et les points, puis publier.'
+    return true
+  }
+
   /** Abandonne le brouillon et repart de la version active. */
   async function annuler () {
     oublierBrouillonLocal()
@@ -390,7 +511,7 @@ export const useConfiguration = defineStore('configuration', () => {
     charger, choisirProcessus, choisirPoint, marquer,
     ajouterProcessus, retirerProcessus, deplacerProcessus,
     ajouterSection, retirerSection, ajouterPoint, retirerPoint,
-    poser, ajouterKit, retirerKit,
-    publier, annuler
+    poser, ajouterKit, retirerKit, retirerPointCourant,
+    publier, annuler, creerParcours
   }
 })
