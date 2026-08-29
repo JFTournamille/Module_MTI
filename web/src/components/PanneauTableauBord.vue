@@ -30,7 +30,7 @@ const LIB_STATUT = {
 }
 
 const tuiles = computed(() => [
-  { code: '', classe: '', valeur: store.nbEnCours, libelle: 'Scénarios en cours' },
+  { code: '', classe: '', valeur: store.nbEnCours, libelle: 'Parcours en cours' },
   { code: 'attente', classe: 'att', valeur: store.nbAttente, libelle: "En attente d'allocation" },
   { code: 'valide', classe: 'fin', valeur: store.nbTermines, libelle: 'Terminés — consultables' },
   { code: '', classe: 'alr', valeur: store.nbAlarmes, libelle: 'Dossiers avec alarme', filtreAlarme: true }
@@ -84,7 +84,7 @@ const dateCourte = (v) => v
       <button class="adm-b" @click="filtreAlarme = false; store.reinitialiser()">Réinitialiser</button>
       <button class="adm-b adm-b-p" style="margin-left:auto;"
               @click="formulaireOuvert = !formulaireOuvert">
-        {{ formulaireOuvert ? '✕ Annuler' : '▶ Démarrer un scénario MTI' }}
+        {{ formulaireOuvert ? '✕ Annuler' : '▶ Démarrer un parcours MTI' }}
       </button>
     </div>
 
@@ -92,7 +92,7 @@ const dateCourte = (v) => v
       Tableau de bord indisponible : {{ store.erreur }}
       <div style="margin-top:5px;font-size:12px;">
         La liste des dossiers n'est pas embarquée dans l'application : une liste lue
-        hors ligne serait périmée, et démarrer un scénario sans base n'aurait pas de sens.
+        hors ligne serait périmée, et démarrer un parcours sans base n'aurait pas de sens.
       </div>
     </div>
     <div v-else-if="store.erreur" class="adm-msg adm-msg-ko">{{ store.erreur }}</div>
@@ -104,7 +104,7 @@ const dateCourte = (v) => v
         <input id="tb-ref" type="text" v-model="nouveau.reference" :placeholder="referenceProposee()"/>
       </div>
       <div class="adm-r">
-        <label for="tb-mod">Modèle de parcours</label>
+        <label for="tb-mod">Parcours</label>
         <select id="tb-mod" v-model="nouveau.codeModele">
           <option v-for="m in store.modeles" :key="m.code" :value="m.code">
             {{ m.libelle }} (v{{ m.version }}, {{ m.nbProcessus }} processus)
@@ -134,7 +134,7 @@ const dateCourte = (v) => v
       </div>
       <div class="adm-r" style="margin-bottom:0;">
         <label></label>
-        <button class="adm-b adm-b-p" @click="demarrer()">Créer et ouvrir le scénario</button>
+        <button class="adm-b adm-b-p" @click="demarrer()">Créer et ouvrir le parcours</button>
       </div>
     </div>
 
@@ -152,7 +152,7 @@ const dateCourte = (v) => v
       <div v-else-if="!dossiersAffiches.length" class="adm-vide">
         Aucun dossier ne correspond.
         <div style="margin-top:8px;font-size:12px;">
-          Démarrez un scénario pour créer le premier.
+          Démarrez un parcours pour créer le premier.
         </div>
       </div>
       <table v-else class="adm-t">

@@ -368,6 +368,15 @@ Deux conséquences :
   (`GET /api/dossiers/etapes`). Un dossier ouvert sous une version précédente
   porte des processus que le modèle ne connaît plus — l'aphérèse en est
   l'exemple — et une liste tirée du modèle actif les rendrait infiltrables.
+- La requête passe par des `LATERAL` agrégés, et non par cinq sous-requêtes
+  corrélées répétées ligne à ligne. La version corrélée relisait `saisie` une
+  fois par dossier : **2 900 ms** sur 310 dossiers et 19 800 saisies quand les
+  statistiques n'étaient pas à jour, contre 76 ms une fois les tables analysées.
+  Un facteur quarante qui ne dépendait que de l'humeur du planificateur. Après
+  réécriture : 392 ms dans le pire cas, 60–90 ms dans le cas normal.
+  L'installateur lance en outre un `ANALYZE` — c'est lui qui le fait et pas le
+  seed, parce qu'`ANALYZE` exige d'être propriétaire de la table et que
+  `mti_app` ne l'est délibérément pas.
 - Les champs texte passent par un chargement différé de 300 ms. Un appel par
   frappe était déjà limite avec une seule zone de recherche ; avec quatre champs
   de filtre, c'était intenable.
@@ -375,6 +384,41 @@ Deux conséquences :
 Quand un filtre est posé, le bandeau le dit : les compteurs des tuiles portent
 sur ce qui est affiché, et un total qui ne correspond pas à l'écran est
 trompeur.
+
+### Il n'y a pas d'onglet « Parcours »
+
+Un parcours n'existe qu'une fois un dossier ouvert. Un onglet permanent menait
+donc, la plupart du temps, à un écran vide portant un formulaire de création qui
+faisait doublon avec celui du tableau de bord — deux endroits pour créer un
+dossier, sans rien qui dise ce qui les distingue.
+
+La barre porte trois onglets : **Tableau de bord**, **Configuration**,
+**Utilisateurs**. Ouvrir un dossier depuis la liste ajoute en fin de barre un
+onglet contextuel portant sa référence ; il disparaît quand plus aucun dossier
+n'est ouvert. C'est un contexte de travail, pas une destination.
+
+Le mot « scénario » a disparu de l'interface au profit de « parcours », qui est
+le terme du métier et celui du modèle de données (`modele_parcours`).
+
+### Plusieurs parcours, pas un seul
+
+L'établissement ne suit pas qu'un circuit. Quatre parcours sont livrés :
+
+| Code | Processus | Particularité |
+|---|---|---|
+| `PARCOURS_CART_AUTOLOGUE` | 15 | le circuit de référence |
+| `PARCOURS_CART_ALLOGENIQUE` | 8 | produit sur étagère, pas de prélèvement patient |
+| `PARCOURS_THERAPIE_GENIQUE` | 7 | vecteur viral, nominatif dès la commande |
+| `PARCOURS_MTI_PP` | 6 | préparé ponctuellement, sans fabricant extérieur |
+
+Les deux derniers n'ont **pas de phase anonyme** : leur
+`indexIdentificationPatient` vaut 0, parce que le produit est nominatif dès le
+départ. L'anonymat par défaut reste la règle du CAR-T autologue, pas une règle
+universelle — c'est le modèle qui la porte, pas le code.
+
+L'onglet Configuration porte un sélecteur de parcours. Changer de parcours
+abandonne le brouillon en cours : le garder d'un parcours à l'autre publierait
+les processus de l'un sous le code de l'autre.
 
 ### Le tableau de bord est le point d'entrée
 

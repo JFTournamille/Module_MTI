@@ -343,6 +343,24 @@ try {
   defautsCloisonnement++
 }
 
+/* Statistiques du planificateur.
+   Une insertion en masse laisse les tables sans statistiques tant qu'autovacuum
+   n'est pas passé, et le planificateur choisit alors des plans catastrophiques :
+   la liste du tableau de bord a été mesurée à 2,9 s dans cet état contre 76 ms
+   une fois les tables analysées. La requête a été réécrite pour ne plus dépendre
+   de ce hasard, mais analyser ici coûte une seconde et supprime la fenêtre.
+
+   C'est l'installateur qui le fait, et pas le seed : ANALYZE exige d'être
+   propriétaire de la table, et `mti_app` ne l'est délibérément pas — c'est ce
+   qui l'empêche de toucher aux triggers d'audit. */
+if (!verifierSeulement) {
+  try {
+    await admin.query('ANALYZE mti.dossier, mti.dossier_processus, mti.saisie')
+  } catch (e) {
+    console.log(`  · statistiques non rafraîchies (${e.message}) — autovacuum s'en chargera.`)
+  }
+}
+
 etape(verifierSeulement ? 3 : 6, 'Contenu installé')
 for (const [libelle, sql] of [
   ['modèles de parcours actifs', "SELECT code || ' v' || version FROM mti.modele_parcours WHERE actif"],

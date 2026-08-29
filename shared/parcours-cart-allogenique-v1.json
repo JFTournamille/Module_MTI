@@ -1,0 +1,278 @@
+{
+  "code": "PARCOURS_CART_ALLOGENIQUE",
+  "version": 1,
+  "libelle": "Parcours MTI — CAR-T allogénique",
+  "description": "CAR-T issu d'un donneur, disponible sur étagère. Pas de prélèvement chez le patient : le produit est commandé puis reçu, ce qui raccourcit le parcours de tout l'amont de fabrication.",
+  "indexIdentificationPatient": 4,
+  "commentaireIdentification": "L'identité est exigée au déstockage (index 4) : c'est là que le produit est affecté à un patient.",
+  "processus": [
+    {
+      "n": 1,
+      "code": "ACCES_TRAITEMENT",
+      "nom": "Demande d'accès au traitement",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Décision et autorisation",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Décision de RCP tracée au dossier",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date de la RCP",
+              "type": "date",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Éligibilité au protocole vérifiée",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Accord de prise en charge / autorisation d'accès",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "code": "COMMANDE_MTI",
+      "nom": "Commande MTI",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Commande fabricant",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "N° de commande fabricant",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date de réception prévue du produit",
+              "type": "date",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Accusé de commande archivé",
+              "type": "photo",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Transmission au pharmacien référent",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "code": "RECEPTION",
+      "nom": "Réception (+/- préallocation)",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Réception du conteneur",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Vérification intégrité du conteneur",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Concordance étiquetage produit / bon de livraison",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Température à réception — seuil < −150 °C",
+              "type": "valeur",
+              "obligatoire": true,
+              "seuil": -150,
+              "sousLibelle": "Relever la valeur affichée sur l'enregistreur",
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Photo du conteneur avant ouverture",
+              "type": "photo",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "code": "STOCKAGE_AZOTE",
+      "nom": "Stockage cryogénique",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Mise en cuve",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Température cuve d'azote — seuil < −160 °C",
+              "type": "valeur",
+              "obligatoire": true,
+              "seuil": -160
+            },
+            {
+              "libelle": "Emplacement cuve noté",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Entrée en stock logiciel PUI",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "code": "DESTOCKAGE",
+      "nom": "Déstockage et allocation patient",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Sortie de cuve",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée — double contrôle",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Concordance produit / patient",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Sortie de stock logiciel PUI",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "code": "DECONGELATION",
+      "nom": "Décongélation",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Bain-marie",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Démarrage minuteur décongélation",
+              "type": "timer",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Décongélation bain-marie 37 °C",
+              "type": "timer",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Aspect post-décongélation conforme",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 7,
+      "code": "ADMINISTRATION",
+      "nom": "Administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Administration au patient",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée au lit",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Heure de début d'administration",
+              "type": "auto",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Administration réalisée sans incident",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Constantes surveillées 4 h",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 8,
+      "code": "POST_ADMINISTRATION",
+      "nom": "Post-administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Surveillance",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Syndrome de relargage cytokinique surveillé",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Déclaration de pharmacovigilance si événement",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Dossier de traçabilité archivé",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

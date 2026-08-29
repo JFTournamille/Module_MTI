@@ -27,6 +27,13 @@ function copies (pt) {
 <template>
   <div class="adm">
     <div class="adm-bar">
+      <label for="cfg-parcours" style="font-weight:bold;color:#4a3880;">Parcours :</label>
+      <select id="cfg-parcours" :value="store.code"
+              @change="store.choisirParcours($event.target.value)">
+        <option v-for="m in store.parcoursDisponibles" :key="m.code" :value="m.code">
+          {{ m.libelle }} — {{ m.nbProcessus }} processus
+        </option>
+      </select>
       <template v-if="store.versionActive">
         <span class="cfg-v">Version {{ store.versionActive.version }} en service</span>
         <span class="meta">
@@ -102,7 +109,7 @@ function copies (pt) {
           <div class="cfg-f">
             <label>Code</label>
             <input type="text" v-model="store.processusCourant.code" @input="store.marquer()">
-            <span class="meta">Identifiant stable — c'est lui que désignent les scénarios.</span>
+            <span class="meta">Identifiant stable — c'est lui que désignent les parcours.</span>
           </div>
           <div class="cfg-f">
             <label>Gabarit</label>
