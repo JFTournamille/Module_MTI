@@ -30,6 +30,13 @@ réglementaires, pas à des préférences techniques.
 - **Toute écriture passe par `api/src/db.js:transaction()`.** C'est ce qui
   renseigne l'auteur pour le trigger d'audit. Une écriture hors de cette
   fonction produit une trace sans auteur.
+- **Une photo est une pièce, pas une coche.** Le contenu vit en base
+  (`piece_jointe.contenu`), le conteneur CapRover étant éphémère. Le dépôt part
+  aussitôt, sans attendre « Enregistrer », et crée sa saisie porteuse. La
+  réponse du dossier ne transporte jamais les octets.
+- **Un dossier de démonstration périmé se refait.** Le seed compare son modèle
+  à celui en service. `--regenerer` force la reprise après un changement de
+  scénario, que la version du modèle ne trahit pas.
 - **`mti.audit` ne se modifie pas.** Le rôle `mti_app` n'a pas les droits
   `UPDATE`/`DELETE` dessus, et c'est volontaire.
 - **Un dossier validé est en lecture seule.** Toute correction passe par une

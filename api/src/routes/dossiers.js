@@ -644,7 +644,159 @@ export default async function dossiers (app) {
       }
     }
 
-    return { dossier: rows[0], patient, processus, saisies }
+    /* Les photos remontent SANS leur contenu : une réception peut en porter
+       une dizaine, et les rapatrier en base64 dans la réponse du dossier
+       ferait passer celle-ci de quelques dizaines de kilo-octets à plusieurs
+       méga-octets à chaque ouverture. Chaque vignette va chercher ses octets
+       par son URL, que le navigateur met en cache. */
+    const { rows: photos } = saisies.length
+      ? await requete(
+        `SELECT pj.id, pj.saisie_id, pj.libelle, pj.nom_fichier, pj.mime,
+                pj.taille, pj.sha256, pj.ajoute_le,
+                coalesce(u.titre || ' ', '') || u.prenom || ' ' || u.nom AS ajoute_par_libelle
+           FROM mti.piece_jointe pj
+           LEFT JOIN mti.utilisateur u ON u.id = pj.ajoute_par
+          WHERE pj.saisie_id = ANY($1::uuid[])
+          ORDER BY pj.ajoute_le`,
+        [saisies.map((s) => s.id)])
+      : { rows: [] }
+
+    return { dossier: rows[0], patient, processus, saisies, photos }
+  })
+
+  // ── Photos : dépôt, lecture, retrait ─────────────────────────────────────
+  //
+  // La cellule « photo » ne faisait que basculer un pictogramme : elle
+  // affichait ✅ sans qu'aucune image existe nulle part. Sur un dossier de
+  // traçabilité, c'est pire que rien — la coche atteste d'un contrôle visuel
+  // qui n'a laissé aucune preuve.
+  //
+  // La photo est rattachée à un POINT (processus, section, point, exemplaire,
+  // rôle), pas à un identifiant de saisie : le navigateur ne connaît pas ces
+  // identifiants, ils sont attribués à l'enregistrement du lot. La route crée
+  // donc la saisie si elle n'existe pas encore — déposer une photo est un
+  // geste de saisie à part entière, il n'a pas à en attendre un autre.
+
+  /** Formats acceptés. Un point « photo » reçoit une image, pas un document. */
+  const MIMES_PHOTO = new Set(['image/jpeg', 'image/png', 'image/webp'])
+  const TAILLE_MAX = 8 * 1024 * 1024
+
+  /* Le plafond de corps est relevé pour CETTE route seulement. Le serveur est
+     à 2 Mio, ce qui suffit à tout le reste ; une image de 8 Mio pèse 10,7 Mio
+     une fois en base64, et Fastify la refuserait avant que le contrôle
+     ci-dessous ait pu dire pourquoi. Un « 413 » sans message n'apprend rien à
+     celui qui vient de prendre la photo. */
+  app.post('/api/dossiers/:id/processus/:pid/photos', {
+    bodyLimit: 12 * 1024 * 1024
+  }, async (request, reply) => {
+    const c = request.body ?? {}
+    if (!MIMES_PHOTO.has(c.mime)) {
+      return reply.code(415).send({
+        erreur: `Format non accepté : ${c.mime ?? '(absent)'}. Attendu : ` +
+                [...MIMES_PHOTO].join(', ') + '.'
+      })
+    }
+    if (!Number.isInteger(c.sectionIndex) || !Number.isInteger(c.pointIndex)) {
+      return reply.code(400).send({ erreur: 'sectionIndex et pointIndex doivent être des entiers.' })
+    }
+    if (typeof c.contenu !== 'string' || !c.contenu) {
+      return reply.code(400).send({ erreur: 'contenu (base64) est requis.' })
+    }
+
+    let octets
+    try {
+      octets = Buffer.from(c.contenu, 'base64')
+    } catch {
+      return reply.code(400).send({ erreur: 'contenu illisible : base64 attendu.' })
+    }
+    /* Buffer.from ne signale pas une base64 invalide, il tronque en silence.
+       Une pièce vide passerait donc pour un dépôt réussi. */
+    if (!octets.length) {
+      return reply.code(400).send({ erreur: 'contenu vide après décodage : base64 invalide ?' })
+    }
+    if (octets.length > TAILLE_MAX) {
+      return reply.code(413).send({
+        erreur: `Image trop lourde : ${Math.round(octets.length / 1024)} Kio, ` +
+                `plafond ${TAILLE_MAX / 1024 / 1024} Mio.`
+      })
+    }
+
+    const { rows: garde } = await requete(
+      `SELECT d.statut FROM mti.dossier_processus dp
+         JOIN mti.dossier d ON d.id = dp.dossier_id
+        WHERE dp.id = $1 AND dp.dossier_id = $2`,
+      [request.params.pid, request.params.id])
+    if (!garde.length) return reply.code(404).send({ erreur: 'Processus introuvable pour ce dossier.' })
+    if (garde[0].statut === 'valide') {
+      return reply.code(409).send({
+        erreur: "Dossier validé : lecture seule. Une correction passe par une nouvelle version."
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* La saisie porteuse est créée au besoin, sans rien écraser si elle
+         existe : le DO UPDATE ne touche que `saisi_le`, pour ne pas effacer un
+         commentaire ou un caractère obligatoire déjà posés. */
+      const { rows: [saisie] } = await client.query(
+        `INSERT INTO mti.saisie
+           (dossier_processus_id, section_index, point_index, point_num, point_type,
+            exemplaire, operateur_role, obligatoire, operateur_id)
+         VALUES ($1,$2,$3,$4,'photo',$5,$6,$7,$8)
+         ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire, operateur_role)
+         DO UPDATE SET saisi_le = now()
+         RETURNING id`,
+        [request.params.pid, c.sectionIndex, c.pointIndex, c.pointNum ?? null,
+          c.exemplaire ?? 1, c.operateurRole ?? 'op1', c.obligatoire === true,
+          request.utilisateur.id])
+
+      const sha = createHash('sha256').update(octets).digest('hex')
+      const { rows: [piece] } = await client.query(
+        `INSERT INTO mti.piece_jointe
+           (saisie_id, libelle, nom_fichier, mime, taille, sha256, contenu, ajoute_par)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id, libelle, nom_fichier, mime, taille, sha256, ajoute_le`,
+        [saisie.id, c.libelle || null, c.nomFichier || 'photo.jpg', c.mime,
+          octets.length, sha, octets, request.utilisateur.id])
+
+      reply.code(201)
+      return { ...piece, saisie_id: saisie.id }
+    })
+  })
+
+  /* Le contenu se sert par son URL, avec un cache long : l'identifiant est un
+     UUID et la pièce est immuable — elle se remplace, elle ne se réécrit pas. */
+  app.get('/api/photos/:id', async (request, reply) => {
+    const { rows } = await requete(
+      'SELECT mime, nom_fichier, contenu FROM mti.piece_jointe WHERE id = $1',
+      [request.params.id])
+    if (!rows.length || !rows[0].contenu) {
+      return reply.code(404).send({ erreur: 'Pièce introuvable.' })
+    }
+    return reply
+      .header('content-type', rows[0].mime)
+      .header('cache-control', 'private, max-age=31536000, immutable')
+      .header('content-disposition',
+        `inline; filename="${String(rows[0].nom_fichier).replace(/[^\w.-]/g, '_')}"`)
+      .send(rows[0].contenu)
+  })
+
+  app.delete('/api/photos/:id', async (request, reply) => {
+    const { rows } = await requete(
+      `SELECT d.statut FROM mti.piece_jointe pj
+         JOIN mti.saisie s ON s.id = pj.saisie_id
+         JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+         JOIN mti.dossier d ON d.id = dp.dossier_id
+        WHERE pj.id = $1`,
+      [request.params.id])
+    if (!rows.length) return reply.code(404).send({ erreur: 'Pièce introuvable.' })
+    if (rows[0].statut === 'valide') {
+      return reply.code(409).send({ erreur: 'Dossier validé : lecture seule.' })
+    }
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      await client.query('DELETE FROM mti.piece_jointe WHERE id = $1', [request.params.id])
+      reply.code(204)
+      return null
+    })
   })
 
   // ── Enregistrement des saisies (lot) ────────────────────────────────────

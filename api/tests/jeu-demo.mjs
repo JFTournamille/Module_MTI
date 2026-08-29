@@ -176,10 +176,75 @@ Array.isArray(r.corps) && r.corps.length > 0
   ? ok(`piste d'audit reconstituée : ${r.corps.length} trace(s)`)
   : ko(`audit : ${JSON.stringify(r.corps).slice(0, 120)}`)
 
+// ────────────────────────────────── Photos, aphérèse et parcours en service ──
+console.log('\n5. Ce que les dossiers portent, et ce qu\'ils ne portent plus')
+
+/* Tous les dossiers doivent être bâtis sur le parcours EN SERVICE. Le seed se
+   contentait de sauter un dossier déjà présent : un jeu créé sur une version
+   antérieure survivait indéfiniment, avec des processus retirés depuis. */
+n = await un(
+  `SELECT count(DISTINCT d.modele_parcours_id)::int AS modeles,
+          count(*) FILTER (WHERE NOT m.actif)::int AS perimes
+     FROM mti.dossier d
+     JOIN mti.modele_parcours m ON m.id = d.modele_parcours_id
+    WHERE d.reference LIKE 'DEMO-MTI-%'`)
+n.modeles === 1 && n.perimes === 0
+  ? ok('les 10 dossiers sont bâtis sur le parcours en service')
+  : ko(`${n.modeles} modèle(s) distinct(s), dont ${n.perimes} dossier(s) sur une version périmée`)
+
+/* L'aphérèse n'est plus un processus du parcours, et aucun scénario ne pose le
+   jalon d'en-tête : la case se coche à l'écran, c'est ainsi qu'on la montre. */
+n = await un(
+  `SELECT (SELECT count(*) FROM mti.dossier
+            WHERE reference LIKE 'DEMO-MTI-%'
+              AND (apherese_faite OR date_apherese IS NOT NULL))::int AS jalons,
+          (SELECT count(*) FROM mti.dossier_processus dp
+             JOIN mti.dossier d ON d.id = dp.dossier_id
+            WHERE d.reference LIKE 'DEMO-MTI-%'
+              AND (dp.code ILIKE '%APHERESE%' OR dp.nom ILIKE '%aphérèse%'
+                   OR dp.nom ILIKE '%leucaphérèse%'))::int AS processus`)
+n.jalons === 0 && n.processus === 0
+  ? ok('aucune aphérèse : ni processus au parcours, ni jalon en en-tête')
+  : ko(`${n.processus} processus d'aphérèse, ${n.jalons} jalon(s) d'en-tête`)
+
+/* Les points photographiques portent de vraies pièces. Sans elles, la cellule
+   reste vide sur les dix dossiers et la fonction ne se voit nulle part. */
+const { rows: pieces } = await pool.query(
+  `SELECT d.reference, count(pj.id)::int AS n, sum(pj.taille)::int AS octets
+     FROM mti.dossier d
+     JOIN mti.dossier_processus dp ON dp.dossier_id = d.id
+     JOIN mti.saisie s ON s.dossier_processus_id = dp.id
+     JOIN mti.piece_jointe pj ON pj.saisie_id = s.id
+    WHERE d.reference LIKE 'DEMO-MTI-%' GROUP BY 1 ORDER BY 1`)
+const totalPieces = pieces.reduce((t, x) => t + x.n, 0)
+pieces.length >= 8 && totalPieces >= 20
+  ? ok(`${totalPieces} photo(s) sur ${pieces.length} dossiers, ` +
+       `${Math.round(pieces.reduce((t, x) => t + x.octets, 0) / 1024)} Kio au total`)
+  : ko(`pièces jointes : ${JSON.stringify(pieces)}`)
+
+/* Une pièce déclarée doit être servie : une vignette qui renvoie 404 est pire
+   qu'une cellule vide, elle laisse croire à une preuve qui n'existe pas. */
+const { rows: [unePiece] } = await pool.query(
+  `SELECT pj.id, pj.mime, pj.taille FROM mti.piece_jointe pj
+     JOIN mti.saisie s ON s.id = pj.saisie_id
+     JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+     JOIN mti.dossier d ON d.id = dp.dossier_id
+    WHERE d.reference LIKE 'DEMO-MTI-%' LIMIT 1`)
+if (unePiece) {
+  const image = await fetch(`${base}/api/photos/${unePiece.id}`)
+  const recu = (await image.arrayBuffer()).byteLength
+  image.status === 200 && image.headers.get('content-type') === unePiece.mime &&
+    recu === Number(unePiece.taille)
+    ? ok(`une photo de démonstration se sert : ${recu} octets en ${unePiece.mime}`)
+    : ko(`lecture : ${image.status} ${image.headers.get('content-type')} ${recu} octets`)
+} else {
+  ko('aucune pièce jointe dans le jeu de démonstration')
+}
+
 // ─────────────────────────────────────────────────────────── Idempotence ──
-console.log('\n5. Idempotence')
+console.log('\n6. Idempotence')
 const sortie = await seed()
-if (/^\s*✓ 0 dossier/m.test(sortie) && /déjà présent/.test(sortie)) {
+if (/^\s*✓ 0 dossier/m.test(sortie) && /déjà à jour/.test(sortie)) {
   ok('un second passage ne recrée rien')
 } else {
   ko(`sortie inattendue :\n${sortie}`)
@@ -193,7 +258,7 @@ n = await un(
 n.d === 10 ? ok(`toujours 10 dossiers, ${n.s} saisies`) : ko(`${n.d} dossier(s)`)
 
 // ────────────────────────────────────────────────────────────────── Purge ──
-console.log('\n6. Purge')
+console.log('\n7. Purge')
 const purge = await seed('--supprimer')
 if (/désactivé\(s\) car auteurs de traçabilité/.test(purge)) {
   ok('les comptes auteurs de traçabilité sont désactivés, pas effacés')
@@ -230,7 +295,7 @@ r.corps.statut === 'ok'
 
 // On remet le jeu en place : le test ne doit pas laisser la base plus vide
 // qu'il ne l'a trouvée pour les suites qui tournent après lui.
-console.log('\n7. Remise en place')
+console.log('\n8. Remise en place')
 await seed()
 n = await un(
   `SELECT count(*)::int AS n FROM mti.dossier WHERE reference LIKE 'DEMO-MTI-%'`)

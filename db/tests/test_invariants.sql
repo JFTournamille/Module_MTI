@@ -446,6 +446,60 @@ BEGIN
   RAISE NOTICE '  ✓ n° déjà pris (%) sauté, dossier numéroté %', v_impose, v_a;
 END $$;
 
+\echo ''
+\echo 'TEST 19 — Une pièce jointe ne peut pas mentir sur ce qu''elle porte'
+DO $$
+DECLARE
+  v_modele uuid; v_auteur uuid; v_dossier uuid; v_dp uuid; v_saisie uuid;
+BEGIN
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  SELECT id INTO v_auteur FROM mti.utilisateur ORDER BY cree_le LIMIT 1;
+  INSERT INTO mti.dossier (modele_parcours_id, cree_par) VALUES (v_modele, v_auteur)
+  RETURNING id INTO v_dossier;
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, definition)
+  VALUES (v_dossier, 1, 'TEST_PJ', 'Essai pièce jointe', '{"sections":[]}')
+  RETURNING id INTO v_dp;
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index, point_type)
+  VALUES (v_dp, 0, 0, 'photo') RETURNING id INTO v_saisie;
+
+  INSERT INTO mti.piece_jointe (saisie_id, nom_fichier, mime, taille, sha256, contenu, ajoute_par)
+  VALUES (v_saisie, 'ok.png', 'image/png', 4, 'x', '\x01020304'::bytea, v_auteur);
+  RAISE NOTICE '  ✓ pièce avec contenu acceptée';
+
+  /* Le défaut qu'on veut rendre impossible : une pièce qui déclare 12 octets
+     et en porte quatre méga. Sans ce contrôle, le plafond de taille ne
+     protégerait rien — il suffirait de mentir sur `taille`. */
+  BEGIN
+    INSERT INTO mti.piece_jointe (saisie_id, nom_fichier, mime, taille, sha256, contenu, ajoute_par)
+    VALUES (v_saisie, 'menteuse.png', 'image/png', 12, 'x', '\x0102'::bytea, v_auteur);
+    RAISE EXCEPTION 'ÉCHEC : taille annoncée différente du contenu acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ taille annoncée ≠ contenu refusée';
+  END;
+
+  BEGIN
+    INSERT INTO mti.piece_jointe (saisie_id, nom_fichier, mime, taille, sha256, ajoute_par)
+    VALUES (v_saisie, 'nulle.png', 'image/png', 4, 'x', v_auteur);
+    RAISE EXCEPTION 'ÉCHEC : pièce sans contenu ni chemin acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ pièce sans contenu NI chemin refusée';
+  END;
+
+  /* `chemin` reste une porte de sortie vers un stockage objet : une pièce qui
+     n'a pas son contenu en base doit rester possible. */
+  INSERT INTO mti.piece_jointe (saisie_id, nom_fichier, mime, taille, sha256, chemin, ajoute_par)
+  VALUES (v_saisie, 'ailleurs.png', 'image/png', 4, 'x', 's3://seau/ailleurs.png', v_auteur);
+  RAISE NOTICE '  ✓ pièce rangée hors base (chemin seul) acceptée';
+
+  /* La pièce suit le dossier : supprimer le dossier ne doit pas laisser
+     d'images orphelines dans la base. */
+  DELETE FROM mti.dossier WHERE id = v_dossier;
+  IF EXISTS (SELECT 1 FROM mti.piece_jointe WHERE saisie_id = v_saisie) THEN
+    RAISE EXCEPTION 'ÉCHEC : pièces orphelines après suppression du dossier';
+  END IF;
+  RAISE NOTICE '  ✓ pièces emportées par la suppression du dossier';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

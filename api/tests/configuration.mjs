@@ -42,15 +42,22 @@ const actives = r.corps.filter((v) => v.actif)
 actives.length === 1 && actives[0].version === versionDepart
   ? ok('une seule version active, et c\'est bien celle-là')
   : ko(`versions actives : ${JSON.stringify(actives.map((v) => v.version))}`)
-const dossiersSousDepart = actives[0].nbDossiers
+/* Le témoin est CRÉÉ ici, sur la version en service, au lieu d'espérer qu'un
+   dossier de démonstration s'y trouve déjà. Il ne s'y trouvait plus dès que la
+   suite tournait deux fois ou après une autre qui publie : le jeu restait sur
+   une version antérieure, et le test échouait pour une raison qui n'avait rien
+   à voir avec ce qu'il éprouve — le figement d'un dossier ouvert. */
+r = await j('POST', '/api/dossiers', { codeModele: CODE })
+const cible = { id: r.corps?.id, reference: r.corps?.reference }
+if (!cible.id) { ko(`dossier témoin non créé (${r.statut})`); process.exit(1) }
+
+r = await j('GET', `/api/modeles/${CODE}/versions`)
+const dossiersSousDepart = r.corps.find((v) => v.version === versionDepart)?.nbDossiers ?? 0
 dossiersSousDepart > 0
   ? ok(`${dossiersSousDepart} dossier(s) ouvert(s) sous la version ${versionDepart}`)
   : ko('aucun dossier ouvert : le figement ne serait pas éprouvable')
 
-// Photographie d'un dossier ouvert, AVANT toute publication.
-r = await j('GET', '/api/dossiers?q=DEMO-MTI-')
-const cible = r.corps[0]
-if (!cible) { ko('aucun dossier de démonstration : lancer seed:demo'); process.exit(1) }
+// Photographie du dossier témoin, AVANT toute publication.
 r = await j('GET', `/api/dossiers/${cible.id}`)
 const avant = {
   nb: r.corps.processus.length,

@@ -632,5 +632,85 @@ if (!autre) {
     : ko(`statut ${r.statut}`)
 }
 
+// ── 19. Photos : dépôt, lecture, retrait ──
+//
+// La cellule photo ne cochait qu'un pictogramme : ✅ s'affichait sans qu'aucune
+// image existe. Ce groupe éprouve la chaîne complète, y compris ce qu'elle doit
+// REFUSER — un format qui n'est pas une image, un contenu illisible, un dossier
+// figé. Une pièce jointe acceptée à tort vaut une preuve fabriquée.
+console.log('\n19. Photos')
+{
+  const refPh = `DOS-PHOTO-${Date.now()}`
+  r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE', reference: refPh })
+  const dossierPh = r.corps.id
+  r = await j('GET', `/api/dossiers/${dossierPh}`)
+  const procPh = r.corps.processus.find((p) => p.gabarit === 'reception')
+
+  /* Un PNG minuscule fabriqué ici : le test ne doit dépendre d'aucun fichier
+     du dépôt, sinon il échoue pour une raison qui n'a rien à voir. */
+  const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+  const poser = (corps) => j('POST', `/api/dossiers/${dossierPh}/processus/${procPh.id}/photos`,
+    { sectionIndex: 0, pointIndex: 4, exemplaire: 1, operateurRole: 'op1', ...corps })
+
+  r = await poser({ mime: 'image/png', nomFichier: 'essai.png', libelle: 'Avant', contenu: PNG_1x1 })
+  const photoId = r.corps?.id
+  r.statut === 201 && photoId
+    ? ok(`photo déposée : ${r.corps.taille} octets, sha ${String(r.corps.sha256).slice(0, 12)}…`)
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 160)}`)
+
+  /* Le dépôt crée la saisie porteuse : sans cela il faudrait enregistrer le
+     processus d'abord, et une photo prise avant tout autre geste serait
+     perdue. */
+  r = await j('GET', `/api/dossiers/${dossierPh}`)
+  const saisiePh = r.corps.saisies.find((x) => x.point_type === 'photo')
+  saisiePh ? ok('la saisie porteuse est créée par le dépôt lui-même')
+    : ko('aucune saisie photo après le dépôt')
+  r.corps.photos?.length === 1 && r.corps.photos[0].id === photoId
+    ? ok('la photo remonte avec le dossier, sans son contenu')
+    : ko(`photos du dossier : ${JSON.stringify(r.corps.photos)}`)
+  r.corps.photos?.[0]?.contenu === undefined
+    ? ok('le contenu ne voyage pas dans la réponse du dossier')
+    : ko('le contenu est embarqué dans la réponse : ouverture alourdie pour rien')
+
+  const brut = await fetch(`${base}/api/photos/${photoId}`)
+  const octets = Buffer.from(await brut.arrayBuffer())
+  brut.status === 200 && brut.headers.get('content-type') === 'image/png' &&
+    octets.length === Buffer.from(PNG_1x1, 'base64').length
+    ? ok(`contenu relu à l'identique (${octets.length} octets, image/png)`)
+    : ko(`lecture : ${brut.status} ${brut.headers.get('content-type')} ${octets.length} octets`)
+
+  r = await poser({ mime: 'application/pdf', nomFichier: 'x.pdf', contenu: PNG_1x1 })
+  r.statut === 415 ? ok('format non image refusé (415)') : ko(`statut ${r.statut}`)
+
+  /* Buffer.from ne signale pas une base64 invalide, il tronque en silence :
+     sans contrôle explicite, une pièce vide passerait pour un dépôt réussi. */
+  r = await poser({ mime: 'image/png', nomFichier: 'x.png', contenu: '!!!!' })
+  r.statut === 400 ? ok('base64 illisible refusée (400), pas de pièce vide')
+    : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
+
+  r = await j('DELETE', `/api/photos/${photoId}`)
+  const apresRetrait = await fetch(`${base}/api/photos/${photoId}`)
+  r.statut === 204 && apresRetrait.status === 404
+    ? ok('retrait effectif : la pièce n\'est plus servie')
+    : ko(`retrait ${r.statut}, lecture ${apresRetrait.status}`)
+
+  /* Un dossier validé est en lecture seule : y ajouter une photo reviendrait à
+     compléter après coup un dossier figé. */
+  r = await poser({ mime: 'image/png', nomFichier: 'apres.png', contenu: PNG_1x1 })
+  const photoAvantCloture = r.corps?.id
+  await j('POST', `/api/dossiers/${dossierPh}/valider`,
+    { conformite: 'conforme', commentaire: 'clôture pour éprouver la lecture seule' })
+  r = await j('GET', `/api/dossiers/${dossierPh}`)
+  if (r.corps.dossier.statut === 'valide') {
+    r = await poser({ mime: 'image/png', nomFichier: 'trop-tard.png', contenu: PNG_1x1 })
+    r.statut === 409 ? ok('dossier validé : dépôt refusé (409)') : ko(`statut ${r.statut}`)
+    r = await j('DELETE', `/api/photos/${photoAvantCloture}`)
+    r.statut === 409 ? ok('dossier validé : retrait refusé (409)') : ko(`statut ${r.statut}`)
+  } else {
+    console.log(`  · dossier non validé (${r.corps.dossier.statut}) — lecture seule non éprouvée`)
+  }
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

@@ -542,6 +542,56 @@ Le formulaire de création n'a donc plus de champ « Référence » : il affiche
 « MTI-000XXX — attribué automatiquement ». Proposer un champ modifiable
 laisserait croire à un choix qui n'en est pas un.
 
+### Les photos sont des pièces, plus des pictogrammes
+
+La cellule « photo » d'un point de contrôle ne faisait que basculer une icône :
+📷 devenait ✅ au clic, et rien n'était ni transmis ni conservé. Sur un dossier
+de traçabilité, une coche qui atteste d'un contrôle visuel sans en garder la
+preuve est **pire qu'une cellule vide** — elle affirme quelque chose que rien
+n'étaye. La table `piece_jointe` existait depuis le schéma initial, avec une
+colonne `chemin` décrite comme « volume CapRover ou objet S3 » ; ni l'un ni
+l'autre n'a jamais été mis en place.
+
+Deux chemins d'acquisition, parce que les deux gestes existent réellement :
+
+- **Choisir un fichier** — la photo prise avec un autre appareil, le cliché
+  transmis par le fabricant.
+- **Prendre une photo** — `getUserMedia`, la caméra du poste ou de la tablette.
+  Passer par un fichier supposerait photographier, transférer, retrouver :
+  trois gestes de trop, et autant d'occasions de rattacher le mauvais cliché.
+  L'accès à la caméra exige un **contexte sécurisé** (HTTPS, ou localhost) ;
+  servie en clair, l'application le dit au lieu d'échouer sans raison visible.
+
+Dans les deux cas, l'image est **réduite dans le navigateur** avant l'envoi :
+côté long ramené à 1600 px, JPEG à 0,85. Un appareil récent produit 4 à 8 Mio
+par cliché ; ce qu'on veut relire, c'est l'état du conteneur ou l'étiquette de
+la cuve, pas le grain du capteur.
+
+Le contenu est rangé **en base** (`piece_jointe.contenu`, migration `010`), et
+non sur le disque du conteneur. Celui-ci est éphémère : un fichier écrit là
+disparaît au redéploiement alors que la ligne qui le référence survit — on
+obtiendrait une pièce déclarée et introuvable, exactement le défaut qu'on
+corrige. `chemin` reste, devenu facultatif, comme porte de sortie vers un
+stockage objet si le volume devient un sujet.
+
+Trois garde-fous, du plus extérieur au plus profond :
+
+| Où | Ce qui est refusé |
+|---|---|
+| Navigateur | rien : il réduit, il ne juge pas |
+| API | tout ce qui n'est pas `image/jpeg`, `image/png`, `image/webp` ; une base64 illisible ; plus de 8 Mio ; un dossier validé |
+| Base | une pièce sans contenu **ni** chemin ; une `taille` qui ne correspond pas au contenu réellement stocké |
+
+Le dernier compte : sans lui, le plafond de taille ne protégerait rien, il
+suffirait de mentir sur `taille`.
+
+Le dépôt **crée la saisie porteuse** s'il le faut. Une photo n'attend pas
+« Enregistrer » : elle part dès qu'elle est prise, sinon un changement d'onglet
+la perdrait — et un opérateur qui vient de photographier un conteneur endommagé
+ne recommence pas la manipulation. Enfin, la réponse du dossier ne transporte
+jamais les octets : chaque vignette va les chercher par son URL, que le
+navigateur met en cache.
+
 ### Comptes et profils
 
 L'onglet *Utilisateurs* gère les comptes : création, correction d'état civil,
@@ -591,6 +641,36 @@ Réserves connues sur CapRover : nœud unique, donc pas de haute disponibilité 
 et une sauvegarde de volume non testée en restauration n'est pas une
 sauvegarde.
 
+### Un jeu de démonstration périmé se refait tout seul
+
+Le seed sautait tout dossier dont la référence existait déjà. Conséquence non
+voulue : un jeu créé sur une version antérieure du parcours **survivait
+indéfiniment**. Il continuait d'afficher des processus retirés depuis — c'est
+ainsi que l'aphérèse est restée visible à l'écran longtemps après avoir été
+sortie du parcours — et aucune relance ne le rafraîchissait. Il fallait purger
+puis réinsérer, en deux déploiements, ce que personne ne devine.
+
+Le seed compare désormais le modèle de chaque dossier de démonstration au
+modèle **en service**, et refait ceux qui ont pris du retard. Ce sont des
+dossiers fictifs, préfixés, reconnaissables : les effacer ne détruit rien de
+réel, et la cascade emporte processus, saisies et signatures. Un dossier déjà à
+jour est laissé tel quel — relancer le seed ne détruit pas les saisies faites à
+l'écran. `--regenerer` force la reprise de tous les dossiers, ce qu'il faut
+après avoir changé les scénarios eux-mêmes : la version du modèle ne le trahit
+pas.
+
+Deux conséquences sur le contenu du jeu :
+
+- **Aucun scénario ne pose le jalon d'aphérèse.** Il existe toujours en
+  en-tête, mais un jeu où il est déjà coché partout ne montre pas le geste :
+  la case se coche à l'écran, et c'est ainsi qu'on la démontre.
+- **Les points photographiques portent de vraies pièces** — une cinquantaine
+  d'images sur les dix dossiers, moins de cent kilo-octets en tout. Elles sont
+  *générées* (un PNG rayé, écrit à la main avec `zlib`) plutôt qu'embarquées
+  dans le dépôt : c'est léger, reproductible, et cela se reconnaît au premier
+  coup d'œil pour ce que c'est — un cliché de démonstration, pas la photo d'un
+  vrai conteneur.
+
 ## Le jeu de démonstration
 
 `api/src/seed-demo.js` pose dix dossiers, dix patients et dix comptes — de quoi
@@ -630,7 +710,7 @@ tableau de bord.
 ## Vérifications
 
 ```bash
-# Invariants du schéma (18 tests) — se lance avec un search_path par défaut,
+# Invariants du schéma (19 tests) — se lance avec un search_path par défaut,
 # comme un vrai client, pour ne pas masquer les références non qualifiées.
 psql -d mti -v ON_ERROR_STOP=1 -f db/tests/test_invariants.sql
 

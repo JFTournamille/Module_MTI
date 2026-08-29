@@ -7,8 +7,9 @@
  * (`cDetail()` / `renderMain()`), ce qui interdisait toute liaison
  * bidirectionnelle : la valeur saisie n'existait que dans le DOM.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useParcours } from '../stores/parcours.js'
+import CapturePhoto from './CapturePhoto.vue'
 
 const props = defineProps({
   point: { type: Object, required: true },
@@ -19,6 +20,67 @@ const props = defineProps({
 const store = useParcours()
 const saisie = computed(() => store.saisie(props.cle, props.point))
 const alarme = computed(() => store.alarme(props.cle, props.point))
+
+// ── Photos ──
+const champFichier = ref(null)
+const cameraOuverte = ref(false)
+const envoiEnCours = ref(false)
+
+/** Côté long maximal envoyé au serveur. */
+const COTE_MAX = 1600
+
+/**
+ * Réduit une image avant l'envoi.
+ *
+ * Un appareil récent produit 4 à 8 Mio par cliché. Les envoyer tels quels
+ * ferait grossir la base d'un ordre de grandeur pour un rendu que personne ne
+ * regarde à cette résolution : ce qu'on veut relire, c'est l'état du conteneur
+ * ou l'étiquette de la cuve, pas le grain du capteur.
+ */
+function reduire (fichier) {
+  return new Promise((resoudre, rejeter) => {
+    const lecteur = new FileReader()
+    lecteur.onerror = () => rejeter(new Error('Fichier illisible.'))
+    lecteur.onload = () => {
+      const img = new Image()
+      img.onerror = () => rejeter(new Error("Ce fichier n'est pas une image lisible."))
+      img.onload = () => {
+        const echelle = Math.min(1, COTE_MAX / Math.max(img.width, img.height))
+        const toile = document.createElement('canvas')
+        toile.width = Math.round(img.width * echelle)
+        toile.height = Math.round(img.height * echelle)
+        toile.getContext('2d').drawImage(img, 0, 0, toile.width, toile.height)
+        const url = toile.toDataURL('image/jpeg', 0.85)
+        resoudre({
+          octets: url.slice(url.indexOf(',') + 1),
+          mime: 'image/jpeg',
+          nomFichier: fichier.name.replace(/\.[^.]+$/, '') + '.jpg'
+        })
+      }
+      img.src = lecteur.result
+    }
+    lecteur.readAsDataURL(fichier)
+  })
+}
+
+async function fichiersChoisis (evenement) {
+  const fichiers = [...(evenement.target.files ?? [])]
+  evenement.target.value = ''   // le même fichier doit pouvoir être repris
+  envoiEnCours.value = true
+  try {
+    for (const f of fichiers) {
+      const image = await reduire(f).catch((e) => { store.erreurDossier = e.message; return null })
+      if (image) await store.deposerPhoto(props.cle, { ...image, libelle: f.name })
+    }
+  } finally { envoiEnCours.value = false }
+}
+
+async function photoCapturee (image) {
+  cameraOuverte.value = false
+  envoiEnCours.value = true
+  try { await store.deposerPhoto(props.cle, { ...image, libelle: 'Prise de vue' }) }
+  finally { envoiEnCours.value = false }
+}
 
 /** Heure d'un jalon de minuteur, ou « — » tant qu'il n'est pas posé. */
 function heure (epoch) {
@@ -61,14 +123,47 @@ function heure (epoch) {
     </span>
   </div>
 
-  <!-- Photos -->
+  <!-- Photos.
+       La cellule ne cochait qu'un pictogramme : ✅ s'affichait sans qu'aucune
+       image existe nulle part. Sur un dossier de traçabilité, une coche qui
+       atteste d'un contrôle visuel sans en garder la preuve est pire que pas
+       de photo du tout. Elle porte maintenant de vraies pièces. -->
   <div v-else-if="point.type === 'photo'" class="cthr">
-    <div
-      v-for="(photo, i) in saisie.photos" :key="i"
-      class="cth2" :class="{ done: photo.presente }"
-      :title="photo.libelle"
-      @click="lectureSeule || (photo.presente = !photo.presente)"
-    >{{ photo.presente ? '✅' : '📷' }}</div>
+    <a
+      v-for="photo in saisie.photos" :key="photo.id"
+      class="cph" :href="store.urlPhoto(photo.id)" target="_blank" rel="noopener"
+      :title="`${photo.libelle || photo.nomFichier} — ${Math.round(photo.taille / 1024)} Kio`
+        + (photo.ajoutePar ? ` — ${photo.ajoutePar}` : '')"
+    >
+      <img :src="store.urlPhoto(photo.id)" :alt="photo.libelle || photo.nomFichier">
+      <span
+        v-if="!lectureSeule" class="cph-x" title="Retirer cette photo"
+        @click.prevent.stop="store.retirerPhoto(cle, photo.id)"
+      >✕</span>
+    </a>
+
+    <template v-if="!lectureSeule">
+      <button
+        class="cth2" title="Choisir un fichier image" :disabled="envoiEnCours"
+        @click="champFichier.click()"
+      >📁</button>
+      <button
+        class="cth2" title="Prendre une photo avec la caméra du poste"
+        :disabled="envoiEnCours" @click="cameraOuverte = true"
+      >📷</button>
+      <span v-if="envoiEnCours" class="cph-att">envoi…</span>
+      <input
+        ref="champFichier" type="file" accept="image/*" multiple hidden
+        @change="fichiersChoisis"
+      >
+    </template>
+    <span v-else-if="!saisie.photos.length" class="cph-att">aucune photo</span>
+
+    <CapturePhoto
+      :ouvert="cameraOuverte"
+      @fermer="cameraOuverte = false"
+      @capturer="photoCapturee"
+    />
   </div>
 
   <!-- Minuteur.

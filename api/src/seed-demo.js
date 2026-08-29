@@ -16,12 +16,22 @@
  *  4. `--supprimer` les retire toutes, dans l'ordre des dépendances.
  *
  *   node src/seed-demo.js              # insère
+ *   node src/seed-demo.js --regenerer  # insère et REFAIT tous les dossiers
  *   node src/seed-demo.js --supprimer  # purge
  *
- * Idempotent : un dossier, un compte ou un patient déjà présent est laissé tel
- * quel — relancer le seed ne détruit pas les saisies faites à l'écran.
+ * Idempotent, à une exception près : un dossier de démonstration construit sur
+ * une version du parcours qui n'est plus en service est REFAIT. Sans cela il
+ * gardait indéfiniment des processus retirés depuis, et seule une purge suivie
+ * d'une réinsertion — deux déploiements — le rafraîchissait. Un compte, un
+ * patient ou un dossier déjà à jour est laissé tel quel : relancer le seed ne
+ * détruit pas les saisies faites à l'écran sur un dossier à jour.
+ *
+ * `--regenerer` force la reprise de tous les dossiers, à jour ou non. C'est le
+ * geste à faire après avoir changé les scénarios eux-mêmes, que la version du
+ * modèle ne trahit pas.
  */
 import { createHash } from 'node:crypto'
+import { deflateSync } from 'node:zlib'
 import { pool } from './db.js'
 
 const SOURCE = 'DEMO'
@@ -29,6 +39,7 @@ const PREFIXE_COMPTE = 'demo.'
 const PREFIXE_DOSSIER = 'DEMO-MTI-'
 
 const supprimer = process.argv.includes('--supprimer')
+const regenerer = process.argv.includes('--regenerer')
 const production = process.env.NODE_ENV === 'production'
 
 if (!supprimer && production && process.env.SEED_DEMO !== 'oui') {
@@ -112,48 +123,53 @@ const COMPTES = [
  * et un rang codé en dur aurait silencieusement désigné le voisin. Un code
  * absent du modèle fait échouer le seed bruyamment, ce qui est le but.
  *
- * `apherese` / `information` alimentent les nouveaux champs d'en-tête : ils ne
- * sont pas posés partout, sinon on ne verrait pas la différence entre un
- * dossier qui porte une alerte et un dossier ordinaire.
+ * `information` alimente le bandeau d'alerte de l'en-tête : il n'est pas posé
+ * partout, sinon on ne verrait pas la différence entre un dossier qui porte
+ * une alerte et un dossier ordinaire.
+ *
+ * Aucun scénario ne pose le jalon d'aphérèse. Il existe toujours en en-tête —
+ * c'est une demande explicite — mais un jeu de démonstration où il est déjà
+ * coché partout ne montre pas le geste : la case se coche à l'écran, et c'est
+ * ainsi qu'on la démontre.
  */
 const SCENARIOS = [
   { ref: '0001', produit: 'KYMRIAH®', lot: null, enCours: 'COMMANDE_MTI', patient: null,
     prescription: false, jours: 2,
     note: 'commande passée, produit pas encore commandé au fabricant' },
   { ref: '0002', produit: 'YESCARTA®', lot: null, enCours: 'RATTACHEMENT', patient: null,
-    prescription: true, apherese: true, jours: 5,
+    prescription: true, jours: 5,
     note: 'aphérèse faite, rattachement patient en cours' },
   { ref: '0003', produit: 'CARVYKTI®', lot: 'LOT-CA-2606-A', enCours: 'RECEPTION', patient: 0,
-    prescription: true, preallocation: true, apherese: true, jours: 8,
+    prescription: true, preallocation: true, jours: 8,
     note: 'réception en cours, patient préalloué' },
   { ref: '0004', produit: 'TECARTUS®', lot: 'LOT-TE-2606-B', enCours: 'RECEPTION', patient: null,
-    prescription: false, alarme: true, apherese: true, jours: 9,
+    prescription: false, alarme: true, jours: 9,
     note: 'réception avec alarme de température — le cas à montrer',
     information: 'Relevé hors seuil à la réception : conteneur consigné, '
       + 'litige transporteur ouvert. Ne pas déstocker sans accord pharmacien.' },
   { ref: '0005', produit: 'KYMRIAH®', lot: 'LOT-KY-2506-C', enCours: 'STOCKAGE_LEUCA', patient: 1,
-    prescription: true, preallocation: true, contresigne: true, apherese: true, jours: 12,
+    prescription: true, preallocation: true, contresigne: true, jours: 12,
     note: 'réception contresignée par une 2e personne' },
   /* ABECMA® n'est pas au catalogue des produits de référence : le dossier
      porte donc une désignation libre et `produit_id` à NULL. C'est voulu — un
      MTI commandé avant d'être référencé est un cas réel, et c'est le seul
      scénario qui exerce ce chemin. */
   { ref: '0006', produit: 'ABECMA®', lot: 'LOT-AB-2506-A', enCours: 'MISE_EN_FABRICATION',
-    patient: 2, prescription: true, apherese: true, jours: 16,
+    patient: 2, prescription: true, jours: 16,
     note: 'produit hors catalogue ; mise en fabrication : identité patient exigée' },
   { ref: '0007', produit: 'YESCARTA®', lot: 'LOT-YE-2405-F', enCours: 'RECEPTION_SERVICE',
-    patient: 3, prescription: true, contresigne: true, apherese: true, jours: 21,
+    patient: 3, prescription: true, contresigne: true, jours: 21,
     note: 'produit revenu du fabricant, réception service en cours',
     information: 'Administration programmée en hématologie 4B. Prévenir l\'IDE '
       + 'référente 30 min avant décongélation.' },
   { ref: '0008', produit: 'KYMRIAH®', lot: 'LOT-KY-2405-D', enCours: 'ADMINISTRATION',
-    patient: 4, prescription: true, apherese: true, jours: 25,
+    patient: 4, prescription: true, jours: 25,
     note: 'administration en cours' },
   { ref: '0009', produit: 'CARVYKTI®', lot: 'LOT-CA-2304-B', patient: 5,
-    prescription: true, contresigne: true, apherese: true, clos: 'conforme', jours: 34,
+    prescription: true, contresigne: true, clos: 'conforme', jours: 34,
     note: 'dossier clos conforme — consultable, figé' },
   { ref: '0010', produit: 'TECARTUS®', lot: 'LOT-TE-2204-A', patient: 6,
-    prescription: true, apherese: true, clos: 'non_conforme', jours: 41,
+    prescription: true, clos: 'non_conforme', jours: 41,
     note: 'dossier clos non conforme : rupture de chaîne du froid au transport',
     information: 'Dossier clos NON CONFORME. Produit détruit, déclaration ANSM '
       + 'transmise le lendemain. Conservé pour la traçabilité.' }
@@ -175,6 +191,75 @@ const iso = (d) => d.toISOString().slice(0, 10)
  * démonstration où tout est hors seuil n'apprend rien, un jeu où rien ne l'est
  * jamais non plus.
  */
+/**
+ * Petite image PNG unie, fabriquée sans dépendance.
+ *
+ * Le jeu de démonstration doit porter de VRAIES pièces jointes : sans elles,
+ * la cellule photo reste vide sur les dix dossiers et rien ne montre que la
+ * fonction existe. Embarquer des photographies dans le dépôt serait lourd et
+ * poserait la question de leur provenance ; une image générée est légère,
+ * reproductible, et se reconnaît au premier coup d'œil pour ce qu'elle est —
+ * un cliché de démonstration, pas la photo d'un vrai conteneur.
+ *
+ * Le PNG est écrit à la main : en-tête, IHDR, IDAT compressé par zlib, IEND.
+ * C'est une vingtaine de lignes et zéro dépendance, contre une bibliothèque
+ * d'images pour un seul usage.
+ */
+function imagePng (largeur, hauteur, [r, v, b]) {
+  const brut = Buffer.alloc(hauteur * (1 + largeur * 3))
+  for (let y = 0; y < hauteur; y++) {
+    const ligne = y * (1 + largeur * 3)
+    brut[ligne] = 0                       // filtre « None »
+    for (let x = 0; x < largeur; x++) {
+      /* Bande diagonale plus claire : deux vignettes de teintes voisines
+         restent distinguables, et l'image ne passe pas pour un aplat raté. */
+      const bande = ((x + y) % 96) < 24 ? 40 : 0
+      const i = ligne + 1 + x * 3
+      brut[i] = Math.min(255, r + bande)
+      brut[i + 1] = Math.min(255, v + bande)
+      brut[i + 2] = Math.min(255, b + bande)
+    }
+  }
+  const bloc = (type, corps) => {
+    const t = Buffer.from(type, 'ascii')
+    const entete = Buffer.alloc(4)
+    entete.writeUInt32BE(corps.length)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([t, corps])))
+    return Buffer.concat([entete, t, corps, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(largeur, 0)
+  ihdr.writeUInt32BE(hauteur, 4)
+  ihdr[8] = 8; ihdr[9] = 2                // 8 bits, couleur vraie
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    bloc('IHDR', ihdr),
+    bloc('IDAT', deflateSync(brut, { level: 9 })),
+    bloc('IEND', Buffer.alloc(0))
+  ])
+}
+
+/** CRC-32 du PNG. Table calculée une fois. */
+const TABLE_CRC = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+function crc32 (buf) {
+  let c = 0xffffffff
+  for (const octet of buf) c = TABLE_CRC[(c ^ octet) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/* Une teinte par point photographié : les vignettes d'un même dossier ne se
+   confondent pas. */
+const TEINTES = [[74, 56, 128], [40, 96, 120], [120, 72, 40], [56, 112, 64], [128, 56, 96]]
+
 function valeurPour (point, ctx) {
   switch (point.type) {
     case 'ouinon':
@@ -197,8 +282,8 @@ function valeurPour (point, ctx) {
         timerFin: jadis(ctx.jours ?? 0, 10, 4)
       }
     default:
-      // photo : les pièces jointes ne sont pas encore persistées.
-      // auto : renseigné par le système à la validation.
+      // photo : la pièce jointe est posée après la saisie, elle ne tient pas
+      //   dans une colonne. auto : renseigné par le système à la validation.
       return {}
   }
 }
@@ -342,11 +427,27 @@ try {
 
     let crees = 0
     let existants = 0
+    let refaits = 0
     for (const [i, sc] of SCENARIOS.entries()) {
       const reference = PREFIXE_DOSSIER + sc.ref
+      /* Le dossier existant n'est pas seulement compté : on regarde SUR QUEL
+         MODÈLE il a été construit. Le seed se contentait de le sauter, si bien
+         qu'un jeu créé sur une version antérieure du parcours restait en place
+         indéfiniment — il continuait d'afficher des processus retirés depuis,
+         et aucune relance ne le rafraîchissait. Il fallait purger puis
+         réinsérer, en deux déploiements, ce que personne ne devine.
+
+         Un dossier de démonstration périmé est donc REFAIT. Ce sont des
+         dossiers fictifs, préfixés, reconnaissables : les effacer ne détruit
+         rien de réel, et la cascade emporte processus, saisies et signatures. */
       const { rows: deja } = await client.query(
-        'SELECT id FROM mti.dossier WHERE reference = $1', [reference])
-      if (deja.length) { existants++; continue }
+        'SELECT id, modele_parcours_id FROM mti.dossier WHERE reference = $1', [reference])
+      if (deja.length) {
+        const aJour = deja[0].modele_parcours_id === modele.id
+        if (aJour && !regenerer) { existants++; continue }
+        await client.query('DELETE FROM mti.dossier WHERE id = $1', [deja[0].id])
+        refaits++
+      }
 
       /* L'auteur varie d'un dossier à l'autre : un journal d'audit où tout
          porte le même nom ne montre rien de la traçabilité. */
@@ -359,11 +460,6 @@ try {
         ? null : patients[sc.patient]
       const creeLe = jadis(sc.jours)
 
-      /* L'aphérèse précède tout le reste : elle est datée avant la création du
-         dossier, sinon la chronologie de l'en-tête contredirait celle des
-         processus. La contrainte de base refuse d'ailleurs une date sans jalon. */
-      const dateApherese = sc.apherese ? iso(jadis(sc.jours + 21)) : null
-
       const { rows: [dossier] } = await client.query(
         `INSERT INTO mti.dossier
            (reference, modele_parcours_id, produit_id, designation_produit, numero_lot,
@@ -373,7 +469,8 @@ try {
         [reference, modele.id, produit?.id ?? null, sc.produit, sc.lot,
           patient?.id ?? null, sc.preallocation === true, sc.prescription === true,
           auteur.id, creeLe, sc.note,
-          sc.information ?? null, sc.apherese === true, dateApherese])
+          sc.information ?? null, sc.apherese === true,
+          sc.apherese ? iso(jadis(sc.jours + 21)) : null])
 
       /* Sur un dossier clos, tous les processus sont validés : un dossier
          validé dont le dernier processus serait encore « en cours » n'existe
@@ -446,7 +543,7 @@ try {
               const operateur = equipe.length
                 ? equipe[(dp.ordre + ex) % equipe.length]
                 : auteur
-              await client.query(
+              const saisieCreee = await client.query(
                 `INSERT INTO mti.saisie
                    (dossier_processus_id, section_index, point_index, point_num, point_type,
                     exemplaire, operateur_role, obligatoire, reponse, valeur_num, valeur_texte,
@@ -455,7 +552,8 @@ try {
                  VALUES ($1,$2,$3,$4,$5::mti.type_point,$6,'op1',$7,$8::mti.reponse_ouinon,
                          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
                  ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire,
-                              operateur_role) DO NOTHING`,
+                              operateur_role) DO NOTHING
+                 RETURNING id`,
                 [dp.id, iS, iP, point.num ?? null, point.type, ex,
                   point.obligatoire === true, v.reponse ?? null,
                   v.valeurNum ?? null, v.valeurTexte ?? null,
@@ -467,6 +565,24 @@ try {
                     : (non ? 'Rupture de chaîne du froid constatée au déchargement.' : null),
                   point.numeroSerie ? `${point.num?.replace('.', '') ?? 'SN'}-${String(1000 + ex)}` : null,
                   jadis(dp.jour, 10, 15)])
+
+              /* Un point photographique porte une pièce, sans quoi la cellule
+                 reste vide sur les dix dossiers et rien ne montre la fonction.
+                 `RETURNING id` ne renvoie rien si le DO NOTHING a joué : la
+                 saisie était déjà là, donc sa photo aussi. */
+              if (point.type === 'photo' && saisieCreee.rows.length) {
+                const octets = imagePng(320, 240, TEINTES[(iS + iP + ex) % TEINTES.length])
+                await client.query(
+                  `INSERT INTO mti.piece_jointe
+                     (saisie_id, libelle, nom_fichier, mime, taille, sha256, contenu,
+                      ajoute_par, ajoute_le)
+                   VALUES ($1,$2,$3,'image/png',$4,$5,$6,$7,$8)`,
+                  [saisieCreee.rows[0].id,
+                    `Cliché de démonstration — ${point.libelle.slice(0, 60)}`,
+                    `demo-${dp.code.toLowerCase()}-${iS}${iP}${ex}.png`,
+                    octets.length, createHash('sha256').update(octets).digest('hex'),
+                    octets, operateur.id, jadis(dp.jour, 10, 15)])
+              }
             }
           }
         }
@@ -518,7 +634,8 @@ try {
     console.log(`✓ ${PATIENTS.length} patient(s) fictif(s) (source « ${SOURCE} »)`)
     console.log(`✓ ${COMPTES.length} comptes fictifs (préfixe « ${PREFIXE_COMPTE} »)`)
     console.log(`✓ ${crees} dossier(s) fictif(s) créé(s)` +
-      (existants ? `, ${existants} déjà présent(s) et laissé(s) tels quels` : '') +
+      (refaits ? `, dont ${refaits} refait(s) sur le parcours en service` : '') +
+      (existants ? `, ${existants} déjà à jour et laissé(s) tels quels` : '') +
       ` (préfixe « ${PREFIXE_DOSSIER} »)`)
     console.log('  ⚠ À purger avant mise en service : node src/seed-demo.js --supprimer')
   }

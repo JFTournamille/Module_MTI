@@ -23,7 +23,7 @@ const saisieVide = () => ({
   valeurTexte: '',
   horodatage: '',
   obligatoire: false,
-  photos: [],             // [{ libelle, presente }]
+  photos: [],             // [{ id, libelle, nomFichier, mime, taille, ajoutePar }]
   timerDebut: null,       // epoch ms
   timerFin: null,
   operateur: '',
@@ -88,6 +88,9 @@ export const useParcours = defineStore('parcours', () => {
   const saisies = reactive({})
   // Lignes pour lesquelles le double contrôle Op.2 est ouvert.
   const op2Ouverts = reactive(new Set())
+  /* Identifiant de saisie ↔ clé de ligne. Les photos sont rattachées à une
+     saisie côté base ; le navigateur, lui, raisonne en clés de ligne. */
+  const cleParSaisieId = new Map()
 
   /** Horloge unique pour tous les minuteurs.
    *  Les maquettes créaient un setInterval par minuteur, jamais nettoyé lors
@@ -280,6 +283,7 @@ export const useParcours = defineStore('parcours', () => {
 
       Object.keys(saisies).forEach((k) => delete saisies[k])
       op2Ouverts.clear()
+      cleParSaisieId.clear()
       const parId = new Map(d.processus.map((p, i) => [p.id, i]))
       for (const s of d.saisies ?? []) {
         const idx = parId.get(s.dossier_processus_id)
@@ -291,12 +295,9 @@ export const useParcours = defineStore('parcours', () => {
           valeurTexte: s.valeur_texte ?? '',
           horodatage: s.horodatage ? versDatetimeLocal(new Date(s.horodatage)) : '',
           obligatoire: s.obligatoire === true,
-          /* Les pièces jointes ne sont pas encore persistées (mti.piece_jointe
-             existe, le stockage reste à faire) : on rétablit la structure
-             attendue par l'affichage, sans prétendre retrouver les photos. */
-          photos: s.point_type === 'photo'
-            ? [{ libelle: 'Avant', presente: false }, { libelle: 'Après', presente: false }]
-            : [],
+          /* Les photos sont rattachées plus bas, par identifiant de saisie :
+             elles viennent de `piece_jointe`, pas de la ligne de saisie. */
+          photos: [],
           timerDebut: s.timer_debut ? new Date(s.timer_debut).getTime() : null,
           timerFin: s.timer_fin ? new Date(s.timer_fin).getTime() : null,
           operateur: s.operateur_libelle ?? '',
@@ -306,6 +307,25 @@ export const useParcours = defineStore('parcours', () => {
         if (s.operateur_role === 'op2') {
           op2Ouverts.add(cleSaisie(idx, s.section_index, s.point_index, s.exemplaire, 'op1'))
         }
+        cleParSaisieId.set(s.id, cle)
+      }
+
+      /* Les photos arrivent à plat, référencées par identifiant de saisie : on
+         les range sur la ligne à laquelle elles appartiennent. Leur contenu
+         n'est PAS dans la réponse — chaque vignette ira le chercher par son
+         URL, sinon l'ouverture d'un dossier rapatrierait tous ses clichés. */
+      for (const ph of d.photos ?? []) {
+        const cle = cleParSaisieId.get(ph.saisie_id)
+        if (!cle || !saisies[cle]) continue
+        saisies[cle].photos.push({
+          id: ph.id,
+          libelle: ph.libelle ?? '',
+          nomFichier: ph.nom_fichier,
+          mime: ph.mime,
+          taille: Number(ph.taille),
+          ajouteLe: ph.ajoute_le,
+          ajoutePar: ph.ajoute_par_libelle ?? ''
+        })
       }
 
       // On reprend là où le dossier en est, pas au début.
@@ -635,12 +655,11 @@ export const useParcours = defineStore('parcours', () => {
   function saisie (cle, pointParDefaut = null) {
     if (!saisies[cle]) {
       const s = saisieVide()
-      if (pointParDefaut) {
-        s.obligatoire = pointParDefaut.obligatoire === true
-        if (pointParDefaut.type === 'photo') {
-          s.photos = [{ libelle: 'Avant', presente: false }, { libelle: 'Après', presente: false }]
-        }
-      }
+      /* Plus de vignettes « Avant » / « Après » posées d'avance : elles
+         donnaient à croire qu'un point photo attend exactement deux clichés,
+         et elles s'affichaient cochables sans qu'aucune image existe. On part
+         d'une liste vide, que le dépôt remplit. */
+      if (pointParDefaut) s.obligatoire = pointParDefaut.obligatoire === true
       saisies[cle] = s
     }
     return saisies[cle]
@@ -698,6 +717,83 @@ export const useParcours = defineStore('parcours', () => {
       return false
     }
     await chargerSignatures()
+    return true
+  }
+
+  // ───────────────────────────────────────────────────────────────── Photos ──
+  //
+  // Une photo n'attend pas « Enregistrer » : elle part dès qu'elle est prise.
+  // Le contraire ferait perdre le cliché à un changement d'onglet, et un
+  // opérateur qui vient de photographier un conteneur endommagé ne recommence
+  // pas la manipulation.
+
+  /** URL de lecture d'une pièce. Le contenu ne transite jamais par le JSON. */
+  const urlPhoto = (id) => `/api/photos/${id}`
+
+  /**
+   * Dépose une image sur un point de contrôle.
+   *
+   * `cle` porte déjà tout ce qu'il faut pour localiser le point : la fonction
+   * la relit plutôt que de demander à l'appelant de répéter cinq paramètres
+   * qu'il a sous la main sous forme de clé.
+   */
+  async function deposerPhoto (cle, { octets, mime, nomFichier, libelle = '' }) {
+    if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
+    if (lectureSeule.value) return false
+    const [iProc, iSec, iPt, ex, role] = cle.split('|')
+    const pid = processusIds.value[Number(iProc)]
+    if (!pid) {
+      erreurDossier.value = "Ce processus n'existe pas côté serveur : la photo ne " +
+        'serait rattachée à rien. Rouvrez le dossier.'
+      return false
+    }
+    const point = processus.value[Number(iProc)]?.sections?.[Number(iSec)]?.points?.[Number(iPt)]
+
+    erreurDossier.value = ''
+    const r = await appel(`/api/dossiers/${dossierId.value}/processus/${pid}/photos`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sectionIndex: Number(iSec),
+        pointIndex: Number(iPt),
+        pointNum: point?.num ?? null,
+        exemplaire: Number(ex),
+        operateurRole: role,
+        obligatoire: saisie(cle, point).obligatoire === true,
+        libelle,
+        nomFichier,
+        mime,
+        contenu: octets
+      })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Photo refusée (${r.status}).`)
+      return false
+    }
+    const p = await r.json()
+    cleParSaisieId.set(p.saisie_id, cle)
+    saisie(cle, point).photos.push({
+      id: p.id,
+      libelle: p.libelle ?? '',
+      nomFichier: p.nom_fichier,
+      mime: p.mime,
+      taille: Number(p.taille),
+      ajouteLe: p.ajoute_le,
+      ajoutePar: operateurConnecte.value?.nom ?? ''
+    })
+    return true
+  }
+
+  /** Retire une pièce. Le retrait est tracé côté base comme le dépôt. */
+  async function retirerPhoto (cle, id) {
+    if (lectureSeule.value) return false
+    const r = await appel(`/api/photos/${id}`, { method: 'DELETE' })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Retrait refusé (${r.status}).`)
+      return false
+    }
+    const s = saisies[cle]
+    if (s) s.photos = s.photos.filter((p) => p.id !== id)
     return true
   }
 
@@ -934,7 +1030,7 @@ export const useParcours = defineStore('parcours', () => {
           case 'valeur': return s.valeurNum === null || s.valeurNum === ''
           case 'texte': case 'date': return !s.valeurTexte.trim()
           case 'timer': return !s.timerDebut
-          case 'photo': return !s.photos.some((p) => p.presente)
+          case 'photo': return s.photos.length === 0
           case 'auto': return false
           default: return false
         }
@@ -961,6 +1057,7 @@ export const useParcours = defineStore('parcours', () => {
     demarrerMinuteur, arreterMinuteur, dureeMinuteur, minuteurEnCours,
     patientIdentifie, libellePatient, ordonnancierVisible,
     basculerPreallocation, choisirPatient,
+    urlPhoto, deposerPhoto, retirerPhoto,
     pointsIncomplets, arreterHorloge
   }
 })

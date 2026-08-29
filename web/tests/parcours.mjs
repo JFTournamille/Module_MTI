@@ -13,8 +13,14 @@
 import { chromium } from 'playwright'
 
 const base = process.env.WEB_URL ?? 'http://localhost:4173'
-const nav = await chromium.launch(
-  process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
+/* Caméra factice : le groupe « photos » éprouve la prise de vue, et un
+   navigateur d'intégration n'a pas de webcam. Chromium sait en simuler une, et
+   accepter l'autorisation sans boîte de dialogue — sans quoi getUserMedia
+   resterait bloqué sur une demande que personne ne peut valider. */
+const nav = await chromium.launch({
+  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
+})
 const page = await nav.newPage({ viewport: { width: 1280, height: 900 } })
 const erreurs = []
 page.on('pageerror', (e) => erreurs.push(`pageerror: ${e.message}`))
@@ -1002,12 +1008,28 @@ if (ligneEntete === 0) {
   await page.locator('.ids-i').nth(avantAjout).blur()
   await page.waitForTimeout(1200)
 
+  /* Le jeu de démonstration ne pose plus le jalon d'aphérèse : la case se coche
+     à l'écran, et c'est ce geste-là qu'il faut éprouver. Le groupe part donc
+     d'un dossier sans jalon et le pose lui-même — ce qui vérifie en prime que
+     la case ouvre bien le champ date, ce que l'ancien test, qui la trouvait
+     déjà cochée, ne montrait pas. */
   const jalonAph = page.locator('.aph-c input')
-  await jalonAph.isChecked() ? ok('jalon d\'aphérèse posé, relu depuis la base')
-    : ko('jalon d\'aphérèse non posé sur un dossier qui l\'a')
-  const dateAph = await page.locator('.aph-d').inputValue()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateAph)) ok(`date d'aphérèse : ${dateAph}`)
-  else ko(`date d'aphérèse : « ${dateAph} »`)
+  await jalonAph.isChecked()
+    ? ko('jalon d\'aphérèse déjà posé : le jeu de démonstration ne devrait plus en porter')
+    : ok('dossier de départ sans jalon d\'aphérèse')
+  await page.locator('.aph-d').count() === 0
+    ? ok('pas de champ date tant que le jalon n\'est pas posé')
+    : ko('un champ date s\'affiche sans jalon')
+
+  const dateAph = '2026-07-27'
+  await jalonAph.check()
+  await page.waitForTimeout(1300)
+  await page.locator('.aph-d').fill(dateAph)
+  await page.locator('.aph-d').blur()
+  await page.waitForTimeout(1300)
+  await page.locator('.aph-d').inputValue() === dateAph
+    ? ok(`jalon posé et daté à l'écran : ${dateAph}`)
+    : ko('la date d\'aphérèse n\'a pas été prise')
 
   await page.locator('.info-i').fill('Alerte posée par la suite de tests')
   await page.locator('.info-i').blur()
@@ -1030,6 +1052,9 @@ if (ligneEntete === 0) {
   const infoRelue = await page.locator('.info-i').inputValue()
   if (/suite de tests/.test(infoRelue)) ok('information importante relue depuis la base')
   else ko(`information relue : « ${infoRelue} »`)
+  await page.locator('.aph-d').inputValue() === dateAph
+    ? ok(`jalon et date d'aphérèse relus depuis la base : ${dateAph}`)
+    : ko('la date d\'aphérèse n\'a pas survécu au rechargement')
 
   // Décocher le jalon doit effacer la date : la base refuse une date orpheline.
   await page.locator('.aph-c input').uncheck()
@@ -1044,15 +1069,14 @@ if (ligneEntete === 0) {
     ? ok('recocher rouvre un champ date vide — la date n\'est pas ressuscitée')
     : ko(`date après recoche : « ${dateApresRecoche} »`)
 
-  /* Remettre la date relevée au début : ce groupe l'a effacée en éprouvant la
-     bascule, et la suite doit pouvoir tourner deux fois de suite sur la même
-     base. Un test qui détruit ce qu'il vérifie ne passe qu'une fois. */
-  await page.locator('.aph-d').fill(dateAph)
-  await page.locator('.aph-d').blur()
+  /* Remise en état : le groupe a posé un jalon que le jeu de démonstration ne
+     porte pas. Le laisser ferait échouer sa propre vérification de départ à la
+     passe suivante — un test qui salit ce qu'il vérifie ne passe qu'une fois. */
+  await page.locator('.aph-c input').uncheck()
   await page.waitForTimeout(1300)
-  await page.locator('.aph-d').inputValue() === dateAph
-    ? ok(`date d'aphérèse remise à ${dateAph} — la suite reste rejouable`)
-    : ko('la date d\'aphérèse n\'a pas été remise en place')
+  await page.locator('.aph-c input').isChecked()
+    ? ko('le jalon d\'aphérèse reste posé : la suite ne rejouera pas')
+    : ok('dossier de démonstration rendu sans jalon — la suite reste rejouable')
 }
 
 /* ── 24. Onglet Configuration ──
@@ -1239,7 +1263,96 @@ if (await page.locator('tr.tb-ligne').count() === 0) {
   }
 }
 
-console.log('\n26. Filtres par colonne du tableau de bord')
+/* ── 26. Photos : fichier et prise de vue ──
+   La cellule ne cochait qu'un pictogramme : ✅ s'affichait sans qu'aucune image
+   n'existe nulle part. Ce qui est vérifié ici n'est pas qu'un bouton réagit,
+   mais qu'une image DÉPOSÉE se retrouve en base et se réaffiche après
+   rechargement — une preuve qui ne survit pas au rechargement n'en est pas une. */
+console.log('\n26. Photos : fichier et prise de vue')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('#tb-q').fill(refDossier)
+await page.waitForTimeout(1300)
+await page.locator('tr.tb-ligne', { hasText: refDossier }).click()
+await page.waitForTimeout(1800)
+await allerAuProcessus('Réception (+/-')
+
+const lignePhoto = page.locator('.chk .crow').filter({ hasText: 'état externe conteneur' }).first()
+const nbPhAvant = await lignePhoto.locator('.cph').count()
+await lignePhoto.locator('.cth2[title*="fichier"]').count() === 1
+  ? ok('un bouton de choix de fichier est proposé sur un point photo')
+  : ko('aucun bouton de choix de fichier')
+await lignePhoto.locator('.cth2[title*="caméra"]').count() === 1
+  ? ok('un bouton de prise de vue est proposé')
+  : ko('aucun bouton de prise de vue')
+
+/* Un PNG rouge 2×2 fabriqué ici : le test ne dépend d'aucun fichier du dépôt. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAgAKYGNDA0BAAAP//' +
+  'FvUBaAdT8mMAAAAASUVORK5CYII=', 'base64')
+await lignePhoto.locator('input[type=file]').setInputFiles({
+  name: 'conteneur.png', mimeType: 'image/png', buffer: PNG
+})
+await page.waitForTimeout(2500)
+const nbPhApres = await lignePhoto.locator('.cph').count()
+nbPhApres === nbPhAvant + 1
+  ? ok(`fichier déposé : ${nbPhApres} vignette(s) sur la ligne`)
+  : ko(`${nbPhApres} vignette(s) au lieu de ${nbPhAvant + 1}`)
+
+/* La vignette doit VRAIMENT charger : un <img> dont la source répond 404
+   afficherait une image cassée, ce qu'un simple comptage de nœuds ne voit pas. */
+const chargee = await lignePhoto.locator('.cph img').last()
+  .evaluate((i) => i.complete && i.naturalWidth > 0)
+chargee ? ok('la vignette charge son image depuis la base')
+  : ko('la vignette est présente mais son image ne charge pas')
+
+// Prise de vue : la caméra factice de Chromium fournit un flux animé.
+await lignePhoto.locator('.cth2[title*="caméra"]').click()
+await page.waitForTimeout(2000)
+await page.locator('.cam-modal').count() === 1
+  ? ok('la fenêtre de prise de vue s\'ouvre')
+  : ko('aucune fenêtre de prise de vue')
+const erreurCam = await page.locator('.cam-modal .adm-msg-ko').count()
+if (erreurCam) {
+  const m = await page.locator('.cam-modal .adm-msg-ko').innerText()
+  ko(`caméra indisponible : ${m.trim()}`)
+  await page.locator('.cam-modal .adm-b', { hasText: 'Annuler' }).click()
+} else {
+  ok('le flux de la caméra est ouvert, sans erreur')
+  await page.locator('.cam-modal .adm-b-p').click()
+  await page.waitForTimeout(2500)
+  const nbCapture = await lignePhoto.locator('.cph').count()
+  nbCapture === nbPhApres + 1
+    ? ok(`prise de vue enregistrée : ${nbCapture} vignette(s)`)
+    : ko(`${nbCapture} vignette(s) après capture au lieu de ${nbPhApres + 1}`)
+}
+
+// Et tout cela doit venir de la base, pas de l'état de la page.
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1800)
+await allerAuScenario()
+await allerAuProcessus('Réception (+/-')
+const lignePhoto2 = page.locator('.chk .crow').filter({ hasText: 'état externe conteneur' }).first()
+const nbRelu = await lignePhoto2.locator('.cph').count()
+nbRelu >= nbPhApres
+  ? ok(`${nbRelu} photo(s) relue(s) depuis la base après rechargement`)
+  : ko(`${nbRelu} photo(s) relue(s), les clichés ne sont pas persistés`)
+
+/* Remise en état : la ligne doit retrouver son compte de départ, sinon la
+   suite ne se rejoue pas sur la même base. */
+let restantes = await lignePhoto2.locator('.cph').count()
+while (restantes > nbPhAvant) {
+  await lignePhoto2.locator('.cph-x').last().click()
+  await page.waitForTimeout(900)
+  const n = await lignePhoto2.locator('.cph').count()
+  if (n === restantes) break
+  restantes = n
+}
+restantes === nbPhAvant
+  ? ok('photos retirées, la ligne est rendue à son état de départ')
+  : ko(`${restantes} photo(s) restante(s) au lieu de ${nbPhAvant}`)
+
+console.log('\n27. Filtres par colonne du tableau de bord')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)
 await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
@@ -1302,7 +1415,7 @@ await page.locator('.tb-restreint').count() === 0
   ? ok('le bandeau « liste restreinte » disparaît')
   : ko('le bandeau subsiste sans filtre')
 
-console.log('\n27. Console du navigateur et réseau')
+console.log('\n28. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

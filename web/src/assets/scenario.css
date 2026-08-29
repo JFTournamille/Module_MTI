@@ -304,3 +304,27 @@ input[type=radio].ron{accent-color:#cc2200;}
 .chk col.c-cmt{width:40px}
 .chk col.c-heu{width:172px}
 .chk col.c-ope{width:196px}
+
+/* ── Photos : vignettes, dépôt, capture ────────────────────────────────────
+   La cellule ne portait que deux pictogrammes cochables. Elle porte
+   maintenant les pièces elles-mêmes : la vignette est la preuve, le
+   pictogramme n'était qu'une affirmation. */
+.cthr{flex-wrap:wrap;align-items:center;}
+.cph{position:relative;display:block;width:34px;height:34px;border:1px solid var(--vio-clair);
+  border-radius:2px;overflow:hidden;background:#fff;flex-shrink:0;}
+.cph img{width:100%;height:100%;object-fit:cover;display:block;}
+.cph-x{position:absolute;top:0;right:0;background:rgba(198,40,40,.88);color:#fff;
+  width:14px;height:14px;line-height:14px;text-align:center;font-size:9px;cursor:pointer;
+  border-bottom-left-radius:3px;}
+.cph-x:hover{background:#c62828;}
+.cph-att{font-size:var(--fs-xs);color:#888;font-style:italic;}
+.cth2:disabled{opacity:.45;cursor:not-allowed;}
+
+/* La fenêtre de prise de vue est plus large que la recherche patient : on doit
+   voir ce qu'on photographie avant de déclencher. */
+.cam-modal{width:520px;}
+.cam-v{width:100%;max-height:340px;background:#111;border-radius:2px;display:block;}
+.cam-sel{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:var(--fs-sm);}
+.cam-sel select{flex:1;font-size:var(--fs-sm);padding:3px 6px;border:1px solid #aaa;border-radius:2px;}
+.cmodal-ft{display:flex;justify-content:flex-end;gap:8px;padding:8px 10px;
+  border-top:1px solid #e0dcf0;background:#faf9ff;}
