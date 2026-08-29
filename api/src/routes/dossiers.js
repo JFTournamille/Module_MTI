@@ -184,19 +184,36 @@ export default async function dossiers (app) {
       colonnes.push(`date_apherese = $${valeurs.length + 1}`)
     }
 
-    const { rows } = await transaction(
-      request.utilisateur.id, request.ip,
-      async (client) => {
-        /* Un dossier validé est figé : la condition est dans le UPDATE, pas
-           dans une lecture préalable, pour qu'aucune écriture ne se glisse
-           entre les deux. */
-        const r = await client.query(
-          `UPDATE mti.dossier SET ${colonnes.join(', ')}
-            WHERE id = $1 AND statut <> 'valide'
-            RETURNING id, statut`,
-          [request.params.id, ...valeurs])
-        return r
-      })
+    let rows
+    try {
+      ({ rows } = await transaction(
+        request.utilisateur.id, request.ip,
+        async (client) => {
+          /* Un dossier validé est figé : la condition est dans le UPDATE, pas
+             dans une lecture préalable, pour qu'aucune écriture ne se glisse
+             entre les deux. */
+          const r = await client.query(
+            `UPDATE mti.dossier SET ${colonnes.join(', ')}
+              WHERE id = $1 AND statut <> 'valide'
+              RETURNING id, statut`,
+            [request.params.id, ...valeurs])
+          return r
+        }))
+    } catch (e) {
+      /* Un `patientId` qui ne désigne plus personne est une erreur d'APPELANT,
+         pas une panne : le patient a été retiré de l'annuaire entre l'ouverture
+         de l'écran et l'enregistrement. Le 500 qui en sortait ne disait rien
+         d'exploitable, ni au front ni à celui qui lit les journaux. */
+      if (e.code === '23503' && /patient/.test(e.constraint ?? '')) {
+        return reply.code(409).send({
+          erreur: "Ce patient n'existe plus dans l'annuaire : il a été retiré " +
+            'depuis l\'ouverture de l\'écran. Rouvrir le dossier, puis le ' +
+            'rattacher de nouveau.',
+          code: 'patient_inconnu'
+        })
+      }
+      throw e
+    }
 
     if (!rows.length) {
       const { rows: existe } = await requete(

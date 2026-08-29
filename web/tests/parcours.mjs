@@ -1608,7 +1608,39 @@ await page.locator('.tb-restreint').count() === 0
   ? ok('le bandeau « liste restreinte » disparaît')
   : ko('le bandeau subsiste sans filtre')
 
-console.log('\n29. Console du navigateur et réseau')
+/* ── Remise en état des dossiers créés par la suite ──
+   Le groupe « jalon de prescription » rattache un patient de DÉMONSTRATION au
+   dossier de test, et l'y laisse. La purge du jeu de démonstration refuse
+   alors de partir — à juste titre : elle protège les dossiers qui portent ces
+   patients. Mais ici ce sont des dossiers de test, et le refus bloquait la
+   suite `jeu-demo` pour une raison qui n'a rien à voir avec elle.
+
+   On détache donc, à la fin, les patients fictifs des dossiers que CETTE suite
+   a créés. Rien d'autre n'est touché. */
+console.log('\nRemise en état des dossiers de test')
+{
+  let detaches = 0
+  let echecs = 0
+  for (const ref of [refDossier, refBord]) {
+    const liste = await fetch(`${base}/api/dossiers?reference=${encodeURIComponent(ref)}`)
+      .then((r) => r.json()).catch(() => [])
+    for (const d of Array.isArray(liste) ? liste : []) {
+      if (!d.patient) continue
+      const r = await fetch(`${base}/api/dossiers/${d.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preallocation: false, prescriptionFaite: false })
+      })
+      r.ok ? detaches++ : echecs++
+    }
+  }
+  echecs === 0
+    ? ok(`${detaches} dossier(s) de test rendu(s) anonyme(s) — la purge du jeu ` +
+         'de démonstration reste possible')
+    : ko(`${echecs} détachement(s) en échec : la purge du jeu refusera de partir`)
+}
+
+console.log('\n30. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

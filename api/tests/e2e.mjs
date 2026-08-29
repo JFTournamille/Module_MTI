@@ -632,6 +632,19 @@ if (!autre) {
     : ko(`statut ${r.statut}`)
 }
 
+/* Un patient retiré de l'annuaire entre l'ouverture de l'écran et
+   l'enregistrement : c'est une erreur d'appelant, pas une panne. Le 500 qui en
+   sortait ne disait rien d'exploitable — ni au front, qui ne pouvait pas
+   distinguer ce cas d'une base en vrac, ni à qui lit les journaux. */
+/* Sur un dossier NEUF : celui du groupe 1 a été validé depuis, et le refus de
+   lecture seule masquerait le cas qu'on éprouve ici. */
+r = await j('POST', '/api/dossiers', { codeModele: 'PARCOURS_CART_AUTOLOGUE' })
+r = await j('PATCH', `/api/dossiers/${r.corps.id}`,
+  { preallocation: true, patientId: '00000000-0000-0000-0000-000000000000' })
+r.statut === 409 && r.corps?.code === 'patient_inconnu'
+  ? ok('un patient qui n\'existe plus → 409 « patient_inconnu », pas 500')
+  : ko(`statut ${r.statut} — ${JSON.stringify(r.corps).slice(0, 140)}`)
+
 // ── 19. Photos : dépôt, lecture, retrait ──
 //
 // La cellule photo ne cochait qu'un pictogramme : ✅ s'affichait sans qu'aucune
