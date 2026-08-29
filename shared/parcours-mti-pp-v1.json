@@ -1,0 +1,212 @@
+{
+  "code": "PARCOURS_MTI_PP",
+  "version": 1,
+  "libelle": "Parcours MTI — préparé ponctuellement (MTI-PP)",
+  "description": "MTI préparé ponctuellement dans l'établissement, sous autorisation ANSM. Prélèvement, préparation et administration sont internes : il n'y a pas de fabricant extérieur.",
+  "indexIdentificationPatient": 0,
+  "commentaireIdentification": "Prélèvement et préparation sont nominatifs de bout en bout : le parcours n'a pas de phase anonyme.",
+  "processus": [
+    {
+      "n": 1,
+      "code": "PRESCRIPTION",
+      "nom": "Prescription et autorisation",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Cadre réglementaire",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Autorisation ANSM de préparation ponctuelle vérifiée",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Prescription médicale nominative",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date de prescription",
+              "type": "date",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "code": "PRELEVEMENT",
+      "nom": "Prélèvement",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Prélèvement au bloc",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée au prélèvement",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Nature du prélèvement",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Heure de fin de prélèvement",
+              "type": "auto",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Poche identifiée — n° de lot",
+              "type": "texte",
+              "obligatoire": true,
+              "exemplaires": 2,
+              "numeroSerie": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "code": "PREPARATION",
+      "nom": "Préparation en ZAC",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Préparation aseptique",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Environnement ZAC conforme",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Numération cellulaire",
+              "type": "valeur",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Viabilité cellulaire (%)",
+              "type": "valeur",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Photo de la préparation terminée",
+              "type": "photo",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "code": "CONTROLE_QUALITE",
+      "nom": "Contrôle qualité",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Contrôles libératoires",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Stérilité — résultat disponible",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Endotoxines conformes",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Aspect macroscopique conforme",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "code": "LIBERATION",
+      "nom": "Libération pharmaceutique",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Décision de libération",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Revue du dossier de lot",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Décision de libération",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Date de libération",
+              "type": "date",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "code": "ADMINISTRATION",
+      "nom": "Administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Administration au patient",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée au lit",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Heure de début d'administration",
+              "type": "auto",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Administration réalisée sans incident",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Dossier de traçabilité archivé",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

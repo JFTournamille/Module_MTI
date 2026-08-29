@@ -69,27 +69,45 @@ async function allerAuProcessus (nom) {
   await page.waitForTimeout(500)
 }
 
-/** L'application ouvre sur le tableau de bord : après un rechargement, il faut
- *  revenir à l'onglet Scénario pour retrouver la table de saisie. */
+/** Revient au parcours du dossier ouvert.
+ *
+ *  « Scénario » n'est plus un onglet permanent : le parcours n'existe qu'une
+ *  fois un dossier ouvert, et son onglet porte alors la référence du dossier.
+ *  Un onglet permanent menait à un écran vide avec un formulaire de création
+ *  qui faisait doublon avec celui du tableau de bord. */
 async function allerAuScenario () {
-  await page.locator('.onglet', { hasText: 'Scénario' }).click()
+  await page.locator('.onglet-doss').click()
   await page.waitForTimeout(600)
 }
 
-// ── Préalable : ouvrir un dossier ──
-// Les saisies n'existent que dans un dossier : l'onglet Scénario montre un état
-// vide tant qu'aucun n'est ouvert. Tous les groupes qui suivent en dépendent.
-console.log('\nPréalable : ouverture d\'un dossier')
-// L'application ouvre sur le tableau de bord : on part de la liste, pas d'un
-// formulaire vide. Les groupes qui suivent portent sur l'onglet Scénario.
-await page.locator('.onglet', { hasText: 'Scénario' }).click()
-await page.waitForTimeout(400)
-const refDossier = `MTI-NAV-${Date.now()}`
-if (await page.locator('.vide-dossier').count()) {
-  await page.locator('#vd-ref').fill(refDossier)
-  await page.locator('.vd-b').click()
-  await page.waitForTimeout(1500)
+/** Ouvre un dossier depuis le tableau de bord — le seul chemin désormais. */
+async function ouvrirDepuisBord (reference) {
+  await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+  await page.waitForTimeout(1200)
+  await page.locator('#tb-q').fill(reference)
+  await page.waitForTimeout(1400)
+  await page.locator('tr.tb-ligne', { hasText: reference }).first().click()
+  await page.waitForTimeout(1800)
 }
+
+// ── Préalable : ouvrir un dossier ──
+/* Les saisies n'existent que dans un dossier ; tous les groupes qui suivent en
+   dépendent. La création passe désormais par le tableau de bord — c'est le seul
+   chemin, le formulaire du panneau vide ayant été retiré comme doublon. */
+console.log('\nPréalable : ouverture d\'un dossier')
+const refDossier = `MTI-NAV-${Date.now()}`
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('.adm-b-p', { hasText: 'Démarrer un parcours' }).click()
+await page.waitForTimeout(400)
+await page.locator('#tb-ref').fill(refDossier)
+/* Le parcours est choisi explicitement : plusieurs sont livrés, et le premier
+   de la liste n'est pas celui que cette suite éprouve. S'en remettre au défaut
+   faisait passer la suite sur le parcours allogénique — 8 processus au lieu de
+   15 — et les groupes suivants échouaient sans dire pourquoi. */
+await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
+await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
+await page.waitForTimeout(2000)
 await page.locator('.vide-dossier').count() === 0
   ? ok(`dossier ${refDossier} ouvert — la saisie sera enregistrée`)
   : ko('aucun dossier ouvert : la saisie ne serait pas enregistrée')
@@ -320,8 +338,8 @@ const titre = await page.locator('.titlebar span').first().innerText()
 if (/Utilisateurs/.test(titre)) ok(`barre de titre suit l'onglet : « ${titre} »`)
 else ko(`barre de titre : ${titre}`)
 await page.locator('.dlg .body').count() === 0
-  ? ok('le panneau du scénario est retiré, pas seulement masqué')
-  : ko('le scénario reste monté sous l\'onglet Utilisateurs')
+  ? ok('le panneau du parcours est retiré, pas seulement masqué')
+  : ko('le parcours reste monté sous l\'onglet Utilisateurs')
 
 const nbAvant = await page.locator('table.adm-t .ident').count()
 nbAvant >= 1 ? ok(`${nbAvant} compte(s) listé(s) depuis la base`) : ko('aucun compte listé')
@@ -384,12 +402,12 @@ else ko(`réactivation sans effet : ${await ligneRendue.innerText()}`)
 await page.locator('.adm-bar input[type=checkbox]').uncheck()
 await page.waitForTimeout(500)
 
-// ── Retour au scénario : l'état du parcours ne doit pas avoir été perdu ──
-await page.locator('.onglet', { hasText: 'Scénario' }).click()
+// ── Retour au parcours : son état ne doit pas avoir été perdu ──
+await page.locator('.onglet-doss').click()
 await page.waitForTimeout(400)
 await page.locator('.proc').count() >= NB_PROCESSUS
-  ? ok('retour au scénario, processus toujours présents')
-  : ko('le scénario a perdu ses processus')
+  ? ok('retour au parcours, processus toujours présents')
+  : ko('le parcours a perdu ses processus')
 
 // ── 15. Sélection de l'opérateur (mode démonstration) ──
 console.log('\n15. Sélection de l\'opérateur connecté')
@@ -442,7 +460,7 @@ if (await selOp.count() === 0) {
   await page.locator('table.adm-t tr', { hasText: login }).count() === 0
     ? ok('compte de test remis en veille, sélecteur laissé propre')
     : ko('le compte de test reste actif')
-  await page.locator('.onglet', { hasText: 'Scénario' }).click()
+  await page.locator('.onglet-doss').click()
   await page.waitForTimeout(400)
 }
 
@@ -550,11 +568,12 @@ await page.locator('.adm-vide').count() === 1
 await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
 await page.waitForTimeout(1200)
 
-// Démarrer un scénario, produit et lot compris, en un seul geste.
+// Démarrer un parcours, produit et lot compris, en un seul geste.
 const refBord = `MTI-BORD-${Date.now()}`
-await page.locator('.adm-b-p', { hasText: 'Démarrer un scénario' }).click()
+await page.locator('.adm-b-p', { hasText: 'Démarrer un parcours' }).click()
 await page.waitForTimeout(400)
 await page.locator('#tb-ref').fill(refBord)
+await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
 const nbProduits = await page.locator('#tb-nprod option').count()
 nbProduits >= 2 ? ok(`${nbProduits - 1} produit(s) de référence proposés`)
   : ko('aucun produit proposé au choix')
@@ -564,7 +583,9 @@ await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
 await page.waitForTimeout(1800)
 
 const ongletApresCreation = await page.locator('.onglet.act').innerText()
-if (/Scénario/.test(ongletApresCreation)) ok('la création bascule sur le scénario du nouveau dossier')
+if (new RegExp(refBord).test(ongletApresCreation)) {
+  ok('la création bascule sur le parcours du nouveau dossier')
+}
 else ko(`onglet actif : ${ongletApresCreation}`)
 const enteteApresCreation = await page.locator('.hdr .meta').innerText()
 if (/LOT-BORD-1/.test(enteteApresCreation)) ok('le n° de lot saisi à la création arrive dans l\'en-tête')
@@ -585,10 +606,10 @@ if (/LOT-BORD-1/.test(texteBord) && /®/.test(texteBord)) {
 await ligneBord.click()
 await page.waitForTimeout(1800)
 const ongletFinal = await page.locator('.onglet.act').innerText()
-const surScenario = /Scénario/.test(ongletFinal)
+const surScenario = new RegExp(refBord).test(ongletFinal)
 const dossierOuvert = await page.locator('.vide-dossier').count() === 0
-surScenario && dossierOuvert ? ok('un clic sur une ligne ouvre le dossier dans le scénario')
-  : ko(`onglet scénario : ${surScenario}, dossier ouvert : ${dossierOuvert}`)
+surScenario && dossierOuvert ? ok('un clic sur une ligne ouvre le parcours du dossier')
+  : ko(`onglet du parcours : ${surScenario}, dossier ouvert : ${dossierOuvert}`)
 
 // ── 18. Jalon de prescription ──
 // Pas de table prescription : la source de vérité est le logiciel de
@@ -822,11 +843,12 @@ if (nbDemo === 0) {
      C'est la moitié de l'intérêt du jeu — montrer un parcours abouti. */
   await nonConforme.click()
   await page.waitForTimeout(1800)
-  const surScenarioDemo = /Scénario/.test(await page.locator('.onglet.act').innerText())
+  // L'onglet actif porte la référence du dossier, pas le mot « Scénario ».
+  const surScenarioDemo = /DEMO-MTI-0010/.test(await page.locator('.onglet.act').innerText())
   const contenuOuvert = await page.locator('.vide-dossier').count() === 0
   surScenarioDemo && contenuOuvert
     ? ok('un dossier clos s\'ouvre en consultation')
-    : ko(`onglet scénario : ${surScenarioDemo}, contenu : ${contenuOuvert}`)
+    : ko(`onglet du parcours : ${surScenarioDemo}, contenu : ${contenuOuvert}`)
 
   /* Non-régression : l'en-tête d'un dossier rouvert nommait « en attente
      d'allocation » un dossier dont le patient était alloué à la mise en
@@ -1135,7 +1157,7 @@ reseauHS.length === 0
   ? ok(`aucune requête en échec inattendue${voulus ? ` (${voulus} provoquée(s) par les tests)` : ''}`)
   : ko(`${reseauHS.length} requête(s) en échec :\n     ${reseauHS.join('\n     ')}`)
 
-// La capture finale porte sur le scénario : y revenir, l'application pouvant
+// La capture finale porte sur le parcours : y revenir, l'application pouvant
 // être restée sur un autre onglet.
 await allerAuScenario()
 if (await page.locator('.proc').count()) {

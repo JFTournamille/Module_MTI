@@ -476,6 +476,13 @@ export default async function dossiers (app) {
                         OR i.nom ILIKE $${n} OR i.prenom ILIKE $${n})`)
     }
 
+    /* Les compteurs passent par des LATERAL agrégés, et non par cinq
+       sous-requêtes corrélées répétées ligne à ligne. La version corrélée
+       relisait `saisie` une fois par dossier : mesurée à 2,9 s sur 310 dossiers
+       et 19 800 saisies quand les statistiques n'étaient pas à jour, contre
+       76 ms une fois la table analysée — un écart de quarante qui ne dépendait
+       que de l'humeur du planificateur. Les LATERAL rendent le coût lisible et
+       indépendant de ce hasard. */
     const { rows } = await requete(
       `SELECT d.id, d.reference, d.numero_lot, d.statut, d.conformite, d.preallocation,
               d.patient_id, d.prescription_faite, d.cree_le, d.valide_le,
@@ -483,27 +490,32 @@ export default async function dossiers (app) {
               pr.id AS produit_id, pat.reference AS patient_reference,
               i.nom AS patient_nom, i.prenom AS patient_prenom,
               m.code AS code_modele, m.version AS version_modele,
-              (SELECT dp.nom FROM mti.dossier_processus dp
-                WHERE dp.dossier_id = d.id AND dp.etat <> 'valide'
-                ORDER BY dp.ordre LIMIT 1) AS etape,
-              (SELECT count(*)::int FROM mti.dossier_processus dp
-                WHERE dp.dossier_id = d.id) AS nb_processus,
-              (SELECT count(*)::int FROM mti.dossier_processus dp
-                WHERE dp.dossier_id = d.id AND dp.etat = 'valide') AS nb_valides,
-              (SELECT count(*)::int FROM mti.saisie s
-                 JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
-                WHERE dp.dossier_id = d.id AND s.hors_seuil) AS nb_alarmes,
-              greatest(d.cree_le, d.valide_le,
-                (SELECT max(dp.valide_le) FROM mti.dossier_processus dp
-                  WHERE dp.dossier_id = d.id),
-                (SELECT max(s.saisi_le) FROM mti.saisie s
-                   JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
-                  WHERE dp.dossier_id = d.id)) AS derniere_activite
+              proc.etape, proc.nb_processus, proc.nb_valides, proc.dernier_valide,
+              coalesce(al.nb_alarmes, 0) AS nb_alarmes,
+              greatest(d.cree_le, d.valide_le, proc.dernier_valide, al.derniere_saisie)
+                AS derniere_activite
          FROM mti.dossier d
          JOIN mti.modele_parcours m ON m.id = d.modele_parcours_id
          LEFT JOIN mti.produit pr ON pr.id = d.produit_id
          LEFT JOIN mti.patient pat ON pat.id = d.patient_id
          LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS nb_processus,
+                  count(*) FILTER (WHERE dp.etat = 'valide')::int AS nb_valides,
+                  max(dp.valide_le) AS dernier_valide,
+                  (SELECT dp2.nom FROM mti.dossier_processus dp2
+                    WHERE dp2.dossier_id = d.id AND dp2.etat <> 'valide'
+                    ORDER BY dp2.ordre LIMIT 1) AS etape
+             FROM mti.dossier_processus dp
+            WHERE dp.dossier_id = d.id
+         ) proc ON true
+         LEFT JOIN LATERAL (
+           SELECT count(*) FILTER (WHERE s.hors_seuil)::int AS nb_alarmes,
+                  max(s.saisi_le) AS derniere_saisie
+             FROM mti.saisie s
+             JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+            WHERE dp.dossier_id = d.id
+         ) al ON true
         ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''}
         ORDER BY derniere_activite DESC NULLS LAST
         LIMIT 200`,

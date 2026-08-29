@@ -17,7 +17,10 @@ import { appel, messageErreur } from '../api.js'
  * été contrôlé doit rester relisible tel qu'il a été prescrit au moment du
  * contrôle.
  */
-const CODE = 'PARCOURS_CART_AUTOLOGUE'
+/* Le code n'est plus figé : l'établissement suit plusieurs parcours — CAR-T
+   autologue, allogénique, thérapie génique, MTI préparé ponctuellement — et
+   chacun a ses processus. Le code par défaut n'est qu'un point de départ. */
+const CODE_DEFAUT = 'PARCOURS_CART_AUTOLOGUE'
 
 /** Types de points, alignés sur l'enum `mti.type_point`. */
 export const TYPES_POINT = [
@@ -33,6 +36,10 @@ export const TYPES_POINT = [
 const copie = (x) => JSON.parse(JSON.stringify(x))
 
 export const useConfiguration = defineStore('configuration', () => {
+  /** Parcours en cours d'édition, et liste des parcours disponibles. */
+  const code = ref(CODE_DEFAUT)
+  const parcoursDisponibles = ref([])
+
   /** Brouillon éditable — jamais la version active elle-même. */
   const brouillon = ref(null)
   const versionBase = ref(null)
@@ -66,9 +73,21 @@ export const useConfiguration = defineStore('configuration', () => {
     chargement.value = true
     erreur.value = ''
     try {
+      /* La liste des parcours est relue à chaque fois : publier une version
+         change le nombre de processus affiché dans le sélecteur, et une liste
+         mise en cache le ferait mentir. */
+      const rL = await appel('/api/modeles')
+      if (rL.ok) {
+        parcoursDisponibles.value = await rL.json()
+        // Le code par défaut peut ne pas exister sur une base donnée : on se
+        // rabat sur le premier plutôt que d'afficher un écran vide.
+        if (!parcoursDisponibles.value.some((m) => m.code === code.value)) {
+          code.value = parcoursDisponibles.value[0]?.code ?? CODE_DEFAUT
+        }
+      }
       const [rM, rV] = await Promise.all([
-        appel(`/api/modeles/${CODE}`),
-        appel(`/api/modeles/${CODE}/versions`)
+        appel(`/api/modeles/${code.value}`),
+        appel(`/api/modeles/${code.value}/versions`)
       ])
       if (!rM.ok) throw new Error(await messageErreur(rM, `Modèle illisible (${rM.status}).`))
       if (!rV.ok) throw new Error(await messageErreur(rV, `Versions illisibles (${rV.status}).`))
@@ -217,7 +236,7 @@ export const useConfiguration = defineStore('configuration', () => {
     erreur.value = ''
     message.value = ''
     const { code, version, actif, ...definition } = brouillon.value
-    const r = await appel(`/api/modeles/${CODE}/versions`, {
+    const r = await appel(`/api/modeles/${code.value}/versions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ definition })
@@ -236,7 +255,17 @@ export const useConfiguration = defineStore('configuration', () => {
   /** Abandonne le brouillon et repart de la version active. */
   async function annuler () { await charger() }
 
+  /** Change de parcours. Le brouillon en cours est abandonné : le garder d'un
+   *  parcours à l'autre publierait les processus de l'un sous le code de
+   *  l'autre. */
+  async function choisirParcours (nouveau) {
+    if (nouveau === code.value) return
+    code.value = nouveau
+    await charger()
+  }
+
   return {
+    code, parcoursDisponibles, choisirParcours,
     brouillon, versionBase, versions, versionActive, chargement, erreur, message,
     indisponible, modifie,
     iProcessus, iSection, iPoint,

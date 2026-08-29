@@ -1,0 +1,246 @@
+{
+  "code": "PARCOURS_THERAPIE_GENIQUE",
+  "version": 1,
+  "libelle": "Parcours MTI — Thérapie génique (vecteur viral)",
+  "description": "Vecteur viral (AAV, lentivirus) administré en une fois. Le produit est nominatif dès la commande : le parcours n'a pas de phase anonyme.",
+  "indexIdentificationPatient": 0,
+  "commentaireIdentification": "Le produit est nominatif dès la commande : l'identité est requise d'emblée, contrairement au parcours CAR-T.",
+  "processus": [
+    {
+      "n": 1,
+      "code": "ELIGIBILITE",
+      "nom": "Éligibilité et consentement",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Prérequis réglementaires",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Décision de RCP tracée au dossier",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Consentement éclairé signé",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date du consentement",
+              "type": "date",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Sérologies pré-thérapeutiques disponibles",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "code": "COMMANDE_MTI",
+      "nom": "Commande nominative",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Commande fabricant",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "N° de commande fabricant",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Nominativité confirmée par le fabricant",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Date de livraison prévue",
+              "type": "date",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "code": "RECEPTION",
+      "nom": "Réception",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Réception du conteneur",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Intégrité du conteneur",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Concordance nominative produit / patient",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Température à réception — seuil < −60 °C",
+              "type": "valeur",
+              "obligatoire": true,
+              "seuil": -60
+            },
+            {
+              "libelle": "Photo du bon de livraison",
+              "type": "photo",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "code": "STOCKAGE_CONGELE",
+      "nom": "Stockage congélateur",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Mise au froid",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Température congélateur — seuil < −60 °C",
+              "type": "valeur",
+              "obligatoire": true,
+              "seuil": -60
+            },
+            {
+              "libelle": "Emplacement noté",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Entrée en stock logiciel PUI",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "code": "PREPARATION",
+      "nom": "Préparation en ZAC",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Préparation aseptique",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Environnement ZAC conforme",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Volume préparé conforme à la prescription",
+              "type": "valeur",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Étiquetage nominatif de la poche",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Photo de la préparation terminée",
+              "type": "photo",
+              "obligatoire": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "code": "ADMINISTRATION",
+      "nom": "Administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Administration au patient",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Identité patient vérifiée au lit",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "libelle": "Heure de début d'administration",
+              "type": "auto",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Durée de perfusion",
+              "type": "timer",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Administration réalisée sans incident",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "n": 7,
+      "code": "SUIVI",
+      "nom": "Suivi post-administration",
+      "gabarit": "standard",
+      "externe": false,
+      "sections": [
+        {
+          "titre": "1 — Surveillance à long terme",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Surveillance immédiate 24 h",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Inscription au registre de suivi long terme",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Dossier de traçabilité archivé",
+              "type": "auto",
+              "obligatoire": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

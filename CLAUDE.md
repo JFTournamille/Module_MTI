@@ -34,6 +34,12 @@ réglementaires, pas à des préférences techniques.
   de modification, et c'est volontaire.
 - **Le rang d'un processus n'est pas un identifiant.** Retirer l'aphérèse en v3
   a décalé douze processus. Désigner un processus se fait par son `code`.
+- **L'anonymat par défaut est une règle du CAR-T autologue, pas du module.**
+  Elle est portée par `indexIdentificationPatient` du modèle : la thérapie
+  génique et le MTI-PP sont nominatifs dès la commande et valent 0.
+- **Il n'y a pas d'onglet « Parcours ».** Un parcours n'existe qu'une fois un
+  dossier ouvert ; son onglet apparaît alors en fin de barre, portant la
+  référence du dossier. Le mot « scénario » a disparu de l'interface.
 - **Une migration appliquée ne se modifie pas.** `api/src/migrer.js` vérifie
   l'empreinte SHA-256 et refuse un fichier altéré : créer une nouvelle
   migration.

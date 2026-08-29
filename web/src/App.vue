@@ -19,19 +19,30 @@ const store = useParcours()
 const onglet = ref('bord')
 const TITRES = {
   bord: 'Tableau de bord MTI',
-  scenario: 'Scénario MTI — Processus chronologique',
+  parcours: 'Parcours MTI — Processus chronologique',
   utilisateurs: 'Administration — Utilisateurs',
   configuration: 'Configuration — Processus et points de contrôle'
 }
 
-/** Ouvre un dossier depuis le tableau de bord et bascule sur le scénario. */
+/* « Parcours » n'est pas un onglet de la barre : on n'y accède qu'en ouvrant un
+   dossier depuis le tableau de bord, et un onglet permanent menait à un écran
+   vide portant un formulaire de création qui faisait doublon avec celui du
+   tableau de bord. La vue s'ouvre sur un dossier et se referme vers la liste. */
+const ONGLETS = [
+  ['bord', 'Tableau de bord'],
+  ['configuration', 'Configuration'],
+  ['utilisateurs', 'Utilisateurs']
+]
+
+/** Ouvre un dossier depuis le tableau de bord et bascule sur son parcours. */
 async function ouvrirDepuisBord (id) {
-  if (await store.ouvrirDossier(id)) onglet.value = 'scenario'
+  if (await store.ouvrirDossier(id)) onglet.value = 'parcours'
 }
+
+/** Referme le parcours et revient à la liste. */
+function retourAuBord () { onglet.value = 'bord' }
 const modalePatient = ref(false)
 const modaleCatalogue = ref(false)
-
-const referenceNouveau = ref('')
 
 onMounted(async () => {
   await session.charger()
@@ -42,17 +53,6 @@ onMounted(async () => {
   if (memorise) await store.ouvrirDossier(memorise)
 })
 
-/** Référence par défaut : lisible, et unique sans avoir à interroger la base. */
-function referenceProposee () {
-  const n = new Date()
-  const p = (v) => String(v).padStart(2, '0')
-  return `MTI-${n.getFullYear()}-${p(n.getMonth() + 1)}${p(n.getDate())}-${p(n.getHours())}${p(n.getMinutes())}`
-}
-
-async function creer () {
-  const ref = (referenceNouveau.value || '').trim() || referenceProposee()
-  if (await store.creerDossier(ref)) referenceNouveau.value = ''
-}
 onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
@@ -81,27 +81,24 @@ const blocages = computed(() => {
     </div>
 
     <nav class="onglets" role="tablist" aria-label="Navigation principale">
-      <button class="onglet" :class="{ act: onglet === 'bord' }" role="tab"
-              :aria-selected="onglet === 'bord'" @click="onglet = 'bord'">
-        Tableau de bord
+      <button v-for="[code, libelle] in ONGLETS" :key="code"
+              class="onglet" :class="{ act: onglet === code }" role="tab"
+              :aria-selected="onglet === code" @click="onglet = code">
+        {{ libelle }}
       </button>
-      <button class="onglet" :class="{ act: onglet === 'scenario' }" role="tab"
-              :aria-selected="onglet === 'scenario'" @click="onglet = 'scenario'">
-        Scénario
-      </button>
-      <button class="onglet" :class="{ act: onglet === 'configuration' }" role="tab"
-              :aria-selected="onglet === 'configuration'" @click="onglet = 'configuration'">
-        Configuration
-      </button>
-      <button class="onglet" :class="{ act: onglet === 'utilisateurs' }" role="tab"
-              :aria-selected="onglet === 'utilisateurs'" @click="onglet = 'utilisateurs'">
-        Utilisateurs
+      <!-- Le parcours ouvert apparaît en fin de barre, et seulement tant qu'un
+           dossier est ouvert : c'est un contexte de travail, pas une
+           destination. -->
+      <button v-if="store.dossierId" class="onglet onglet-doss"
+              :class="{ act: onglet === 'parcours' }" role="tab"
+              :aria-selected="onglet === 'parcours'" @click="onglet = 'parcours'">
+        ▸ {{ store.dossier.reference || 'Parcours' }}
       </button>
     </nav>
 
     <PanneauTableauBord v-if="onglet === 'bord'" @ouvrir="ouvrirDepuisBord" />
 
-    <template v-else-if="onglet === 'scenario'">
+    <template v-else-if="onglet === 'parcours'">
     <div class="hdr">
       <div class="hdr-left">
         <div class="name">
@@ -213,17 +210,19 @@ const blocages = computed(() => {
           Chargement des référentiels…
         </div>
         <template v-else-if="!store.dossierId">
+          <!-- Plus de formulaire de création ici : il faisait doublon avec
+               celui du tableau de bord, et deux endroits pour créer un dossier
+               laissaient l'utilisateur choisir sans savoir ce qui les
+               distinguait. Cet état n'est plus atteint que si le dossier
+               mémorisé a disparu entre-temps. -->
           <div class="vide-dossier">
             <div class="vd-t">Aucun dossier ouvert</div>
             <p>
-              Les saisies ne sont enregistrées que dans un dossier. Créez-en un, ou
-              ouvrez-en un depuis le tableau de bord.
+              Les saisies ne sont enregistrées que dans un dossier. Ouvrez-en un
+              depuis le tableau de bord, ou démarrez-y un nouveau parcours.
             </p>
             <div class="vd-f">
-              <label for="vd-ref">Référence</label>
-              <input id="vd-ref" type="text" v-model="referenceNouveau"
-                     :placeholder="referenceProposee()"/>
-              <button class="vd-b" @click="creer()">Créer le dossier</button>
+              <button class="vd-b" @click="retourAuBord()">← Aller au tableau de bord</button>
             </div>
             <p v-if="store.erreurDossier" class="vd-e">{{ store.erreurDossier }}</p>
           </div>

@@ -284,3 +284,6 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
 /* Un total qui ne correspond pas à l'écran est trompeur : quand un filtre est
    posé, le dire explicitement. */
 .tb-restreint{font-size:11px;color:#e65100;font-weight:bold;}
+/* Onglet contextuel du parcours ouvert : présent seulement tant qu'un dossier
+   l'est, d'où la distinction visuelle avec les onglets permanents. */
+.onglet-doss{font-family:'Courier New',monospace;font-size:12px;}
