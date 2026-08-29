@@ -168,7 +168,7 @@ const nbPoints = computed(() => store.tousLesPoints.length)
                @click="store.choisirProcessus(i)">
             <div class="n">{{ i + 1 }}. {{ p.nom }}</div>
             <div class="d">
-              {{ p.code }}<template v-if="p.externe"> · externe</template>
+              {{ p.code }}<template v-if="p.externe"> · tiers</template>
               <template v-if="p.gabarit === 'reception'"> · réception</template>
               · {{ (p.sections ?? []).reduce((t, s) => t + (s.points?.length ?? 0), 0) }} pt
             </div>
@@ -215,8 +215,13 @@ const nbPoints = computed(() => store.tousLesPoints.length)
               <label class="lbl-f">
                 <input type="checkbox" v-model="store.processusCourant.externe"
                        @change="store.marquer()">
-                Processus externe — réalisé par le fabricant
+                Réalisé par un tiers (fabricant, autre service…)
               </label>
+            </div>
+            <div class="aide">
+              Le processus reste au parcours et garde ses points de contrôle, mais
+              il n'est pas saisi ici : il est réalisé ailleurs — par le fabricant,
+              un autre service, un prestataire. L'écran le montre en consultation.
             </div>
 
             <div class="form-h">Sections et points de contrôle</div>

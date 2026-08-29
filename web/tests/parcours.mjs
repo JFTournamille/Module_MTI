@@ -260,8 +260,11 @@ const enteteFab = await page.locator('.hdr-left .name').innerText()
 enteteFab.includes('à identifier') ? ok(`en-tête : « ${enteteFab} »`) : ko(`en-tête : ${enteteFab}`)
 const metaFab = await page.locator('.hdr-left .meta').innerText()
 metaFab.includes('ordonnancier') ? ok('N° ordonnancier révélé') : ko('N° ordonnancier toujours masqué')
-const banniere = await page.locator('.banner.b-ext').count()
-banniere === 1 ? ok('bandeau « processus externe » affiché') : ko('bandeau externe absent')
+/* Le bandeau nomme le tiers, pas un attribut technique : « externe » ne dit
+   pas à l'opérateur qui fait le travail, « réalisé par un tiers » si. */
+const banniere = (await page.locator('.banner.b-ext').innerText().catch(() => '')).trim()
+if (/réalisé par un tiers/i.test(banniere)) ok(`bandeau du processus tiers : « ${banniere} »`)
+else ko(`bandeau : « ${banniere} »`)
 
 // ── 10. Catalogue ──
 console.log('\n10. Ajout depuis le catalogue')

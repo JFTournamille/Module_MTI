@@ -12,12 +12,12 @@ const classePastille = (etat) =>
   ({ valide: 'pnd', en_cours: 'pna' })[etat] ?? 'pnp'
 /* La ligne de détail dit l'état réel du processus, comme en v12. Elle affichait
    « — » sur tout processus à venir : un tiret ne distingue pas un processus
-   verrouillé par la chronologie d'un processus réalisé par le fabricant, alors
+   verrouillé par la chronologie d'un processus réalisé par un tiers, alors
    que ce n'est pas du tout la même chose pour celui qui lit la liste. */
 const sousTitre = (p) => {
   if (p.etat === 'valide') return p.valideLe ?? 'Validé'
   if (p.etat === 'en_cours') return 'En cours…'
-  if (p.externe) return 'Processus externe'
+  if (p.externe) return 'Réalisé par un tiers'
   return 'Verrouillé'
 }
 const classeSousTitre = (p) => {

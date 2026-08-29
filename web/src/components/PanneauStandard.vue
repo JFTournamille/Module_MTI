@@ -18,7 +18,7 @@ const badge = {
 const libelleEtat = { valide: 'Validé', en_cours: 'EN COURS', a_venir: 'À venir', annule: 'Annulé' }
 const classeEtat = { valide: 's-done', en_cours: 's-active', a_venir: 's-prev', annule: 's-prev' }
 
-/** Un processus à venir ou externe se consulte, il ne se saisit pas. */
+/** Un processus à venir ou réalisé par un tiers se consulte, il ne se saisit pas. */
 const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus.etat === 'valide'
 </script>
 
@@ -36,10 +36,10 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
 
   <div class="tbl-wrap">
     <div v-if="processus.etat === 'valide'" class="banner b-done">
-      ✓ Processus validé{{ processus.externe ? ' — externe' : '' }}
+      ✓ Processus validé{{ processus.externe ? ' — réalisé par un tiers' : '' }}
     </div>
     <div v-if="processus.externe && processus.etat !== 'valide'" class="banner b-ext">
-      Processus externe — réalisé par le fabricant
+      Processus réalisé par un tiers (fabricant, autre service…) — suivi ici, saisi ailleurs
     </div>
     <div v-if="processus.etat === 'a_venir'" class="banner b-prev">
       ⏳ À venir — processus non encore démarré
