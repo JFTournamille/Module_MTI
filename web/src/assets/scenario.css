@@ -137,3 +137,107 @@ input[type=radio].oui{accent-color:#007733;}input[type=radio].non{accent-color:#
 .cmodal-res{border:1px solid #ddd;border-radius:2px;max-height:140px;overflow-y:auto;}
 .cmodal-row{padding:5px 8px;cursor:pointer;font-size:11px;border-bottom:1px solid #eee;}.cmodal-row:hover{background:#f0eeff;}
 .cmodal-row span{color:#666;font-size:10px;margin-left:8px;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Reprise de l'ergonomie de la maquette v12
+   ───────────────────────────────────────────────────────────────────────────
+   Le reste de ce fichier vient de `scenario_mti_dialog_v9.html`, repris
+   verbatim. La v12 a fait évoluer quatre choses que l'utilisateur préfère —
+   le minuteur, les coches, les détails sous les menus, les contrastes — et
+   cette section les porte, à la demande. Les valeurs sont reprises de
+   `docs/reference/scenario_mti_dialog_v12.html`, pas réinventées.
+
+   Elle est APPENDUE plutôt que fondue dans le fichier : la filiation v9 reste
+   lisible, et ce qui a bougé depuis se lit d'un bloc.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Échelle typographique de v12. v9 tournait entre 9 et 12 px, jugé trop
+     petit à l'usage : tout est décalé d'environ +2 px sans toucher aux teintes. */
+  --fs-xs:12px; --fs-sm:13px; --fs-md:14.5px; --fs-lg:15.5px;
+  --vio-fonce:#2e2060; --vio:#4a3880; --vio-clair:#6045a0;
+  --vio-sep:#3a2a7a; --vio-hover:#3d2e82; --vio-act:#5040a0; --vio-lila:#9f80ff;
+  --bande:#f5f2ff; --bande-bord:#ddd8ff; --ligne:#f0eeff; --pied-bord:#c8b8e8;
+  --vert:#2e7d4e; --vert-done:#1a4028; --vert-vif:#4caf50;
+  --orange-fond:#fff3e0; --orange-bord:#e0a030; --orange-txt:#7a4f00;
+  --gris:#888;
+}
+
+/* ── 1. Contrastes du tableau de saisie ────────────────────────────────────
+   Le libellé d'un point de contrôle est ce qu'on lit toute la journée : 11 px
+   en #222 sur fond alterné était lisible de justesse. */
+.chk{font-size:var(--fs-sm);}
+.chk .clbl{font-size:var(--fs-md);color:#222;line-height:1.4;}
+.chk .csub{font-size:var(--fs-sm);color:#666;}
+.chk .cmul{font-size:var(--fs-xs);color:var(--vio-clair);}
+.chk .crow td{padding:5px 6px;border-color:var(--bande-bord);}
+.chk .crow:nth-child(even) td{background:#faf8ff;}
+.cfi{font-size:var(--fs-sm);padding:4px 8px;border:1px solid var(--pied-bord);
+  border-radius:2px;background:#fff;}
+.cfi:focus{outline:2px solid var(--vio-lila);outline-offset:-1px;}
+
+/* ── 2. Les coches ─────────────────────────────────────────────────────────
+   15 px au lieu de la taille par défaut du navigateur (13 px), et un accent
+   explicite : une coche qu'on vise mal est une coche qu'on coche mal. Le vert
+   et le rouge du Oui/Non sont conservés — ils portent du sens, contrairement
+   aux autres cases. */
+/* 15 px au lieu de la taille par défaut du navigateur : une coche qu'on vise
+   mal est une coche qu'on coche mal. */
+.chk input[type=radio],.chk input[type=checkbox],
+.std-ir input[type=radio],.std-ir input[type=checkbox]{width:15px;height:15px;
+  cursor:pointer;accent-color:var(--vio);}
+/* L'étoile « obligatoire » se clique ligne par ligne : elle doit être visée
+   sans effort. */
+.chk .cobtn{font-size:var(--fs-lg);padding:3px;}
+
+/* ── 3. Les contrôles de saisie, dans LES DEUX panneaux ────────────────────
+   Toutes les règles de contrôle étaient préfixées `.chk`, le conteneur du
+   panneau de réception. Or `PanneauStandard` n'a pas ce conteneur : le même
+   composant `CelluleControle` s'y rendait sans aucun style — radios à la
+   taille du navigateur, afficheur de minuteur en texte nu, vignettes photo
+   sans cadre. Les règles ci-dessous ne sont donc plus préfixées : c'est le
+   composant qui porte l'apparence, pas la page qui l'accueille.
+
+   L'afficheur vert sur noir de `checklist_cart_reception_v2.html` est conservé :
+   c'est celui que les utilisateurs préfèrent, et il se repère d'un coup d'œil
+   dans une table où tout le reste est clair. Ce qui manquait, c'est le bouton
+   d'arrêt distinct et la ligne Début / Fin — un afficheur qui donne une durée
+   sans dire de quand à quand ne vaut rien pour la traçabilité. */
+.ctrow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.ctd{font-family:'Courier New',monospace;font-size:var(--fs-sm);background:#1a1a1a;
+  color:#00ee88;padding:2px 8px;border-radius:2px;min-width:58px;text-align:center;
+  display:inline-block;font-variant-numeric:tabular-nums;}
+.cbt{font-size:var(--fs-xs);padding:3px 8px;border-radius:2px;cursor:pointer;
+  border:1px solid #8060b0;background:#ede8ff;color:#3a2880;font-family:inherit;}
+.cbt:hover:not(:disabled){background:#e0d8ff;}
+.cbt:disabled{opacity:.4;cursor:default;}
+.cbt.stop{background:#fdeaea;border-color:#cc4444;color:#aa2200;}
+.cbt.stop:disabled{background:#f4f0f0;border-color:#ccc;color:#999;}
+/* Les deux jalons du minuteur, sous l'afficheur. */
+.ctse{font-size:var(--fs-xs);color:#555;margin-top:3px;}
+.ctse b{color:#222;font-variant-numeric:tabular-nums;}
+
+.cyn{display:flex;gap:12px;align-items:center;}
+.cyn label{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:var(--fs-sm);}
+input[type=radio].roi{accent-color:#007733;}
+input[type=radio].ron{accent-color:#cc2200;}
+.cthr{display:flex;gap:4px;}
+.cth2{width:30px;height:30px;background:#eee;border:1px dashed #aaa;border-radius:2px;
+  font-size:var(--fs-xs);color:#888;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;}
+.cth2.done{background:#d0eeff;border-color:#4488cc;}
+.calm{background:#ffdddd;border:1px solid #cc4444;color:#aa2200;}
+.cokb{background:#ddfff0;border:1px solid #44aa77;color:#116644;}
+.calm,.cokb{font-size:var(--fs-xs);padding:2px 8px;border-radius:9px;white-space:nowrap;}
+
+/* ── 4. Détails sous les menus ─────────────────────────────────────────────
+   La barre latérale ne disait que « — » sous un processus à venir. v12 y
+   porte l'état réel : verrouillé, externe, ou la date de validation. Et un
+   processus validé prend un fond vert sombre, au lieu d'un simple liseré. */
+.pname{font-size:var(--fs-sm);}
+.psub{font-size:var(--fs-xs);color:#6050a0;}
+.psub.ok{color:#80cc90;}
+.psub.ext{color:#a898d8;font-style:italic;}
+.proc.done{background:var(--vert-done);border-left-color:var(--vert-vif);}
+.proc.done .pname{color:#d8f0e0;}
+.proc.pending{opacity:.42;}

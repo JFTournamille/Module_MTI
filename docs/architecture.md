@@ -253,6 +253,54 @@ pas cosmétique : `e -> 'libelle'` sur une clé absente rend `NULL`,
 `jsonb_typeof(NULL)` rend `NULL`, et `NULL <> 'string'` vaut `NULL` — pas `TRUE`.
 Sans lui, un objet sans libellé passait. Éprouvé par le TEST 17 des invariants.
 
+### L'apparence : v9 pour la base, v12 pour ce qui a été retouché
+
+`web/src/assets/scenario.css` vient de `scenario_mti_dialog_v9.html`, repris
+verbatim. Quatre choses ont été portées de `scenario_mti_dialog_v12.html` à la
+demande des utilisateurs, dans une section appendue en fin de fichier plutôt que
+fondue dans le corps — la filiation v9 reste lisible, et ce qui a bougé depuis
+se lit d'un bloc :
+
+- **l'échelle typographique** (`--fs-xs` à `--fs-lg`) : v9 tournait entre 9 et
+  12 px, jugé trop petit à l'usage ;
+- **les coches** à 15 px avec `accent-color` explicite — une coche qu'on vise
+  mal est une coche qu'on coche mal ;
+- **les détails sous les menus** : la barre latérale ne disait que « — » sous un
+  processus à venir, ce qui ne distinguait pas un processus verrouillé par la
+  chronologie d'un processus réalisé par le fabricant ;
+- **les contrastes** : libellé de point à 14,5 px sur #222, processus validé sur
+  fond vert sombre au lieu d'un simple liseré.
+
+Le **minuteur**, lui, garde l'afficheur vert sur noir de
+`checklist_cart_reception_v2.html` : c'est celui que les utilisateurs préfèrent,
+et il se repère d'un coup d'œil dans une table où tout le reste est clair. Ce
+qui lui manquait, c'est le bouton d'arrêt distinct et la ligne **Début / Fin** —
+un afficheur qui donne une durée sans dire de quand à quand ne vaut rien pour la
+traçabilité.
+
+Un défaut découvert en chemin : toutes les règles de contrôle étaient préfixées
+`.chk`, le conteneur du panneau de réception. `PanneauStandard` n'a pas ce
+conteneur : le même composant `CelluleControle` s'y rendait **sans aucun
+style** — radios à la taille du navigateur, afficheur de minuteur en texte nu,
+vignettes photo sans cadre. Ces règles ne sont plus préfixées : c'est le
+composant qui porte son apparence, pas la page qui l'accueille.
+
+### L'onglet Configuration a trois niveaux de zoom
+
+Parcours, processus, point de contrôle ne se lisent pas au même grain, et les
+mélanger dans un seul écran obligeait à dérouler trois écrans entre le point
+qu'on venait de choisir et son formulaire. Trois sous-onglets :
+
+- **Parcours** — libellé, composition, et l'historique des versions avec le
+  nombre de dossiers ouverts sous chacune ;
+- **Processus** — la liste, le formulaire, les sections et leurs points ;
+- **Point de contrôle** — tous les points du parcours à plat, groupés par
+  processus, avec un **aperçu de la ligne telle que l'opérateur la verra**. Une
+  case cochée dans un formulaire ne dit pas grand-chose ; la ligne, si.
+
+Cliquer un point depuis l'onglet Processus bascule sur son sous-onglet : c'est
+le trajet que faisait perdre l'écran unique.
+
 ### L'onglet Configuration publie une version, il ne modifie rien
 
 Paramétrer un processus ou un point de contrôle **ne modifie jamais le modèle en

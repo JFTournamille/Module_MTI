@@ -1022,10 +1022,13 @@ console.log('\n24. Onglet Configuration')
 await page.locator('.onglet', { hasText: 'Configuration' }).click()
 await page.waitForTimeout(1600)
 
-const nbProcCfg = await page.locator('.cfg-p').count()
-nbProcCfg === NB_PROCESSUS
-  ? ok(`${nbProcCfg} processus listés, autant qu'au parcours actif`)
-  : ko(`${nbProcCfg} processus au lieu de ${NB_PROCESSUS}`)
+/* Trois sous-onglets : parcours, processus, point de contrôle. Les trois ne se
+   lisent pas au même niveau de zoom, et les mélanger obligeait à dérouler trois
+   écrans entre le point qu'on venait de choisir et son formulaire. */
+const sousOnglets = await page.locator('.cfg-sst-b').allTextContents()
+sousOnglets.length === 3
+  ? ok(`sous-onglets : ${sousOnglets.map((t) => t.trim()).join(' | ')}`)
+  : ko(`${sousOnglets.length} sous-onglet(s) : ${sousOnglets}`)
 
 const barre = await page.locator('.adm-bar').innerText()
 if (/en service/.test(barre) && /dossier\(s\) ouvert\(s\)/.test(barre)) {
@@ -1039,32 +1042,68 @@ const publierInactif = await page.locator('.adm-b-p').isDisabled()
 publierInactif ? ok('« Publier » inactif tant que le brouillon est intact')
   : ko('« Publier » actif sans modification')
 
-// Sélectionner la réception, puis un point à seuil : le formulaire doit suivre.
-await page.locator('.cfg-p').filter({ hasText: 'Réception (+/-' }).first().click()
+// ── Sous-onglet « Parcours » : l'historique des versions ──
+await page.locator('.cfg-sst-b', { hasText: 'Parcours' }).click()
+await page.waitForTimeout(700)
+const lignesVersions = await page.locator('.cfg-vt tbody tr').count()
+lignesVersions >= 1 ? ok(`${lignesVersions} version(s) listée(s) avec leurs dossiers`)
+  : ko('aucune version listée')
+await page.locator('.cfg-vt .cfg-actif').count() === 1
+  ? ok('une seule version marquée « En service »')
+  : ko(`${await page.locator('.cfg-vt .cfg-actif').count()} version(s) en service`)
+
+// ── Sous-onglet « Processus » ──
+await page.locator('.cfg-sst-b', { hasText: 'Processus' }).click()
+await page.waitForTimeout(700)
+const nbProcCfg = await page.locator('.cfg-l .ci').count()
+nbProcCfg === NB_PROCESSUS
+  ? ok(`${nbProcCfg} processus listés, autant qu'au parcours actif`)
+  : ko(`${nbProcCfg} processus au lieu de ${NB_PROCESSUS}`)
+
+await page.locator('.cfg-l .ci').filter({ hasText: 'Réception (+/-' }).first().click()
 await page.waitForTimeout(500)
+const nbPointsReception = await page.locator('.cfg-pt').count()
+nbPointsReception > 0 ? ok(`${nbPointsReception} points listés sous la réception`)
+  : ko('aucun point listé')
+
+/* Cliquer un point depuis le processus bascule sur son sous-onglet : c'est le
+   trajet que faisait perdre l'écran unique. */
 await page.locator('.cfg-pt').filter({ hasText: 'SMART PACK I' }).first().click()
-await page.waitForTimeout(400)
-/* Le libellé du point est dans un `<input>` : `innerText` du conteneur ne le
-   contient pas. On lit la valeur du champ, pas le texte autour. */
-const libellePoint = await page.locator('.cfg-pt-col input[type=text]').first().inputValue()
-const seuilPresent = await page.locator('.cfg-pt-col label', { hasText: "Seuil d'alarme" }).count()
+await page.waitForTimeout(600)
+const surPoint = await page.locator('.cfg-sst-b.act').innerText()
+if (/Point de contrôle/.test(surPoint)) {
+  ok('choisir un point bascule sur son sous-onglet')
+} else {
+  ko(`sous-onglet actif : ${surPoint}`)
+}
+
+// ── Sous-onglet « Point de contrôle » ──
+/* Le libellé est dans un `<input>` : `innerText` du conteneur ne le contient
+   pas. On lit la valeur du champ, pas le texte autour. */
+const libellePoint = await page.locator('.cfg-r input[type=text]').first().inputValue()
+const seuilPresent = await page.locator('.cfg-r label', { hasText: "Seuil d'alarme" }).count()
 if (/SMART PACK I/.test(libellePoint) && seuilPresent === 1) {
-  ok(`le point sélectionné ouvre son formulaire, seuil compris (« ${libellePoint} »)`)
+  ok(`le point ouvre son formulaire, seuil compris (« ${libellePoint} »)`)
 } else {
   ko(`libellé du formulaire : « ${libellePoint} », seuil affiché : ${seuilPresent}`)
 }
 
+// L'aperçu montre la ligne telle que l'opérateur la verra.
+await page.locator('.apercu-c').count() === 1
+  ? ok('un aperçu de la ligne accompagne le formulaire')
+  : ko('pas d\'aperçu de la ligne')
+
 /* Le seuil ne doit s'offrir que sur un relevé de valeur : posé sur un oui/non
    il ne déclencherait jamais rien, et l'utilisateur croirait son alarme armée. */
-await page.locator('.cfg-pt').filter({ hasText: 'Concordance étiquetage' }).first().click()
-await page.waitForTimeout(400)
-await page.locator('.cfg-pt-col label', { hasText: "Seuil d'alarme" }).count() === 0
+await page.locator('.cfg-l .ci').filter({ hasText: 'Concordance étiquetage' }).first().click()
+await page.waitForTimeout(500)
+await page.locator('.cfg-r label', { hasText: "Seuil d'alarme" }).count() === 0
   ? ok('pas de seuil proposé sur un point « oui/non »')
   : ko('un seuil est proposé sur un point qui ne peut pas le déclencher')
 
 // Modifier un libellé arme la publication, sans rien écrire encore.
-await page.locator('.cfg-pt-col input[type=text]').first().fill('Libellé posé par le navigateur')
-await page.waitForTimeout(300)
+await page.locator('.cfg-r input[type=text]').first().fill('Libellé posé par le navigateur')
+await page.waitForTimeout(400)
 await page.locator('.cfg-mod').count() === 1 &&
 !(await page.locator('.adm-b-p').isDisabled())
   ? ok('une modification arme « Publier » et signale le brouillon')
@@ -1072,16 +1111,11 @@ await page.locator('.cfg-mod').count() === 1 &&
 
 // Abandonner doit rendre le brouillon à l'état de la version en service.
 await page.locator('.adm-b', { hasText: 'Abandonner' }).click()
-await page.waitForTimeout(1400)
+await page.waitForTimeout(1500)
 await page.locator('.cfg-mod').count() === 0
   ? ok('abandonner rend le brouillon à la version en service')
   : ko('le brouillon reste marqué modifié après abandon')
 
-/* ── 25. Filtres par colonne du tableau de bord ──
-   Le point qui compte : ces filtres partent au SERVEUR. La liste est plafonnée
-   à 200 lignes ; filtrer côté client cacherait sans le dire les dossiers
-   correspondants situés au-delà du plafond. On le vérifie en comparant le
-   compte de l'écran à celui de l'API interrogée directement. */
 console.log('\n25. Filtres par colonne du tableau de bord')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)

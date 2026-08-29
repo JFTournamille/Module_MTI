@@ -52,7 +52,14 @@ réglementaires, pas à des préférences techniques.
   le SIH (ou Pharma®/CHIMIO®).
 - **Le CSS de `web/src/assets/scenario.css` est repris verbatim** de
   `docs/reference/scenario_mti_dialog_v9.html`. Le rendu a été validé par les
-  utilisateurs : ne pas le retoucher sans raison explicite.
+  utilisateurs : ne pas le retoucher sans raison explicite. Les retouches
+  demandées depuis vivent dans une section appendue en fin de fichier — police,
+  coches, contrastes et détails de la barre latérale repris de la v12 ; le
+  minuteur garde l'afficheur de `checklist_cart_reception_v2.html`.
+- **Les styles des contrôles ne sont plus préfixés `.chk`.** Ce préfixe était le
+  conteneur du seul panneau de réception : `PanneauStandard` ne l'a pas, et le
+  même composant s'y rendait sans style. C'est le composant qui porte son
+  apparence.
 
 ## Modèle de données du parcours
 
