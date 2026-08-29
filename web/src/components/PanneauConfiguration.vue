@@ -24,7 +24,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useConfiguration, TYPES_POINT } from '../stores/configuration.js'
 
 const store = useConfiguration()
-onMounted(() => store.charger())
+/* `garderBrouillon` : ce panneau est démonté à chaque changement d'onglet, et
+   ce `onMounted` rappelait `charger()` — revenir une seconde au tableau de bord
+   effaçait donc tout le travail d'édition en cours, sans un mot. */
+onMounted(() => store.charger({ garderBrouillon: true }))
 
 const sousOnglet = ref('processus')
 const SOUS_ONGLETS = [
@@ -75,7 +78,9 @@ const nbPoints = computed(() => store.tousLesPoints.length)
           {{ store.versionActive.nbDossiers }} dossier(s) ouvert(s) sous cette version
         </span>
       </template>
-      <span v-if="store.modifie" class="cfg-mod">● brouillon modifié</span>
+      <span v-if="store.modifie" class="cfg-mod">
+        ● brouillon modifié<template v-if="store.restaure"> — repris de ce poste</template>
+      </span>
       <span style="flex:1"></span>
       <button class="adm-b" :disabled="!store.modifie" @click="store.annuler()">
         Abandonner les modifications
@@ -96,6 +101,13 @@ const nbPoints = computed(() => store.tousLesPoints.length)
     </div>
     <div v-else-if="store.erreur" class="adm-msg adm-msg-ko">{{ store.erreur }}</div>
     <div v-if="store.message" class="adm-msg adm-msg-ok">{{ store.message }}</div>
+    <!-- Un brouillon retrouvé doit se signaler : sans cela, l'écran affiche des
+         modifications que l'utilisateur ne se souvient pas d'avoir laissées, et
+         il ne sait pas qu'elles ne sont toujours pas publiées. -->
+    <div v-if="store.restaure" class="adm-msg adm-msg-hs">
+      Brouillon non publié retrouvé sur ce poste et rechargé. Il n'est enregistré
+      nulle part d'autre : « Publier » le met en service, « Abandonner » le jette.
+    </div>
 
     <div v-if="store.brouillon" class="cfg">
 

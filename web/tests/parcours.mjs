@@ -1167,6 +1167,7 @@ await page.locator('.cfg-r label', { hasText: "Seuil d'alarme" }).count() === 0
   : ko('un seuil est proposé sur un point qui ne peut pas le déclencher')
 
 // Modifier un libellé arme la publication, sans rien écrire encore.
+const libelleOrigine = await page.locator('.cfg-r input[type=text]').first().inputValue()
 await page.locator('.cfg-r input[type=text]').first().fill('Libellé posé par le navigateur')
 await page.waitForTimeout(400)
 await page.locator('.cfg-mod').count() === 1 &&
@@ -1174,7 +1175,93 @@ await page.locator('.cfg-mod').count() === 1 &&
   ? ok('une modification arme « Publier » et signale le brouillon')
   : ko('la modification n\'arme pas la publication')
 
+/* Un brouillon modifié doit SURVIVRE à un changement d'onglet. Le panneau est
+   démonté à chaque bascule et son `onMounted` rechargeait la version en
+   service : revenir une seconde au tableau de bord effaçait tout le travail
+   d'édition, sans un mot. */
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('.onglet', { hasText: 'Configuration' }).click()
+await page.waitForTimeout(1500)
+await page.locator('.cfg-mod').count() === 1
+  ? ok('le brouillon survit à un aller-retour par un autre onglet')
+  : ko('changer d\'onglet efface le brouillon en cours')
+
+// … et à un rechargement complet : le brouillon est recopié sur le poste.
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1800)
+await page.locator('.onglet', { hasText: 'Configuration' }).click()
+await page.waitForTimeout(1600)
+await page.locator('.cfg-mod').count() === 1
+  ? ok('le brouillon est retrouvé après un rechargement de la page')
+  : ko('un rechargement perd le brouillon non publié')
+
+/* LE contrôle qui manquait : cliquer sur « Publier ». La suite vérifiait que
+   le bouton s'ARMAIT, jamais qu'un clic aboutissait — et il n'aboutissait pas.
+   Le code du parcours était masqué dans le store par une déstructuration, la
+   requête partait vers `/api/modeles/undefined/versions`, et l'utilisateur
+   lisait « Aucun modèle pour le code undefined ». La publication n'a jamais
+   fonctionné depuis l'écran, alors que la route, elle, était testée. */
+await page.locator('.cfg-sst-b', { hasText: 'Parcours' }).click()
+await page.waitForTimeout(600)
+const versionAvant = Number(
+  (await page.locator('.cfg-v').innerText()).match(/Version (\d+) en service/)?.[1])
+await page.locator('.adm-b-p').click()
+await page.waitForTimeout(2500)
+const erreurPublication = await page.locator('.adm-msg-ko').count()
+if (erreurPublication) {
+  ko(`publication refusée : ${(await page.locator('.adm-msg-ko').innerText()).trim()}`)
+} else {
+  const versionApres = Number(
+    (await page.locator('.cfg-v').innerText()).match(/Version (\d+) en service/)?.[1])
+  versionApres === versionAvant + 1
+    ? ok(`« Publier » met la version ${versionApres} en service (depuis la ${versionAvant})`)
+    : ko(`version après publication : ${versionApres} au lieu de ${versionAvant + 1}`)
+  const confirme = await page.locator('.adm-msg-ok').innerText().catch(() => '')
+  if (/publiée/i.test(confirme)) {
+    ok(`la publication se confirme à l'écran : « ${confirme.trim().slice(0, 70)}… »`)
+  } else {
+    ko(`aucune confirmation lisible : « ${confirme} »`)
+  }
+  await page.locator('.cfg-mod').count() === 0
+    ? ok('le brouillon publié n\'est plus marqué modifié')
+    : ko('le brouillon reste marqué modifié après publication')
+
+  /* Le libellé publié doit se retrouver dans le modèle servi par l'API : sans
+     cela l'écran se féliciterait d'une publication qui n'a rien changé. */
+  const actif = await fetch(`${base}/api/modeles/PARCOURS_CART_AUTOLOGUE`).then((x) => x.json())
+  const trouve = (actif.processus ?? []).flatMap((p) => p.sections ?? [])
+    .flatMap((sc) => sc.points ?? [])
+    .some((pt) => pt.libelle === 'Libellé posé par le navigateur')
+  trouve ? ok('le libellé publié se relit dans le modèle en service')
+    : ko('le modèle en service ne porte pas la modification publiée')
+}
+
+/* Remise en état : la modification publiée doit être défaite, sinon la suite
+   ne se rejoue pas — le groupe s'attend à trouver le libellé d'origine. */
+await page.locator('.cfg-sst-b', { hasText: 'Point de contrôle' }).click()
+await page.waitForTimeout(700)
+await page.locator('.cfg-l .ci').filter({ hasText: 'Libellé posé par le navigateur' })
+  .first().click()
+await page.waitForTimeout(500)
+await page.locator('.cfg-r input[type=text]').first().fill(libelleOrigine)
+await page.waitForTimeout(400)
+await page.locator('.adm-b-p').click()
+await page.waitForTimeout(2500)
+const remisEnEtat = await fetch(`${base}/api/modeles/PARCOURS_CART_AUTOLOGUE`)
+  .then((x) => x.json())
+const libelleRetrouve = (remisEnEtat.processus ?? []).flatMap((p) => p.sections ?? [])
+  .flatMap((sc) => sc.points ?? [])
+  .some((pt) => pt.libelle === libelleOrigine)
+libelleRetrouve
+  ? ok(`libellé d'origine républié (« ${libelleOrigine.slice(0, 40)} ») — la suite reste rejouable`)
+  : ko('le libellé d\'origine n\'a pas été rétabli : la suite ne rejouera pas')
+
 // Abandonner doit rendre le brouillon à l'état de la version en service.
+await page.locator('.cfg-sst-b', { hasText: 'Point de contrôle' }).click()
+await page.waitForTimeout(600)
+await page.locator('.cfg-r input[type=text]').first().fill('Modification à abandonner')
+await page.waitForTimeout(400)
 await page.locator('.adm-b', { hasText: 'Abandonner' }).click()
 await page.waitForTimeout(1500)
 await page.locator('.cfg-mod').count() === 0

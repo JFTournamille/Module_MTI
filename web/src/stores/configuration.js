@@ -35,6 +35,29 @@ export const TYPES_POINT = [
 
 const copie = (x) => JSON.parse(JSON.stringify(x))
 
+/* Le brouillon survit à un rechargement.
+   Éditer un parcours de quinze processus prend du temps ; le brouillon ne
+   vivait qu'en mémoire, si bien qu'un rechargement, un onglet fermé par
+   mégarde ou une session expirée effaçaient tout le travail sans un mot. Il
+   est donc recopié dans le stockage local à chaque modification.
+   Ce n'est PAS une sauvegarde : rien n'est publié tant qu'on n'a pas cliqué
+   « Publier », et le brouillon reste propre au poste. C'est un filet. */
+const CLE_BROUILLON = 'mti.configuration.brouillon'
+
+function lireBrouillonLocal () {
+  try {
+    const brut = localStorage.getItem(CLE_BROUILLON)
+    return brut ? JSON.parse(brut) : null
+  } catch { return null }
+}
+
+function ecrireBrouillonLocal (valeur) {
+  try {
+    if (valeur) localStorage.setItem(CLE_BROUILLON, JSON.stringify(valeur))
+    else localStorage.removeItem(CLE_BROUILLON)
+  } catch { /* navigation privée, quota atteint : on continue sans filet */ }
+}
+
 export const useConfiguration = defineStore('configuration', () => {
   /** Parcours en cours d'édition, et liste des parcours disponibles. */
   const code = ref(CODE_DEFAUT)
@@ -88,9 +111,44 @@ export const useConfiguration = defineStore('configuration', () => {
 
   /** Vrai dès que le brouillon diffère de la version dont il est issu. */
   const modifie = ref(false)
-  const marquer = () => { modifie.value = true; message.value = '' }
+  /** Vrai quand le brouillon a été repris du stockage local, pas du serveur. */
+  const restaure = ref(false)
 
-  async function charger () {
+  /* L'écriture est différée : `marquer()` part à chaque frappe dans un champ,
+     et sérialiser quinze processus à chaque caractère ferait ramer la saisie
+     pour rien. Une seconde d'inactivité suffit à ne rien perdre. */
+  let minuteurEcriture = null
+  function memoriser () {
+    clearTimeout(minuteurEcriture)
+    minuteurEcriture = setTimeout(() => {
+      if (modifie.value && brouillon.value) {
+        ecrireBrouillonLocal({
+          code: code.value, versionBase: versionBase.value, brouillon: brouillon.value
+        })
+      }
+    }, 800)
+  }
+
+  const marquer = () => { modifie.value = true; message.value = ''; memoriser() }
+
+  /** Oublie le filet : après une publication, ou un abandon délibéré. */
+  function oublierBrouillonLocal () {
+    clearTimeout(minuteurEcriture)
+    ecrireBrouillonLocal(null)
+    restaure.value = false
+  }
+
+  /**
+   * Charge la version en service et en fait un brouillon.
+   *
+   * `garderBrouillon` protège un travail en cours : le panneau est démonté à
+   * chaque changement d'onglet, et son `onMounted` rappelait cette fonction —
+   * revenir au tableau de bord une seconde effaçait donc silencieusement une
+   * demi-heure d'édition. Un brouillon modifié n'est plus écrasé ; seul un
+   * abandon explicite, une publication ou un changement de parcours le remplace.
+   */
+  async function charger ({ garderBrouillon = false } = {}) {
+    if (garderBrouillon && modifie.value && brouillon.value) return
     chargement.value = true
     erreur.value = ''
     try {
@@ -117,8 +175,28 @@ export const useConfiguration = defineStore('configuration', () => {
       versionBase.value = m.version
       brouillon.value = copie(m)
       modifie.value = false
+      restaure.value = false
       indisponible.value = false
       iProcessus.value = 0; iSection.value = 0; iPoint.value = 0
+
+      /* Reprise du filet, si et seulement s'il porte sur CE parcours et sur la
+         version qui est toujours en service. Un brouillon bâti sur une version
+         que quelqu'un d'autre a depuis remplacée ne se rejoue pas : le publier
+         écraserait ses modifications sans que personne l'ait voulu. Dans ce
+         cas on l'écarte, en le disant. */
+      const filet = lireBrouillonLocal()
+      if (filet && filet.code === code.value) {
+        if (filet.versionBase === versionBase.value) {
+          brouillon.value = filet.brouillon
+          modifie.value = true
+          restaure.value = true
+        } else {
+          oublierBrouillonLocal()
+          message.value = `Un brouillon non publié a été écarté : il partait de la ` +
+            `version ${filet.versionBase}, or la version ${versionBase.value} est ` +
+            'entre-temps en service. Le republier aurait effacé ce qu\'elle apporte.'
+        }
+      }
     } catch (e) {
       indisponible.value = true
       erreur.value = e.message || 'API injoignable.'
@@ -251,12 +329,21 @@ export const useConfiguration = defineStore('configuration', () => {
 
   // ── Publication ───────────────────────────────────────────────────────────
 
-  /** Publie le brouillon comme version suivante, et la rend active. */
+  /**
+   * Publie le brouillon comme version suivante, et la rend active.
+   *
+   * Le `code` du brouillon est écarté sous un AUTRE nom que `code` : le
+   * déstructurer tel quel masquait la ref du store dans toute la fonction, si
+   * bien que `code.value` — appliqué à une chaîne — valait `undefined`, et que
+   * la requête partait vers `/api/modeles/undefined/versions`. La publication
+   * n'a jamais abouti, et l'utilisateur lisait « Aucun modèle pour le code
+   * undefined », message qui ne désigne rien de ce qu'il a sous les yeux.
+   */
   async function publier () {
     if (!brouillon.value) return false
     erreur.value = ''
     message.value = ''
-    const { code, version, actif, ...definition } = brouillon.value
+    const { code: _code, version, actif, ...definition } = brouillon.value
     const r = await appel(`/api/modeles/${code.value}/versions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -267,20 +354,28 @@ export const useConfiguration = defineStore('configuration', () => {
       return false
     }
     const publie = await r.json()
+    oublierBrouillonLocal()
+    await charger()
+    /* Le message est posé APRÈS le rechargement : `charger()` remet
+       `message` à zéro, et l'utilisateur n'aurait rien vu de la publication
+       qu'il vient de déclencher. */
     message.value = `Version ${publie.version} publiée et mise en service. ` +
       'Les dossiers déjà ouverts conservent leur définition figée.'
-    await charger()
     return true
   }
 
   /** Abandonne le brouillon et repart de la version active. */
-  async function annuler () { await charger() }
+  async function annuler () {
+    oublierBrouillonLocal()
+    await charger()
+  }
 
   /** Change de parcours. Le brouillon en cours est abandonné : le garder d'un
    *  parcours à l'autre publierait les processus de l'un sous le code de
    *  l'autre. */
   async function choisirParcours (nouveau) {
     if (nouveau === code.value) return
+    oublierBrouillonLocal()
     code.value = nouveau
     await charger()
   }
@@ -288,7 +383,7 @@ export const useConfiguration = defineStore('configuration', () => {
   return {
     code, parcoursDisponibles, choisirParcours,
     brouillon, versionBase, versions, versionActive, chargement, erreur, message,
-    indisponible, modifie,
+    indisponible, modifie, restaure,
     iProcessus, iSection, iPoint,
     processus, processusCourant, sectionCourante, pointCourant,
     tousLesPoints, choisirPointAbsolu,
