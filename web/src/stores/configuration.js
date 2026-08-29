@@ -60,6 +60,27 @@ export const useConfiguration = defineStore('configuration', () => {
   const pointCourant = computed(() =>
     sectionCourante.value?.points?.[iPoint.value] ?? null)
 
+  /* Tous les points du parcours, à plat et groupés par processus : c'est la
+     liste de l'onglet « Point de contrôle », où l'on cherche un point sans
+     savoir dans quel processus il se trouve. La position complète est portée
+     par chaque entrée — un point ne se désigne pas par son rang seul. */
+  const tousLesPoints = computed(() => {
+    const liste = []
+    processus.value.forEach((p, iP) => {
+      (p.sections ?? []).forEach((sc, iS) => {
+        (sc.points ?? []).forEach((pt, iPt) => {
+          liste.push({ iP, iS, iPt, processus: p, section: sc, point: pt })
+        })
+      })
+    })
+    return liste
+  })
+
+  /** Sélectionne un point où qu'il soit dans le parcours. */
+  function choisirPointAbsolu (e) {
+    iProcessus.value = e.iP; iSection.value = e.iS; iPoint.value = e.iPt
+  }
+
   /* Nombre de dossiers ouverts sous la version active : c'est ce qui dit à
      l'utilisateur ce que publier ne changera PAS. Sans ce chiffre, « publier »
      a l'air d'une modification rétroactive. */
@@ -270,6 +291,7 @@ export const useConfiguration = defineStore('configuration', () => {
     indisponible, modifie,
     iProcessus, iSection, iPoint,
     processus, processusCourant, sectionCourante, pointCourant,
+    tousLesPoints, choisirPointAbsolu,
     charger, choisirProcessus, choisirPoint, marquer,
     ajouterProcessus, retirerProcessus, deplacerProcessus,
     ajouterSection, retirerSection, ajouterPoint, retirerPoint,

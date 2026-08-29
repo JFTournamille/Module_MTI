@@ -19,6 +19,14 @@ const props = defineProps({
 const store = useParcours()
 const saisie = computed(() => store.saisie(props.cle, props.point))
 const alarme = computed(() => store.alarme(props.cle, props.point))
+
+/** Heure d'un jalon de minuteur, ou « — » tant qu'il n'est pas posé. */
+function heure (epoch) {
+  if (!epoch) return '—'
+  const d = new Date(epoch)
+  const p = (v) => String(v).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
 </script>
 
 <template>
@@ -63,17 +71,28 @@ const alarme = computed(() => store.alarme(props.cle, props.point))
     >{{ photo.presente ? '✅' : '📷' }}</div>
   </div>
 
-  <!-- Minuteur -->
-  <div v-else-if="point.type === 'timer'" class="ctrow">
-    <span class="ctd">{{ store.dureeMinuteur(cle) }}</span>
-    <button
-      class="cbt" :disabled="lectureSeule || store.minuteurEnCours(cle)"
-      @click="store.demarrerMinuteur(cle)"
-    >▶ T0</button>
-    <button
-      v-if="store.minuteurEnCours(cle)" class="cbt"
-      @click="store.arreterMinuteur(cle)"
-    >■</button>
+  <!-- Minuteur.
+       Repris de `checklist_cart_reception_v2.html` : afficheur monospace vert
+       sur noir, ▶ T0 pour lancer, ■ Fin pour arrêter, et la ligne Début / Fin
+       en dessous. Cette dernière manquait à l'application : sans elle,
+       l'afficheur donne une durée sans dire de quand à quand, ce qui est
+       précisément ce qu'un relevé de traçabilité doit établir. -->
+  <div v-else-if="point.type === 'timer'">
+    <div class="ctrow">
+      <button
+        class="cbt" :disabled="lectureSeule || !!saisie.timerDebut"
+        @click="store.demarrerMinuteur(cle)"
+      >▶ T0</button>
+      <span class="ctd">{{ store.dureeMinuteur(cle) }}</span>
+      <button
+        class="cbt stop" :disabled="lectureSeule || !store.minuteurEnCours(cle)"
+        @click="store.arreterMinuteur(cle)"
+      >■ Fin</button>
+    </div>
+    <div class="ctse">
+      Début : <b>{{ heure(saisie.timerDebut) }}</b>&nbsp;&nbsp;
+      Fin : <b>{{ heure(saisie.timerFin) }}</b>
+    </div>
   </div>
 
   <!-- Texte -->
