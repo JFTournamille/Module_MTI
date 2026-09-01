@@ -533,8 +533,12 @@ if (await selOp.count() === 0) {
   arrivee === autre ? ok(`opérateur changé : « ${depart.trim()} » → « ${arrivee.trim()} »`)
     : ko(`opérateur inchangé (${arrivee})`)
 
-  // La colonne « Opérateur » de la table doit suivre : sinon le changement
-  // serait cosmétique et les saisies porteraient le nom de quelqu'un d'autre.
+  /* La colonne « Opérateur » de la table doit suivre : sinon le changement
+     serait cosmétique et les saisies porteraient le nom de quelqu'un d'autre.
+     Elle n'existe que sur la table de réception — le groupe précédent a pu
+     laisser un autre processus sélectionné, on y revient explicitement plutôt
+     que de compter sur l'état laissé par ailleurs. */
+  await allerAuProcessus('Réception (+/-')
   const colonne = await page.locator('.main input[readonly]').first().inputValue()
   autre.startsWith(colonne) ? ok(`la colonne « Opérateur » suit : ${colonne}`)
     : ko(`colonne « ${colonne} » ≠ opérateur « ${autre} »`)
