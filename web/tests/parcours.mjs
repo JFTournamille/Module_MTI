@@ -790,7 +790,11 @@ console.log('\n19. Commande MTI (processus amont)')
 await allerAuScenario()
 await allerAuProcessus('Commande MTI')
 
-const nomsProc = await page.locator('.proc .pname').allTextContents()
+/* Le libellé porte son rang depuis la reprise du motif v12 (« 4. Réception
+   (+/- préallocation) ») : on le retire avant de comparer, sinon un ancrage
+   sur le début du nom ne trouve plus rien. */
+const nomsProc = (await page.locator('.proc .pname').allTextContents())
+  .map((n) => n.trim().replace(/^\d+\.\s*/, ''))
 const rangCommande = nomsProc.findIndex((n) => /Commande MTI/.test(n))
 const rangReception = nomsProc.findIndex((n) => /^Réception \(/.test(n))
 rangCommande >= 0 && rangCommande < rangReception
