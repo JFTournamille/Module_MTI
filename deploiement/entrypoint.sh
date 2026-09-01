@@ -144,6 +144,17 @@ if [ "${PURGER_DEMO:-}" = "oui" ]; then
   fi
 fi
 
+# ── Porte d'entrée de la phase de test ───────────────────────────────────────
+#
+# Avant nginx, jamais après : une application servie ne serait-ce qu'une seconde
+# sans sa porte est une application ouverte. Le script s'arrête en erreur si la
+# configuration est à moitié faite, et le conteneur avec lui — mieux vaut une
+# application injoignable qu'une application ouverte qu'on croit fermée.
+if ! /usr/local/bin/acces-basique.sh; then
+  journal "✗ porte d'entrée mal configurée (voir ci-dessus) — arrêt du conteneur."
+  exit 1
+fi
+
 journal "démarrage de l'API Node sur 127.0.0.1:3000"
 node /app/src/server.js &
 PID_NODE=$!
