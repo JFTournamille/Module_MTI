@@ -24,9 +24,13 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
 
 <template>
   <div class="proc-head">
-    <div class="ph-num">{{ processus.n }}</div>
+    <!-- Le rang est DANS le nom, comme dans la barre latérale et comme en v12.
+         La pastille ronde qui le portait affichait `processus.n`, champ qui
+         n'est pas repris à l'ouverture d'un dossier : elle était donc vide
+         depuis toujours, un disque de 26 px qui ne disait rien. Le rang est
+         une position dans la liste, il se lit de `store.selection`. -->
     <div>
-      <div class="ph-name">{{ processus.nom }}</div>
+      <div class="ph-name">{{ store.selection + 1 }}. {{ processus.nom }}</div>
       <div class="ph-sub">{{ processus.operateur ?? '' }}</div>
     </div>
     <div class="status-badge" :class="classeEtat[processus.etat]">
