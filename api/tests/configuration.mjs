@@ -111,23 +111,36 @@ delete modifie.version
 delete modifie.actif
 
 r = await j('POST', `/api/modeles/${CODE}/versions`, { definition: modifie })
-r.statut === 201 && r.corps.version === versionDepart + 1
-  ? ok(`version ${r.corps.version} publiée (${r.corps.nbProcessus} processus)`)
+/* Le numéro suivant se calcule sur le MAXIMUM en base, pas sur la version en
+   service : une version publiée ne se réutilise jamais. Sur une base où le
+   dépôt a réactivé une version basse, la suivante n'est donc pas
+   « active + 1 » — l'éprouver serait éprouver l'état de la base, pas le
+   comportement. Ce qui doit être vrai : la version publiée dépasse celle d'où
+   l'on partait, et c'est elle qui prend le service. */
+const versionPubliee = r.corps?.version
+r.statut === 201 && versionPubliee > versionDepart
+  ? ok(`version ${versionPubliee} publiée (${r.corps.nbProcessus} processus)`)
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 
 r = await j('GET', `/api/modeles/${CODE}`)
-r.corps.version === versionDepart + 1 &&
+r.corps.version === versionPubliee &&
 r.corps.processus[0].sections[0].points[0].libelle === 'LIBELLÉ POSÉ PAR LE TEST' &&
 !r.corps.processus.some((p) => p.code === retire)
   ? ok(`le modèle actif porte la modification et n'a plus « ${retire} »`)
   : ko(`modèle actif : v${r.corps.version}, ${r.corps.processus.length} processus`)
 
-/* L'index d'identification patient est un RANG : il doit avoir suivi le retrait
-   du processus, sinon il désignerait le voisin. */
-const iFab = r.corps.processus.findIndex((p) => p.code === 'MISE_EN_FABRICATION')
-r.corps.indexIdentificationPatient === iFab
-  ? ok(`indexIdentificationPatient recalculé → ${iFab} (${r.corps.processus[iFab].code})`)
-  : ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iFab}`)
+/* L'index d'identification patient est un RANG déduit d'un CODE : il doit
+   avoir suivi le retrait du processus, sinon il désignerait le voisin. C'est
+   exactement le décalage qu'a produit le retrait de l'aphérèse en v3. */
+const codePivot = r.corps.codeIdentificationPatient
+const iPivot = r.corps.processus.findIndex((p) => p.code === codePivot)
+if (!codePivot) {
+  console.log('  · le parcours ne déclare pas de pivot d\'identification')
+} else if (r.corps.indexIdentificationPatient === iPivot) {
+  ok(`indexIdentificationPatient recalculé → ${iPivot} (${codePivot})`)
+} else {
+  ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iPivot} pour « ${codePivot} »`)
+}
 
 console.log('\n4. Le dossier ouvert n\'a pas bougé — l\'invariant qui compte')
 r = await j('GET', `/api/dossiers/${cible.id}`)

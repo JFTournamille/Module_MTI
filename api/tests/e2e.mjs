@@ -29,9 +29,12 @@ const modeles = (await j('GET', '/api/modeles')).corps
 const modeleActif = modeles.find((m) => m.code === 'PARCOURS_CART_AUTOLOGUE')
 const NB_PROCESSUS = modeleActif?.nbProcessus
 console.log(`\n0. Modèle actif : ${modeleActif?.code} v${modeleActif?.version}`)
-NB_PROCESSUS >= 12
+/* Pas de seuil en dur sur le nombre de processus : il a valu 12, puis 15, puis
+   11 quand le suivi fabricant a été replié dans la commande. Ce qui doit être
+   vrai, c'est qu'un modèle actif existe et porte des processus. */
+NB_PROCESSUS >= 1
   ? ok(`${NB_PROCESSUS} processus au parcours actif`)
-  : ko(`modèle actif introuvable ou incomplet : ${JSON.stringify(modeles)}`)
+  : ko(`modèle actif introuvable ou vide : ${JSON.stringify(modeles.map((m) => m.code))}`)
 
 console.log('\n1. Création d\'un dossier')
 const ref = `DOS-E2E-${Date.now()}`
@@ -475,22 +478,46 @@ noms.some((n) => /Aphérèse/i.test(n))
   ? ko(`l'aphérèse est encore un processus du parcours : ${noms.filter((n) => /Aphérèse/i.test(n))}`)
   : ok("l'aphérèse ne figure plus comme processus — c'est un jalon d'en-tête")
 
-// L'identité patient reste imposée par la mise en fabrication : son index a
-// bougé avec l'insertion des processus amont, il doit avoir suivi.
-const iFab = noms.findIndex((n) => /Mise en fabrication/.test(n))
-r.corps.indexIdentificationPatient === iFab
-  ? ok(`identité patient exigée à partir du rang ${iFab + 1} (${noms[iFab]})`)
-  : ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iFab}`)
+/* Bascule d'anonymat : c'est un RANG, mais il se déduit d'un CODE. Le parcours
+   désigne son processus pivot par `codeIdentificationPatient` — « mise en
+   fabrication » le portait jusqu'en v4, le rattachement patient depuis. Ce
+   qu'on éprouve n'est donc pas un rang en dur, mais que le rang publié
+   corresponde bien au code déclaré : c'est exactement le décalage qu'a produit
+   le retrait de l'aphérèse en v3. */
+const codePivot = r.corps.codeIdentificationPatient
+const iPivot = r.corps.processus.findIndex((p) => p.code === codePivot)
+if (!codePivot) {
+  console.log('  · le parcours ne déclare pas de pivot d\'identification — nominatif d\'emblée')
+} else if (iPivot < 0) {
+  ko(`codeIdentificationPatient « ${codePivot} » absent du parcours`)
+} else if (r.corps.indexIdentificationPatient === iPivot) {
+  ok(`identité patient exigée à partir du rang ${iPivot + 1} (${noms[iPivot]}), ` +
+     `déduit du code « ${codePivot} »`)
+} else {
+  ko(`index ${r.corps.indexIdentificationPatient} au lieu de ${iPivot} pour « ${codePivot} »`)
+}
 
 // Les jalons calendaires ne doivent pas être du texte libre : sans type, ils
 // seraient intriables et incomparables.
 const pointsCommande = r.corps.processus[iCommande].sections.flatMap((sc) => sc.points)
 const jalons = pointsCommande.filter((pt) => pt.type === 'date').map((pt) => pt.libelle)
-/* Deux jalons, plus trois : la date d'aphérèse a quitté la commande en v4. Elle
-   vit en en-tête du dossier, et la laisser ici en aurait fait un doublon dont
-   rien ne dit lequel fait foi. */
-jalons.length === 2 ? ok(`2 jalons de type « date » : ${jalons.join(' · ')}`)
-  : ko(`jalons date : ${JSON.stringify(jalons)}`)
+/* Pas de compte en dur — il a changé à chaque version de la commande. Ce qui
+   doit rester vrai, c'est qu'un jalon calendaire soit TYPÉ « date » : en texte
+   libre, il serait intriable et incomparable. On cherche donc les points qui
+   annoncent une date dans leur libellé et n'en portent pas le type. */
+const fausseDate = pointsCommande.filter(
+  (pt) => /^date\b/i.test(pt.libelle) && pt.type !== 'date')
+jalons.length >= 1 && !fausseDate.length
+  ? ok(`${jalons.length} jalon(s) de type « date », aucun en texte libre : ${jalons.join(' · ')}`)
+  : ko(`jalons date : ${JSON.stringify(jalons)} ; ` +
+       `mal typés : ${JSON.stringify(fausseDate.map((pt) => pt.libelle))}`)
+
+/* La date d'aphérèse a quitté la commande en v4 : elle vit en en-tête du
+   dossier, et la laisser ici en ferait un doublon dont rien ne dit lequel fait
+   foi. */
+pointsCommande.some((pt) => /aphérèse|apherese/i.test(pt.libelle))
+  ? ko('la commande porte encore un point d\'aphérèse')
+  : ok("la commande ne porte plus de point d'aphérèse")
 jalons.some((l) => /phérèse/i.test(l))
   ? ko(`la date d'aphérèse est encore un point de la commande : ${jalons}`)
   : ok("la date d'aphérèse ne figure plus dans la commande")

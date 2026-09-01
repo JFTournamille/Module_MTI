@@ -154,9 +154,9 @@ const SCENARIOS = [
      porte donc une désignation libre et `produit_id` à NULL. C'est voulu — un
      MTI commandé avant d'être référencé est un cas réel, et c'est le seul
      scénario qui exerce ce chemin. */
-  { ref: '0006', produit: 'ABECMA®', lot: 'LOT-AB-2506-A', enCours: 'MISE_EN_FABRICATION',
+  { ref: '0006', produit: 'ABECMA®', lot: 'LOT-AB-2506-A', enCours: 'PREPARATION',
     patient: 2, prescription: true, jours: 16,
-    note: 'produit hors catalogue ; mise en fabrication : identité patient exigée' },
+    note: 'produit hors catalogue ; préparation en UPC, dossier nominatif' },
   { ref: '0007', produit: 'YESCARTA®', lot: 'LOT-YE-2405-F', enCours: 'RECEPTION_SERVICE',
     patient: 3, prescription: true, contresigne: true, jours: 21,
     note: 'produit revenu du fabricant, réception service en cours',

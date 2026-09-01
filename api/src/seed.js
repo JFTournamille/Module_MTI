@@ -21,6 +21,11 @@ const lire = async (f) => JSON.parse(await readFile(join(racine, 'shared', f), '
  * La version la plus haute de chaque code devient l'active. Les autres sont
  * chargées ou rafraîchies, puis désactivées.
  */
+/* `--adopter` : remettre en service la version du dépôt, même si l'application
+   en a publié une plus récente. À n'employer qu'en connaissance de cause — la
+   configuration faite à l'écran passe alors hors service. */
+const adopter = process.argv.includes('--adopter')
+
 const fichiersParcours = (await readdir(join(racine, 'shared')))
   .filter((f) => /^parcours-.*\.json$/.test(f))
   .sort()
@@ -50,6 +55,37 @@ try {
     )
   }
   for (const [code, active] of versionActive) {
+    /* Une version publiée DEPUIS L'APPLICATION ne se fait pas démonter par un
+       fichier.
+
+       Le seed activait aveuglément la version la plus haute de `shared/`. Or
+       l'onglet Configuration publie des versions qui montent librement : un
+       établissement qui en était à la v22 se retrouvait ramené à la v5 au
+       redéploiement suivant, sans un mot — sa configuration passait hors
+       service et le parcours en usage changeait sous lui. C'est une perte de
+       travail silencieuse, le pire genre.
+
+       Règle : le fichier amorce, l'application fait autorité ensuite. La
+       version du fichier est toujours chargée — elle reste disponible — mais
+       elle ne prend le service que si rien de plus récent n'a été publié.
+       `--adopter` force la reprise, pour l'adopter délibérément. */
+    /* La comparaison porte sur la version EN SERVICE, pas sur la plus haute
+       en base : après une adoption, les versions publiées plus tard restent
+       stockées sans être en service, et se fier au maximum ferait annoncer
+       « hors service » une version qui est précisément en service. */
+    const { rows: [etat] } = await client.query(
+      `SELECT version FROM mti.modele_parcours WHERE code = $1 AND actif`, [code])
+    const enService = etat ? Number(etat.version) : null
+    const publieeApres = enService !== null && enService > active.version
+
+    if (publieeApres && !adopter) {
+      console.log(
+        `· modèle ${code} : v${active.version} chargée HORS SERVICE — ` +
+        `v${enService} publiée depuis l'application reste en service.`)
+      console.log('  Pour adopter la version du dépôt : node src/seed.js --adopter')
+      continue
+    }
+
     await client.query(
       'UPDATE mti.modele_parcours SET actif = false WHERE code = $1 AND version <> $2',
       [code, active.version])
@@ -59,6 +95,7 @@ try {
     const retirees = parcours.filter((p) => p.code === code && p.version !== active.version)
     console.log(
       `✓ modèle ${code} v${active.version} actif — ${active.processus.length} processus` +
+      (publieeApres ? ` (adoptée : v${enService} retirée du service)` : '') +
       (retirees.length
         ? ` (v${retirees.map((p) => p.version).join(', v')} conservée(s) hors service)`
         : ''))

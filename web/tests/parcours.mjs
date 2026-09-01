@@ -62,6 +62,18 @@ const ptsReception = (defModele?.processus ?? [])
   .find((p) => p.gabarit === 'reception')?.sections ?? []
 /** Copies d'un point : son propre compte s'il en impose un, sinon `n`. */
 const copiesDe = (pt, n) => Number(pt.exemplaires) || (pt.multi ? n : 1)
+/* Le processus à partir duquel le dossier devient nominatif. Il était nommé en
+   dur (« Mise en fabrication ») ; ce processus n'existe plus depuis que le
+   suivi fabricant est passé en sections de la commande. Le parcours désigne
+   maintenant son pivot lui-même, et la suite le LIT plutôt que de le
+   supposer — c'est aussi ce qui rend ces contrôles valables sur les autres
+   parcours. */
+const iPivot = (defModele?.processus ?? [])
+  .findIndex((p) => p.code === defModele?.codeIdentificationPatient)
+const nomPivot = iPivot >= 0 ? defModele.processus[iPivot].nom : null
+/** Un processus AVANT le pivot, où le dossier doit encore être anonyme. */
+const nomAvantPivot = iPivot > 0 ? defModele.processus[iPivot - 1].nom : null
+
 const NB_SECTIONS = ptsReception.length
 const nbLignesAttendues = (n) => ptsReception.flatMap((sc) => sc.points)
   .reduce((t, pt) => t + copiesDe(pt, n), 0)
@@ -70,6 +82,15 @@ const NB_OBLIGATOIRES = ptsReception.flatMap((sc) => sc.points)
 
 /** Sélectionne un processus par son NOM : les index bougent d'une version du
  *  parcours à l'autre, les noms sont stables. */
+/** Les comptes vivent sous « Codifications », plus dans un onglet à eux :
+ *  quatre référentiels y sont regroupés, dont trois nouveaux. */
+async function allerAuxUtilisateurs () {
+  await page.locator('.onglet', { hasText: 'Codifications' }).click()
+  await page.waitForTimeout(900)
+  await page.locator('.cfg-sst-b', { hasText: 'Utilisateurs' }).click()
+  await page.waitForTimeout(700)
+}
+
 async function allerAuProcessus (nom) {
   await page.locator('.proc').filter({ hasText: nom }).first().click()
   await page.waitForTimeout(500)
@@ -142,17 +163,27 @@ const nbProc = await page.locator('.proc').count()
 nbProc === NB_PROCESSUS ? ok(`${nbProc} processus dans la barre latérale`)
   : ko(`${nbProc} processus au lieu de ${NB_PROCESSUS}`)
 
-// ── 2. Le parcours démarre anonyme ──
+/* ── 2. Le parcours démarre anonyme ──
+   L'anonymat vaut EN AMONT du pivot : se placer après, c'est constater qu'il a
+   été levé, ce qui est le comportement voulu et non un défaut. Le groupe se
+   met donc sur le processus qui précède le pivot déclaré par le parcours. */
 console.log('\n2. Anonymat initial')
-const entete = await page.locator('.hdr-left .name').innerText()
-if (/En attente d'allocation/.test(entete)) {
-  ok(`en-tête : « ${entete} »`)
+if (nomAvantPivot) {
+  await allerAuProcessus(nomAvantPivot)
+  const entete = await page.locator('.hdr-left .name').innerText()
+  if (/En attente d'allocation/.test(entete)) {
+    ok(`en-tête avant « ${nomPivot} » : « ${entete} »`)
+  } else {
+    ko(`en-tête inattendu sur « ${nomAvantPivot} » : ${entete}`)
+  }
+  const metaAmont = await page.locator('.hdr-left .meta').innerText()
+  !metaAmont.includes('ordonnancier')
+    ? ok("N° ordonnancier masqué tant que l'identification n'est pas exigée")
+    : ko('N° ordonnancier visible trop tôt')
+  await allerAuProcessus('Réception (+/-')
 } else {
-  ko(`en-tête inattendu : ${entete}`)
+  console.log('  · le parcours est nominatif dès son premier processus')
 }
-await page.locator('.hdr-left .meta').innerText().then(t =>
-  !t.includes('ordonnancier') ? ok('N° ordonnancier masqué avant la fabrication')
-    : ko('N° ordonnancier visible trop tôt'))
 
 // ── 3. Checklist de réception ──
 console.log('\n3. Réception')
@@ -258,21 +289,39 @@ await page.waitForTimeout(150)
 await page.locator('.ch-pa-flds.show').count() === 1
   ? ok('champs affichés après activation') : ko('champs non affichés')
 
-// ── 9. Navigation vers la mise en fabrication ──
-console.log('\n9. Identification à la mise en fabrication')
+/* ── 9. Le pivot d'identification ──
+   Nommé en dur jusqu'ici (« Mise en fabrication »), il est maintenant lu au
+   modèle : ce qui doit être vrai, c'est qu'AU processus désigné le dossier
+   cesse d'être anonyme — pas qu'un processus précis porte ce rôle. */
+console.log(`\n9. Identification à partir de « ${nomPivot ?? '—'} »`)
 await page.locator('.ch-pa-tog input[type=radio]').nth(0).check()   // préallocation OFF
 await page.waitForTimeout(100)
-await allerAuProcessus('Mise en fabrication')
-await page.waitForTimeout(200)
-const enteteFab = await page.locator('.hdr-left .name').innerText()
-enteteFab.includes('à identifier') ? ok(`en-tête : « ${enteteFab} »`) : ko(`en-tête : ${enteteFab}`)
-const metaFab = await page.locator('.hdr-left .meta').innerText()
-metaFab.includes('ordonnancier') ? ok('N° ordonnancier révélé') : ko('N° ordonnancier toujours masqué')
-/* Le bandeau nomme le tiers, pas un attribut technique : « externe » ne dit
-   pas à l'opérateur qui fait le travail, « réalisé par un tiers » si. */
-const banniere = (await page.locator('.banner.b-ext').innerText().catch(() => '')).trim()
-if (/réalisé par un tiers/i.test(banniere)) ok(`bandeau du processus tiers : « ${banniere} »`)
-else ko(`bandeau : « ${banniere} »`)
+if (nomPivot) {
+  await allerAuProcessus(nomPivot)
+  await page.waitForTimeout(200)
+  const enteteFab = await page.locator('.hdr-left .name').innerText()
+  enteteFab.includes('à identifier')
+    ? ok(`en-tête : « ${enteteFab} »`) : ko(`en-tête : ${enteteFab}`)
+  const metaFab = await page.locator('.hdr-left .meta').innerText()
+  metaFab.includes('ordonnancier')
+    ? ok('N° ordonnancier révélé') : ko('N° ordonnancier toujours masqué')
+} else {
+  ko('le parcours ne déclare aucun pivot d\'identification patient')
+}
+
+/* Bandeau d'un processus réalisé par un tiers. Il ne s'agit plus de la mise en
+   fabrication — le suivi fabricant est passé en sections de la commande : on
+   cherche donc un processus qui porte encore ce caractère, s'il en reste un. */
+const procTiers = (defModele?.processus ?? []).find((p) => p.externe === true)
+if (procTiers) {
+  await allerAuProcessus(procTiers.nom)
+  await page.waitForTimeout(200)
+  const banniere = (await page.locator('.banner.b-ext').innerText().catch(() => '')).trim()
+  if (/réalisé par un tiers/i.test(banniere)) ok(`bandeau du processus tiers : « ${banniere} »`)
+  else ko(`bandeau : « ${banniere} »`)
+} else {
+  console.log('  · aucun processus réalisé par un tiers dans ce parcours')
+}
 
 // ── 10. Catalogue ──
 console.log('\n10. Ajout depuis le catalogue')
@@ -354,20 +403,28 @@ if (apiJoignable) {
     : ko('aucun bandeau hors-ligne alors que l\'API est absente')
 }
 
-// ── 14. Onglet Utilisateurs ──
+// ── 14. Codifications : les comptes utilisateurs ──
 // Écrit réellement en base : le login porte un horodatage pour ne pas entrer en
 // collision d'un passage à l'autre. Le compte est désactivé en fin de groupe —
 // un compte ne se supprime pas, il est l'auteur de ce qu'il a saisi.
-console.log('\n14. Onglet Utilisateurs')
-await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+console.log('\n14. Codifications — comptes utilisateurs')
+await allerAuxUtilisateurs()
 await page.waitForTimeout(500)
 
+/* Les quatre référentiels sont regroupés : trois sont TENUS ici (comptes,
+   services, produits), le quatrième — les patients — n'est que consulté. */
+const sousCodif = await page.locator('.cfg-sst-b').allInnerTexts()
+;['Utilisateurs', 'Services', 'Produits', 'Patients']
+  .every((n) => sousCodif.some((t) => t.trim() === n))
+  ? ok(`sous-onglets : ${sousCodif.map((t) => t.trim()).join(' | ')}`)
+  : ko(`sous-onglets : ${JSON.stringify(sousCodif)}`)
+
 const titre = await page.locator('.titlebar span').first().innerText()
-if (/Utilisateurs/.test(titre)) ok(`barre de titre suit l'onglet : « ${titre} »`)
+if (/Codifications/.test(titre)) ok(`barre de titre suit l'onglet : « ${titre} »`)
 else ko(`barre de titre : ${titre}`)
 await page.locator('.dlg .body').count() === 0
   ? ok('le panneau du parcours est retiré, pas seulement masqué')
-  : ko('le parcours reste monté sous l\'onglet Utilisateurs')
+  : ko('le parcours reste monté sous l\'onglet Codifications')
 
 const nbAvant = await page.locator('table.adm-t .ident').count()
 nbAvant >= 1 ? ok(`${nbAvant} compte(s) listé(s) depuis la base`) : ko('aucun compte listé')
@@ -480,7 +537,7 @@ if (await selOp.count() === 0) {
   // une suite de tests n'a pas à laisser d'opérateur derrière elle.
   await page.selectOption('.op-sel', { label: depart })
   await page.waitForTimeout(500)
-  await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+  await allerAuxUtilisateurs()
   await page.waitForTimeout(600)
   await page.locator('table.adm-t tr', { hasText: login })
     .locator('.adm-b', { hasText: 'Désactiver' }).click()
@@ -946,7 +1003,7 @@ if (nbDemo === 0) {
 
 // ── 22. Comptes de démonstration ──
 console.log('\n22. Comptes de démonstration')
-await page.locator('.onglet', { hasText: 'Utilisateurs' }).click()
+await allerAuxUtilisateurs()
 await page.waitForTimeout(1200)
 const lignesDemo = await page.locator('tr', { hasText: 'demo.' }).count()
 if (lignesDemo === 0) {
