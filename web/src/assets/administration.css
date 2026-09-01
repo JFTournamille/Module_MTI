@@ -459,5 +459,22 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
 .adm-t tr.adm-off td{opacity:.55;}
 
 /* Retour au processus depuis la fiche d'un point : le chemin inverse de
-   l'enchaînement qui a amené ici. */
-.cfg-retour{margin:-2px 0 12px;padding-bottom:10px;border-bottom:1px solid #ece8fa;}
+   l'enchaînement qui a amené ici.
+
+   C'était un bouton comme les autres, et il se noyait dans un formulaire qui
+   en compte une dizaine. Or il n'est pas une action parmi d'autres : c'est la
+   SORTIE d'un écran où l'on a été amené automatiquement, et le seul chemin
+   qu'on cherche quand on a fini de régler le point. Il occupe donc toute la
+   largeur, porte la couleur pleine, et nomme sa destination sur deux
+   lignes — le processus, puis la section. */
+.cfg-retour{margin:0 0 16px;}
+.cfg-retour-b{display:flex;align-items:center;gap:12px;width:100%;
+  font-family:inherit;font-size:14px;text-align:left;cursor:pointer;
+  padding:10px 14px;border-radius:4px;
+  background:#4a3880;border:2px solid #4a3880;color:#fff;}
+.cfg-retour-b:hover{background:#6045a0;border-color:#6045a0;}
+.cfg-retour-b:focus-visible{outline:3px solid #b0a0ff;outline-offset:2px;}
+.cfg-retour-b .fl{font-size:20px;line-height:1;flex-shrink:0;}
+.cfg-retour-b .tx{display:block;line-height:1.35;}
+.cfg-retour-b strong{font-weight:bold;}
+.cfg-retour-b .sc{display:block;font-size:12px;opacity:.75;font-style:italic;}

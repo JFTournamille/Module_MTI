@@ -526,12 +526,15 @@ const creationValide = computed(() =>
                  liste — deux gestes pour défaire un enchaînement automatique.
                  Le processus est celui du point ouvert : le bouton nomme donc
                  toujours la bonne destination. -->
-            <div class="form-r cfg-retour">
-              <button class="adm-b" @click="sousOnglet = 'processus'">
-                ← Revenir au processus {{ store.iProcessus + 1 }}.
-                {{ store.processusCourant.nom }}
+            <div class="cfg-retour">
+              <button class="cfg-retour-b" @click="sousOnglet = 'processus'">
+                <span class="fl">←</span>
+                <span class="tx">
+                  Revenir au processus
+                  <strong>{{ store.iProcessus + 1 }}. {{ store.processusCourant.nom }}</strong>
+                  <span class="sc">section « {{ store.sectionCourante.titre }} »</span>
+                </span>
               </button>
-              <span class="meta">section « {{ store.sectionCourante.titre }} »</span>
             </div>
 
             <div class="form-r">
