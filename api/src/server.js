@@ -17,6 +17,58 @@ const app = Fastify({
 
 brancherAuth(app, mode)
 
+/* Une instance ouverte à des testeurs externes ne doit pas renseigner sur ce
+   qui la fait tourner : ni le moteur de base, ni le cadriciel, ni un chemin
+   serveur.
+ *
+ * Le drapeau est SÉPARÉ de NODE_ENV, à dessein. L'instance de démonstration
+ * tourne en `AUTH_MODE=dev`, donc en `NODE_ENV=development` — le garde-fou
+ * d'`auth.js` interdit l'autre combinaison. Lier la discrétion à NODE_ENV
+ * l'aurait rendue inopérante précisément là où elle sert : sur l'instance que
+ * les testeurs ouvrent. `DISCRETION=oui` l'active indépendamment, et elle
+ * reste active par défaut en production réelle. */
+const discret = process.env.DISCRETION === 'oui' ||
+  process.env.NODE_ENV === 'production'
+
+/**
+ * Erreur non rattrapée : message générique au client, détail au journal.
+ *
+ * Sans ce gestionnaire, Fastify renvoyait le message brut de PostgreSQL —
+ * `invalid input syntax for type uuid`, avec le code `22P02`. C'est une fuite
+ * de moteur, et une erreur plus profonde exposerait un chemin serveur, donc le
+ * domaine réel. Le détail part au journal du conteneur, où il reste utile.
+ *
+ * La `reference` renvoyée permet de retrouver la ligne du journal : sans elle,
+ * un testeur ne peut rien signaler d'exploitable, et le message générique
+ * devient un cul-de-sac.
+ */
+app.setErrorHandler((erreur, requete, reponse) => {
+  const statut = erreur.statusCode ?? 500
+
+  /* Les refus métier portent un message écrit POUR l'utilisateur — « Dossier
+     validé : lecture seule » — et doivent lui parvenir tels quels. Seules les
+     erreurs serveur sont masquées. */
+  if (statut < 500) {
+    return reponse.code(statut).send({ erreur: erreur.message })
+  }
+
+  const reference = Math.random().toString(36).slice(2, 8).toUpperCase()
+  requete.log.error({ err: erreur, reference }, 'erreur serveur')
+  return reponse.code(statut).send(discret
+    ? {
+        erreur: 'Erreur interne. Signaler la référence ci-dessous, elle permet ' +
+          'de retrouver la trace côté serveur.',
+        reference
+      }
+    : { erreur: erreur.message, code: erreur.code, reference })
+})
+
+/* Route inconnue : `Route GET:/api/x not found` est la signature de Fastify.
+   Elle nomme le cadriciel sans rien apprendre à qui appelle. */
+app.setNotFoundHandler((requete, reponse) => {
+  reponse.code(404).send({ erreur: 'Ressource introuvable.' })
+})
+
 /**
  * État de santé, consultable au navigateur sans authentification.
  *
@@ -28,7 +80,42 @@ brancherAuth(app, mode)
  * Volontairement sans détail exploitable : ni version du serveur, ni noms
  * d'utilisateurs, ni identité de patients. Des compteurs et des booléens.
  */
-app.get('/api/sante', async () => {
+/**
+ * Réduit l'état de santé à ce qu'un tiers peut voir.
+ *
+ * L'endpoint reste OUVERT — c'est le seul canal de diagnostic quand on n'a ni
+ * accès shell ni logs, et le fermer reviendrait à se priver du seul moyen de
+ * comprendre une instance muette. Mais un testeur externe n'a pas à lire le
+ * nombre de comptes actifs, l'inventaire du jeu de démonstration ni le
+ * diagnostic en clair.
+ *
+ * Ce qui reste public suffit à savoir si l'application tourne et si sa base
+ * est en place : statut, mode d'authentification (c'est lui qui explique une
+ * instance où tout répond 501), joignabilité et migrations. Le détail
+ * s'obtient avec `?detail=<DIAGNOSTIC_JETON>`.
+ *
+ * Sans `DISCRETION=oui`, tout est visible : on ne débogue pas à l'aveugle.
+ */
+function reduire (etat, detail) {
+  if (!discret) return etat
+  const jeton = process.env.DIAGNOSTIC_JETON
+  if (jeton && detail === jeton) return etat
+  return {
+    statut: etat.statut,
+    authMode: etat.authMode,
+    base: {
+      joignable: etat.base.joignable,
+      schemaInstalle: etat.base.schemaInstalle,
+      migrationsAppliquees: etat.base.migrationsAppliquees
+    }
+  }
+}
+
+app.get('/api/sante', async (request) => {
+  /* Le jeton est passé en paramètre, jamais rangé dans une variable de module :
+     deux requêtes concurrentes s'y écraseraient l'une l'autre, et l'une
+     pourrait obtenir le détail au nom de l'autre. */
+  const detail = String(request.query.detail ?? '')
   const base = {
     joignable: false,
     schemaInstalle: false,
@@ -161,10 +248,10 @@ app.get('/api/sante', async () => {
       statut = 'ok'
     }
   } catch (e) {
-    return { statut: 'degrade', authMode: mode, base, diagnostic: e.message }
+    return reduire({ statut: 'degrade', authMode: mode, base, diagnostic: e.message }, detail)
   }
 
-  return { statut, authMode: mode, base, ...(diagnostic ? { diagnostic } : {}) }
+  return reduire({ statut, authMode: mode, base, ...(diagnostic ? { diagnostic } : {}) }, detail)
 })
 
 await app.register(referentiels)
