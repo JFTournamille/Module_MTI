@@ -287,11 +287,54 @@ export const useConfiguration = defineStore('configuration', () => {
     marquer()
   }
 
-  function ajouterPoint (iS) {
+  /**
+   * Ajoute un point à une section.
+   *
+   * `modele` permet de REPRENDRE un point existant plutôt que d'en créer un
+   * vierge. Les mêmes contrôles reviennent d'un processus à l'autre — « Identité
+   * patient vérifiée (2 concordances) », « Aspect de la poche » — et les
+   * ressaisir à l'identique produit des libellés qui divergent d'une lettre,
+   * donc des parcours qu'on ne peut plus comparer.
+   *
+   * La copie est PROFONDE et détachée : modifier le point repris ne doit pas
+   * toucher celui dont il vient.
+   */
+  function ajouterPoint (iS, modele = null) {
     const sc = processusCourant.value?.sections?.[iS]
     if (!sc) return
-    sc.points.push({ libelle: 'Nouveau point de contrôle', type: 'ouinon', obligatoire: false })
+    const point = modele
+      ? copie(modele)
+      : { libelle: 'Nouveau point de contrôle', type: 'ouinon', obligatoire: false }
+    /* Le numéro est propre à la position : le recopier ferait porter au point
+       repris le numéro qu'il avait dans son processus d'origine. */
+    delete point.num
+    /* Un kit se déclare sur la SECTION : un point repris d'ailleurs porterait
+       une référence morte, que le serveur refuserait à la publication. */
+    if (point.kit && !(sc.kits ?? []).some((k) => k.id === point.kit)) delete point.kit
+    sc.points.push(point)
     choisirPoint(iS, sc.points.length - 1)
+    marquer()
+  }
+
+  /**
+   * Déplace un point dans sa section.
+   *
+   * L'ordre des points EST l'ordre de l'écran de saisie, et donc l'ordre dans
+   * lequel l'opérateur exécute les contrôles : il n'est pas décoratif. Un point
+   * ajouté se pose en fin de section, alors qu'il appartient souvent au milieu.
+   *
+   * Le déplacement reste DANS la section : franchir une frontière changerait
+   * silencieusement le regroupement du point, et une section est un ensemble
+   * qui a un sens — la sélection suit le point pour qu'on voie où il est allé.
+   */
+  function deplacerPoint (iS, iP, sens) {
+    const sc = processusCourant.value?.sections?.[iS]
+    if (!sc) return
+    const j = iP + sens
+    if (j < 0 || j >= sc.points.length) return
+    const [pt] = sc.points.splice(iP, 1)
+    sc.points.splice(j, 0, pt)
+    choisirPoint(iS, j)
     marquer()
   }
 
@@ -510,7 +553,7 @@ export const useConfiguration = defineStore('configuration', () => {
     tousLesPoints, choisirPointAbsolu,
     charger, choisirProcessus, choisirPoint, marquer,
     ajouterProcessus, retirerProcessus, deplacerProcessus,
-    ajouterSection, retirerSection, ajouterPoint, retirerPoint,
+    ajouterSection, retirerSection, ajouterPoint, retirerPoint, deplacerPoint,
     poser, ajouterKit, retirerKit, retirerPointCourant,
     publier, annuler, creerParcours
   }

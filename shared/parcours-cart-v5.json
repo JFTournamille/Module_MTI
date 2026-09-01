@@ -1,10 +1,10 @@
 {
   "code": "PARCOURS_CART_AUTOLOGUE",
-  "version": 4,
+  "version": 5,
   "libelle": "Parcours MTI — CAR-T autologue",
-  "description": "Parcours CAR-T autologue. L'aphérèse n'y figure plus du tout : ni comme processus (retiré en v3), ni comme point de contrôle de la commande (retiré en v4). Elle vit en jalon d'en-tête du dossier (dossier.apherese_faite / date_apherese), au même titre que la prescription. Les versions précédentes restent consultables : les dossiers ouverts sous elles conservent leur définition figée.",
-  "indexIdentificationPatient": 7,
-  "commentaireIdentification": "Avant la mise en fabrication (index 7), le parcours est anonyme : aucune donnée identifiante n'est requise sauf préallocation explicite.",
+  "description": "Parcours CAR-T autologue, vu depuis la PUI. La v5 le recentre sur ce que l'établissement fait réellement : « Fabrication » devient « Préparation en UPC » — les opérations pharmaceutiques de mise en forme du MTI dans les conditions d'administration souhaitées — et les cinq processus qui traçaient le travail interne du fabricant (mise en fabrication, fabrication, libération, stockage fabricant, envoi) sont repliés en sections de la COMMANDE : certificat de conformité, n° de lot, autorisation d'expédition et suivi logistique sont du suivi de commande, pas des étapes du parcours pharmaceutique. L'aphérèse n'y figure toujours pas : elle vit en jalon d'en-tête du dossier (dossier.apherese_faite / date_apherese), au même titre que la prescription. Les versions précédentes restent consultables : les dossiers ouverts sous elles conservent leur définition figée.",
+  "indexIdentificationPatient": 2,
+  "commentaireIdentification": "Le dossier devient nominatif AU PLUS TARD au rattachement patient / prescription (index 2) : une prescription est nominative par nature. En amont, une commande ou une réception PEUT être rattachée à un patient, par préallocation explicite — ce n'est pas exigé. La bascule était portée par « mise en fabrication » jusqu'en v4 ; ce processus n'existe plus.",
   "processus": [
     {
       "n": 1,
@@ -96,6 +96,102 @@
               "libelle": "Transmission au pharmacien référent",
               "type": "auto",
               "obligatoire": true
+            }
+          ]
+        },
+        {
+          "titre": "3 — Envoi du matériel au fabricant",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Dossier patient transmis au fabricant",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Bon de commande fabricant confirmé",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Matériel confié au transporteur",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "N° de suivi de l'envoi au fabricant",
+              "type": "texte",
+              "obligatoire": false
+            }
+          ]
+        },
+        {
+          "titre": "4 — Fabrication et libération par le fabricant",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Réception du matériel confirmée par le fabricant",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "N° de lot attribué par le fabricant",
+              "type": "texte",
+              "obligatoire": true,
+              "lieAuMedicament": true
+            },
+            {
+              "libelle": "Certificat de conformité (CoA) reçu et archivé",
+              "type": "photo",
+              "obligatoire": true,
+              "lieAuMedicament": true
+            },
+            {
+              "libelle": "Stérilité / mycoplasmose négatifs au CoA",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "libelle": "Viabilité cellulaire au CoA",
+              "type": "valeur",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Autorisation d'expédition confirmée par le fabricant",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        },
+        {
+          "titre": "5 — Expédition par le fabricant",
+          "kits": [],
+          "points": [
+            {
+              "libelle": "Conteneur dryshipper qualifié",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Température à l'embarquement",
+              "type": "valeur",
+              "obligatoire": false,
+              "seuil": -150
+            },
+            {
+              "libelle": "Alarmes de transport activées",
+              "type": "ouinon",
+              "obligatoire": false
+            },
+            {
+              "libelle": "N° de suivi de l'expédition",
+              "type": "texte",
+              "obligatoire": false
+            },
+            {
+              "libelle": "Date d'expédition annoncée",
+              "type": "date",
+              "obligatoire": false
             }
           ]
         }
@@ -501,30 +597,161 @@
     },
     {
       "n": 8,
-      "code": "MISE_EN_FABRICATION",
-      "nom": "Mise en fabrication",
+      "code": "PREPARATION",
+      "nom": "Préparation en UPC",
       "gabarit": "standard",
-      "externe": true,
-      "identifiePatient": true,
+      "externe": false,
       "sections": [
         {
-          "titre": "Transfert vers site de fabrication",
+          "titre": "1 — Préalables à la préparation",
+          "kits": [],
           "points": [
             {
-              "libelle": "Dossier patient transmis au fabricant",
-              "type": "ouinon"
+              "num": "1.1",
+              "libelle": "Prescription du jour vérifiée et validée pharmaceutiquement",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
             },
             {
-              "libelle": "Bon de commande fabricant confirmé",
-              "type": "ouinon"
+              "num": "1.2",
+              "libelle": "Identité patient contrôlée sur la poche et sur la prescription",
+              "sousLibelle": "Deux concordances : nom / date de naissance",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
             },
             {
-              "libelle": "Matériel confié au transporteur",
-              "type": "ouinon"
+              "num": "1.3",
+              "libelle": "Date de péremption du produit non dépassée",
+              "type": "ouinon",
+              "obligatoire": true
             },
             {
-              "libelle": "N° suivi envoi",
-              "type": "texte"
+              "num": "1.4",
+              "libelle": "Créneau d'administration confirmé avec le service",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "num": "1.5",
+              "libelle": "Isolateur / PSM qualifié et désinfecté",
+              "sousLibelle": "Relevé de désinfection tracé au dossier UPC",
+              "type": "ouinon",
+              "obligatoire": true
+            }
+          ]
+        },
+        {
+          "titre": "2 — Décongélation",
+          "kits": [],
+          "points": [
+            {
+              "num": "2.1",
+              "libelle": "Sortie de la cuve d'azote — minuteur démarré",
+              "sousLibelle": "Le délai entre sortie de cuve et administration est critique",
+              "type": "timer",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            },
+            {
+              "num": "2.2",
+              "libelle": "Décongélation bain-marie 37 °C",
+              "type": "timer",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            },
+            {
+              "num": "2.3",
+              "libelle": "Aspect de la poche après décongélation",
+              "sousLibelle": "Absence de particules, de coloration anormale et de fuite",
+              "type": "photo",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            },
+            {
+              "num": "2.4",
+              "libelle": "Intégrité de la poche et des soudures vérifiée",
+              "type": "ouinon",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            }
+          ]
+        },
+        {
+          "titre": "3 — Mise en forme pour l'administration",
+          "kits": [],
+          "points": [
+            {
+              "num": "3.1",
+              "libelle": "Volume à administrer conforme à la prescription",
+              "type": "valeur",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            },
+            {
+              "num": "3.2",
+              "libelle": "Dilution / rinçage réalisés selon le protocole",
+              "sousLibelle": "Renseigner le diluant et le volume employés",
+              "type": "texte",
+              "obligatoire": false
+            },
+            {
+              "num": "3.3",
+              "libelle": "Dispositif d'administration monté et purgé",
+              "type": "ouinon",
+              "obligatoire": true
+            },
+            {
+              "num": "3.4",
+              "libelle": "Étiquette nominative apposée sur la poche",
+              "sousLibelle": "Nom, date de naissance, n° de dossier, n° de lot, heure limite d'administration",
+              "type": "photo",
+              "obligatoire": true,
+              "lieAuMedicament": true,
+              "multi": "photo"
+            }
+          ]
+        },
+        {
+          "titre": "4 — Libération pharmaceutique et remise",
+          "kits": [],
+          "points": [
+            {
+              "num": "4.1",
+              "libelle": "Double contrôle pharmaceutique de la préparation",
+              "type": "ouinon",
+              "obligatoire": true,
+              "doubleValidation": true
+            },
+            {
+              "num": "4.2",
+              "libelle": "Heure limite d'administration calculée et inscrite",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "num": "4.3",
+              "libelle": "Préparation enregistrée dans le logiciel PUI",
+              "type": "auto",
+              "obligatoire": false
+            },
+            {
+              "num": "4.4",
+              "libelle": "Remise au service — identité du transporteur interne",
+              "type": "texte",
+              "obligatoire": true
+            },
+            {
+              "num": "4.5",
+              "libelle": "Température de transport interne maîtrisée",
+              "type": "ouinon",
+              "obligatoire": false
             }
           ]
         }
@@ -532,128 +759,6 @@
     },
     {
       "n": 9,
-      "code": "FABRICATION",
-      "nom": "Fabrication",
-      "gabarit": "standard",
-      "externe": true,
-      "sections": [
-        {
-          "titre": "Fabrication (site externe)",
-          "points": [
-            {
-              "libelle": "Réception matériel leucaphérèse confirmée",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "N° lot attribué",
-              "type": "texte"
-            },
-            {
-              "libelle": "Conditionnement cryogénique effectué",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "Durée fabrication",
-              "type": "auto",
-              "valeurAuto": "À renseigner"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "n": 10,
-      "code": "LIBERATION",
-      "nom": "Libération",
-      "gabarit": "standard",
-      "externe": true,
-      "sections": [
-        {
-          "titre": "Contrôle libération (AQ fabricant)",
-          "points": [
-            {
-              "libelle": "Certificat de conformité (CoA) émis",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "Stérilité / mycoplasmose négatifs",
-              "type": "auto",
-              "valeurAuto": "Résultat externe"
-            },
-            {
-              "libelle": "Viabilité cellulaire conforme",
-              "type": "valeur"
-            },
-            {
-              "libelle": "Autorisation d'expédition confirmée",
-              "type": "ouinon"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "n": 11,
-      "code": "STOCKAGE_FABRICANT",
-      "nom": "Stockage",
-      "gabarit": "standard",
-      "externe": true,
-      "sections": [
-        {
-          "titre": "Stockage site fabricant (pré-expédition)",
-          "points": [
-            {
-              "libelle": "Stockage cryogénique confirmé",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "Température cuve expéditeur",
-              "type": "valeur"
-            },
-            {
-              "libelle": "Alarmes actives",
-              "type": "ouinon"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "n": 12,
-      "code": "ENVOI",
-      "nom": "Envoi",
-      "gabarit": "standard",
-      "externe": true,
-      "sections": [
-        {
-          "titre": "Expédition",
-          "points": [
-            {
-              "libelle": "Conteneur dryshipper qualifié",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "Température embarquement",
-              "type": "valeur"
-            },
-            {
-              "libelle": "Alarmes activées",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "Bon de retour édité",
-              "type": "ouinon"
-            },
-            {
-              "libelle": "N° suivi expédition",
-              "type": "texte"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "n": 13,
       "code": "RECEPTION_SERVICE",
       "nom": "Réception service",
       "gabarit": "standard",
@@ -689,7 +794,7 @@
       ]
     },
     {
-      "n": 14,
+      "n": 10,
       "code": "ADMINISTRATION",
       "nom": "Administration",
       "gabarit": "standard",
@@ -723,7 +828,7 @@
       ]
     },
     {
-      "n": 15,
+      "n": 11,
       "code": "POST_ADMINISTRATION",
       "nom": "Post-administration",
       "gabarit": "standard",
@@ -753,5 +858,6 @@
         }
       ]
     }
-  ]
+  ],
+  "codeIdentificationPatient": "RATTACHEMENT"
 }

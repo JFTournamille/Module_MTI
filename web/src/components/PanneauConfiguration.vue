@@ -22,6 +22,7 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useConfiguration, TYPES_POINT, lieAuMedicament } from '../stores/configuration.js'
+import ModalePoint from './ModalePoint.vue'
 
 const store = useConfiguration()
 /* `garderBrouillon` : ce panneau est démonté à chaque changement d'onglet, et
@@ -47,14 +48,14 @@ const AIDE = {
     'les jeux de données, les scénarios et le jeu de démonstration. Le rang, lui, ' +
     "change dès qu'un élément est inséré ou retiré : retirer l'aphérèse a décalé " +
     'douze processus d\'un cran. Majuscules non accentuées, chiffres et soulignés.',
-  gabarit: "Détermine l'écran de saisie. « standard » affiche les sections et leurs " +
+  gabarit: "Détermine comment le processus s'affiche à la saisie. « standard » affiche les sections et leurs " +
     'points. « réception » y ajoute l\'en-tête produit — désignation, n° de lot, ' +
     'péremption, code-barres — et la préallocation patient. Un parcours n\'a ' +
     'normalement qu\'un seul processus de réception.',
   tiers: 'Le processus reste au parcours et garde ses points de contrôle, mais il ' +
-    "n'est pas saisi ici : il est réalisé ailleurs, par le fabricant, un autre " +
-    'service ou un prestataire. L\'écran le montre en consultation, avec un ' +
-    'bandeau, au lieu d\'ouvrir la saisie.',
+    "n'est pas saisi ici : il est réalisé ailleurs — dans Chimio, un autre " +
+    'service ou chez un prestataire. L\'écran le montre en consultation, avec ' +
+    'un bandeau, au lieu d\'ouvrir la saisie.',
   medicament: 'Un point lié au médicament porte sur le produit lui-même : il se ' +
     'répète par exemplaire (poche, tube, cuve), peut exiger un n° de série et ' +
     "appartenir à un kit. Un point qui porte sur le dossier, le local ou " +
@@ -82,6 +83,28 @@ function ouvrirPoint (e) {
 }
 
 const nbPoints = computed(() => store.tousLesPoints.length)
+
+// ── Ajout d'un point : reprendre, ou créer ──
+//
+// « + point » posait directement un « Nouveau point de contrôle » vierge, qu'il
+// fallait retaper. Il ouvre maintenant le catalogue des points déjà formulés,
+// dans ce parcours comme dans les autres.
+const modalePoint = ref(false)
+const sectionAjout = ref(0)
+
+function ouvrirAjoutPoint (iS) {
+  sectionAjout.value = iS
+  modalePoint.value = true
+}
+function pointRepris (point) {
+  store.ajouterPoint(sectionAjout.value, point)
+  sousOnglet.value = 'point'
+}
+function pointCree (libelle) {
+  store.ajouterPoint(sectionAjout.value,
+    libelle ? { libelle, type: 'ouinon', obligatoire: false } : null)
+  sousOnglet.value = 'point'
+}
 
 /* Message de refus du retrait d'un point : affiché à côté du bouton plutôt que
    dans le bandeau d'erreur, qui est réservé à ce que dit le serveur. */
@@ -411,7 +434,9 @@ const creationValide = computed(() =>
               retiré.
             </div>
             <div class="form-r">
-              <label>Gabarit
+              <!-- « Gabarit » est le nom de la CLÉ dans la définition ; à l'écran,
+                   il ne disait rien à qui ne l'avait pas écrite. -->
+              <label>Type d'affichage
                 <span class="aide-i" tabindex="0" :data-aide="AIDE.gabarit">?</span>
               </label>
               <select v-model="store.processusCourant.gabarit" @change="store.marquer()">
@@ -426,20 +451,20 @@ const creationValide = computed(() =>
               <label class="lbl-f">
                 <input type="checkbox" v-model="store.processusCourant.externe"
                        @change="store.marquer()">
-                Réalisé par un tiers (fabricant, autre service…)
+                Réalisé par un tiers (Chimio, autre service…)
               </label>
             </div>
             <div class="aide">
               Le processus reste au parcours et garde ses points de contrôle, mais
-              il n'est pas saisi ici : il est réalisé ailleurs — par le fabricant,
-              un autre service, un prestataire. L'écran le montre en consultation.
+              il n'est pas saisi ici : il est réalisé ailleurs — dans Chimio,
+              un autre service, chez un prestataire. L'écran le montre en consultation.
             </div>
 
             <div class="form-h">Sections et points de contrôle</div>
             <div v-for="(sc, iS) in store.processusCourant.sections" :key="iS" class="cfg-sec">
               <div class="cfg-sh">
                 <input type="text" v-model="sc.titre" @input="store.marquer()">
-                <button class="adm-b" @click="store.ajouterPoint(iS)">+ point</button>
+                <button class="adm-b" @click="ouvrirAjoutPoint(iS)">+ point</button>
                 <button class="adm-b" :disabled="store.processusCourant.sections.length <= 1"
                         @click="store.retirerSection(iS)">− section</button>
               </div>
@@ -452,6 +477,15 @@ const creationValide = computed(() =>
                 <span v-for="[cl, txt] in marqueurs(pt)" :key="cl" class="tagc" :class="'tagc-' + cl">
                   {{ txt }}
                 </span>
+                <!-- L'ordre des points EST l'ordre d'exécution des contrôles à
+                     l'écran de saisie : il se règle donc à la main, comme celui
+                     des processus. Un point ajouté se pose en fin de section,
+                     alors qu'il appartient souvent au milieu. -->
+                <button class="cfg-mv" title="Monter ce point" :disabled="iPt === 0"
+                        @click.stop="store.deplacerPoint(iS, iPt, -1)">↑</button>
+                <button class="cfg-mv" title="Descendre ce point"
+                        :disabled="iPt === sc.points.length - 1"
+                        @click.stop="store.deplacerPoint(iS, iPt, 1)">↓</button>
                 <button class="cfg-x" title="Retirer ce point" :disabled="sc.points.length <= 1"
                         @click.stop="store.retirerPoint(iS, iPt)">×</button>
               </div>
@@ -644,5 +678,17 @@ const creationValide = computed(() =>
         </div>
       </template>
     </div>
+
+    <ModalePoint
+      :ouvert="modalePoint"
+      :points-courants="store.tousLesPoints.map((e) => ({
+        point: e.point,
+        origine: `Ce parcours · ${e.iP + 1}. ${e.processus.nom} · ${e.section.titre}`
+      }))"
+      :code-courant="store.code"
+      @fermer="modalePoint = false"
+      @choisir="pointRepris"
+      @creer="pointCree"
+    />
   </div>
 </template>

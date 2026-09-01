@@ -39,8 +39,23 @@ async function ouvrirDepuisBord (id) {
   if (await store.ouvrirDossier(id)) onglet.value = 'parcours'
 }
 
-/** Referme le parcours et revient à la liste. */
+/** Revient à la liste sans fermer le dossier : il reste ouvert en fond. */
 function retourAuBord () { onglet.value = 'bord' }
+
+/**
+ * Ferme le parcours ouvert et ramène au tableau de bord.
+ *
+ * Fermer le dossier sans changer d'onglet laissait l'écran sur un onglet
+ * devenu vide, qu'il fallait quitter à la main : la fermeture doit rendre à
+ * l'endroit d'où l'on vient, c'est-à-dire à la liste des dossiers.
+ *
+ * Rien n'est perdu : les saisies partent au fil de l'eau, et l'onglet se
+ * rouvre en cliquant la ligne du dossier au tableau de bord.
+ */
+function fermerParcours () {
+  store.fermerDossier()
+  onglet.value = 'bord'
+}
 const modalePatient = ref(false)
 /* Quand la modale est ouverte pour poser le jalon de prescription, le patient
    choisi doit AUSSI faire basculer le jalon : c'est un seul geste pour
@@ -110,7 +125,16 @@ const blocages = computed(() => {
   <div class="dlg">
     <div class="titlebar">
       <span>{{ TITRES[onglet] }}</span>
-      <button class="x">✕</button>
+      <!-- Ce bouton venait de la maquette et ne faisait RIEN : il avait
+           l'apparence d'une fermeture de fenêtre, or il n'y a pas de fenêtre à
+           fermer dans un navigateur. Il ferme donc ce qui est réellement
+           fermable — le parcours ouvert — et se désarme quand il n'y en a
+           pas, plutôt que de rester rouge et inerte. -->
+      <button class="x" :disabled="!store.dossierId"
+              :title="store.dossierId
+                ? `Fermer le parcours ${store.dossier.reference || ''} et revenir au tableau de bord`
+                : 'Aucun parcours ouvert à fermer'"
+              @click="fermerParcours()">✕</button>
     </div>
 
     <nav class="onglets" role="tablist" aria-label="Navigation principale">
@@ -122,11 +146,19 @@ const blocages = computed(() => {
       <!-- Le parcours ouvert apparaît en fin de barre, et seulement tant qu'un
            dossier est ouvert : c'est un contexte de travail, pas une
            destination. -->
-      <button v-if="store.dossierId" class="onglet onglet-doss"
-              :class="{ act: onglet === 'parcours' }" role="tab"
-              :aria-selected="onglet === 'parcours'" @click="onglet = 'parcours'">
-        ▸ {{ store.dossier.reference || 'Parcours' }}
-      </button>
+      <span v-if="store.dossierId" class="onglet onglet-doss"
+            :class="{ act: onglet === 'parcours' }">
+        <button class="onglet-doss-l" role="tab" :aria-selected="onglet === 'parcours'"
+                @click="onglet = 'parcours'">
+          ▸ {{ store.dossier.reference || 'Parcours' }}
+        </button>
+        <!-- La fermeture est SUR l'onglet, comme dans un navigateur : c'est là
+             qu'on la cherche. Elle vit dans son propre bouton et non dans le
+             bouton d'onglet — un bouton dans un bouton n'est pas du HTML
+             valide, et le clic de fermeture activerait l'onglet au passage. -->
+        <button class="onglet-x" title="Fermer ce parcours"
+                aria-label="Fermer ce parcours" @click.stop="fermerParcours()">✕</button>
+      </span>
     </nav>
 
     <PanneauTableauBord v-if="onglet === 'bord'" @ouvrir="ouvrirDepuisBord" />
@@ -293,7 +325,7 @@ const blocages = computed(() => {
         </template>
         <template v-else>non enregistré</template>
       </span>
-      <button class="btn-ann" v-if="store.dossierId" @click="store.fermerDossier()">Fermer</button>
+      <button class="btn-ann" v-if="store.dossierId" @click="fermerParcours()">Fermer</button>
       <!-- Avancement du processus courant : sans lui, un processus « à venir »
            reste en lecture seule et le parcours ne peut pas progresser. -->
       <button v-if="store.dossierId && !store.lectureSeule && store.processusCourant"

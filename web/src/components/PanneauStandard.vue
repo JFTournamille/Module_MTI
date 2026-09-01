@@ -39,7 +39,7 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
       ✓ Processus validé{{ processus.externe ? ' — réalisé par un tiers' : '' }}
     </div>
     <div v-if="processus.externe && processus.etat !== 'valide'" class="banner b-ext">
-      Processus réalisé par un tiers (fabricant, autre service…) — suivi ici, saisi ailleurs
+      Processus réalisé par un tiers (Chimio, autre service…) — suivi ici, saisi ailleurs
     </div>
     <div v-if="processus.etat === 'a_venir'" class="banner b-prev">
       ⏳ À venir — processus non encore démarré

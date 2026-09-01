@@ -82,7 +82,7 @@ async function allerAuProcessus (nom) {
  *  Un onglet permanent menait à un écran vide avec un formulaire de création
  *  qui faisait doublon avec celui du tableau de bord. */
 async function allerAuScenario () {
-  await page.locator('.onglet-doss').click()
+  await page.locator('.onglet-doss-l').click()
   await page.waitForTimeout(600)
 }
 
@@ -119,7 +119,9 @@ await page.locator('#tb-ref').count() === 0
 await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
 await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
 await page.waitForTimeout(2000)
-const refDossier = (await page.locator('.onglet-doss').innerText()).replace(/^▸\s*/, '').trim()
+/* La référence se lit sur le LIBELLÉ de l'onglet, pas sur l'onglet entier :
+   celui-ci porte aussi la croix de fermeture, et `innerText` la ramenait. */
+const refDossier = (await page.locator('.onglet-doss-l').innerText()).replace(/^▸\s*/, '').trim()
 await page.locator('.vide-dossier').count() === 0
   ? ok(`dossier ${refDossier} ouvert — la saisie sera enregistrée`)
   : ko('aucun dossier ouvert : la saisie ne serait pas enregistrée')
@@ -429,7 +431,7 @@ await page.locator('.adm-bar input[type=checkbox]').uncheck()
 await page.waitForTimeout(500)
 
 // ── Retour au parcours : son état ne doit pas avoir été perdu ──
-await page.locator('.onglet-doss').click()
+await page.locator('.onglet-doss-l').click()
 await page.waitForTimeout(400)
 await page.locator('.proc').count() >= NB_PROCESSUS
   ? ok('retour au parcours, processus toujours présents')
@@ -486,7 +488,7 @@ if (await selOp.count() === 0) {
   await page.locator('table.adm-t tr', { hasText: login }).count() === 0
     ? ok('compte de test remis en veille, sélecteur laissé propre')
     : ko('le compte de test reste actif')
-  await page.locator('.onglet-doss').click()
+  await page.locator('.onglet-doss-l').click()
   await page.waitForTimeout(400)
 }
 
@@ -612,7 +614,7 @@ await page.locator('#tb-lot').fill('LOT-BORD-1')
 await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
 await page.waitForTimeout(1800)
 
-const ongletApresCreation = await page.locator('.onglet.act').innerText()
+const ongletApresCreation = await page.locator('.onglet-doss-l').innerText()
 const refBord = ongletApresCreation.replace(/^▸\s*/, '').trim()
 if (/^MTI-\d{6}$/.test(refBord)) {
   ok(`la création bascule sur le parcours du nouveau dossier (${refBord})`)
@@ -1607,6 +1609,59 @@ await page.locator('tr.tb-ligne').count() === totalSansFiltre
 await page.locator('.tb-restreint').count() === 0
   ? ok('le bandeau « liste restreinte » disparaît')
   : ko('le bandeau subsiste sans filtre')
+
+/* ── 29. Fermer le parcours ──
+   La croix de la barre de titre venait de la maquette et n'était reliée à
+   RIEN : elle avait l'apparence d'une fermeture de fenêtre et ne faisait rien
+   du tout. Personne ne l'avait vu parce que rien ne la cliquait. */
+console.log('\n29. Fermer le parcours')
+await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+await page.waitForTimeout(1200)
+await page.locator('#tb-q').fill(refDossier)
+await page.waitForTimeout(1300)
+await page.locator('tr.tb-ligne', { hasText: refDossier }).click()
+await page.waitForTimeout(1800)
+
+await page.locator('.onglet-doss .onglet-x').count() === 1
+  ? ok('l\'onglet du parcours porte sa croix de fermeture')
+  : ko('aucune croix de fermeture sur l\'onglet du parcours')
+
+await page.locator('.onglet-doss .onglet-x').click()
+await page.waitForTimeout(1500)
+await page.locator('.onglet-doss').count() === 0
+  ? ok('la croix ferme le parcours : l\'onglet disparaît')
+  : ko('l\'onglet du parcours subsiste après la fermeture')
+const ongletApresFermeture = (await page.locator('.onglet.act').innerText()).trim()
+if (/Tableau de bord/.test(ongletApresFermeture)) {
+  ok('la fermeture ramène au tableau de bord, pas sur un onglet vide')
+} else {
+  ko(`onglet actif après fermeture : « ${ongletApresFermeture} »`)
+}
+
+/* Sans parcours ouvert, la croix de la barre de titre n'a rien à fermer : elle
+   doit le montrer plutôt que rester rouge et inerte. */
+await page.locator('.titlebar .x').isDisabled()
+  ? ok('sans parcours ouvert, la croix de la barre de titre est désarmée')
+  : ko('la croix de la barre de titre reste active sans rien à fermer')
+
+// Rouvrir, puis fermer par la barre de titre : les deux chemins doivent valoir.
+await page.locator('tr.tb-ligne', { hasText: refDossier }).click()
+await page.waitForTimeout(1800)
+!(await page.locator('.titlebar .x').isDisabled())
+  ? ok('un parcours ouvert arme la croix de la barre de titre')
+  : ko('la croix de la barre de titre reste désarmée sur un parcours ouvert')
+await page.locator('.titlebar .x').click()
+await page.waitForTimeout(1500)
+await page.locator('.onglet-doss').count() === 0
+  ? ok('la croix de la barre de titre ferme elle aussi le parcours')
+  : ko('la croix de la barre de titre ne ferme rien')
+
+/* Fermer un onglet n'efface rien : la ligne du tableau de bord le rouvre. */
+await page.locator('tr.tb-ligne', { hasText: refDossier }).click()
+await page.waitForTimeout(1800)
+await page.locator('.onglet-doss').count() === 1
+  ? ok('le dossier fermé se rouvre depuis le tableau de bord')
+  : ko('le dossier fermé ne se rouvre pas')
 
 /* ── Remise en état des dossiers créés par la suite ──
    Le groupe « jalon de prescription » rattache un patient de DÉMONSTRATION au

@@ -86,6 +86,52 @@ function messageReproches (erreurs) {
     (erreurs.length > 6 ? ` (et ${erreurs.length - 6} autre(s))` : '')
 }
 
+/**
+ * Rang du processus à partir duquel le dossier devient nominatif.
+ *
+ * Ce rang se DÉDUIT d'un code de processus, jamais ne se recopie : il se
+ * décale dès qu'un processus est inséré ou retiré en amont, et c'est
+ * exactement ce qui s'est produit au retrait de l'aphérèse en v3.
+ *
+ * La v5 a supprimé `MISE_EN_FABRICATION`, qui portait la bascule jusque-là et
+ * était codé en dur ici. Le parcours désigne donc maintenant lui-même le
+ * processus pivot par `codeIdentificationPatient` — CAR-T autologue : le
+ * rattachement patient / prescription, une prescription étant nominative.
+ * `MISE_EN_FABRICATION` reste reconnu pour les parcours antérieurs qui ne
+ * déclarent rien.
+ *
+ * Retourne `{ index }` ou `{ erreur }`.
+ */
+function rangIdentificationPatient (definition) {
+  const codes = definition.processus.map((p) => p.code)
+
+  const declare = definition.codeIdentificationPatient
+  if (declare) {
+    const i = codes.indexOf(declare)
+    if (i < 0) {
+      return { erreur: `codeIdentificationPatient « ${declare} » absent du parcours.` }
+    }
+    return { index: i }
+  }
+
+  const iFab = codes.indexOf('MISE_EN_FABRICATION')
+  if (iFab >= 0) return { index: iFab }
+
+  /* Ni code déclaré, ni processus historique : un index numérique reste
+     accepté, mais il n'est plus que la dernière solution. Un parcours qui n'en
+     donne aucun est nominatif d'emblée — c'est le cas de la thérapie génique
+     et du MTI-PP, où l'anonymat n'a pas de sens. */
+  if (definition.indexIdentificationPatient === undefined) return { index: undefined }
+  const n = Number(definition.indexIdentificationPatient)
+  if (!Number.isInteger(n) || n < 0 || n > definition.processus.length) {
+    return {
+      erreur: 'indexIdentificationPatient hors du parcours, et ni ' +
+        'codeIdentificationPatient ni MISE_EN_FABRICATION pour le déduire.'
+    }
+  }
+  return { index: n }
+}
+
 /** Modèles de parcours et catalogue de processus. */
 export default async function referentiels (app) {
   app.get('/api/modeles/:code', async (request, reply) => {
@@ -301,18 +347,11 @@ export default async function referentiels (app) {
     const erreurs = reprochesDefinition(definition)
     if (erreurs.length) return reply.code(400).send({ erreur: messageReproches(erreurs) })
 
-    /* Même règle que pour une version : l'index d'identification patient est un
-       RANG, recalculé d'après le code du processus, jamais recopié. Retirer un
-       processus en amont le décalerait sinon en silence. */
-    const iFab = definition.processus.findIndex((p) => p.code === 'MISE_EN_FABRICATION')
-    const definitionFinale = { ...definition, ...(iFab >= 0 ? { indexIdentificationPatient: iFab } : {}) }
-    if (iFab < 0 && definitionFinale.indexIdentificationPatient !== undefined) {
-      const n = Number(definitionFinale.indexIdentificationPatient)
-      if (!Number.isInteger(n) || n < 0 || n > definition.processus.length) {
-        return reply.code(400).send({
-          erreur: 'indexIdentificationPatient hors du parcours, et MISE_EN_FABRICATION absent.'
-        })
-      }
+    const pivot = rangIdentificationPatient(definition)
+    if (pivot.erreur) return reply.code(400).send({ erreur: pivot.erreur })
+    const definitionFinale = {
+      ...definition,
+      ...(pivot.index === undefined ? {} : { indexIdentificationPatient: pivot.index })
     }
 
     const cree = await transaction(request.utilisateur.id, request.ip, async (client) => {
@@ -349,23 +388,11 @@ export default async function referentiels (app) {
       return reply.code(400).send({ erreur: messageReproches(erreurs) })
     }
 
-    /* L'index d'identification patient est un RANG : il se décale dès qu'un
-       processus est inséré ou retiré en amont. Le recalculer d'après le code du
-       processus concerné plutôt que de le recopier évite exactement le défaut
-       qu'a produit le retrait de l'aphérèse en v3. */
-    const iFab = definition.processus.findIndex((p) => p.code === 'MISE_EN_FABRICATION')
-    const dansLeParcours = iFab >= 0
+    const pivot = rangIdentificationPatient(definition)
+    if (pivot.erreur) return reply.code(400).send({ erreur: pivot.erreur })
     const definitionFinale = {
       ...definition,
-      ...(dansLeParcours ? { indexIdentificationPatient: iFab } : {})
-    }
-    if (!dansLeParcours && definition.indexIdentificationPatient !== undefined) {
-      const n = Number(definition.indexIdentificationPatient)
-      if (!Number.isInteger(n) || n < 0 || n > definition.processus.length) {
-        return reply.code(400).send({
-          erreur: 'indexIdentificationPatient hors du parcours, et MISE_EN_FABRICATION absent.'
-        })
-      }
+      ...(pivot.index === undefined ? {} : { indexIdentificationPatient: pivot.index })
     }
 
     const resultat = await transaction(

@@ -294,6 +294,13 @@ tr.tb-ligne.fini .tb-jauge i{background:#4caf50;}
 .cfg-x{font-size:12px;line-height:1;width:19px;height:19px;cursor:pointer;
   border-radius:2px;border:1px solid #e8c0c0;background:#fff;color:#c62828;}
 .cfg-x:disabled{opacity:.35;cursor:default;}
+/* Ordonnancement d'un point dans sa section : mêmes flèches que pour les
+   processus, pour que le geste soit le même à deux niveaux de zoom. Neutres,
+   là où la croix est rouge — déplacer n'est pas détruire. */
+.cfg-mv{font-size:11px;line-height:1;width:19px;height:19px;cursor:pointer;
+  border-radius:2px;border:1px solid #c8b8e8;background:#fff;color:#4a3880;}
+.cfg-mv:hover:not(:disabled){background:#f0eeff;border-color:#8878c8;}
+.cfg-mv:disabled{opacity:.3;cursor:default;}
 
 /* Badges de type, repris des couleurs de la v12. */
 .bt{display:inline-block;padding:2px 8px;border-radius:9px;font-size:11px;
@@ -350,8 +357,25 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
    posé, le dire explicitement. */
 .tb-restreint{font-size:11px;color:#e65100;font-weight:bold;}
 /* Onglet contextuel du parcours ouvert : présent seulement tant qu'un dossier
-   l'est, d'où la distinction visuelle avec les onglets permanents. */
-.onglet-doss{font-family:'Courier New',monospace;font-size:12px;}
+   l'est, d'où la distinction visuelle avec les onglets permanents.
+
+   Il porte sa croix de fermeture, comme un onglet de navigateur — c'est là
+   qu'on la cherche. L'onglet devient donc un conteneur de DEUX boutons : le
+   libellé, qui l'active, et la croix, qui le ferme. Un bouton dans un bouton
+   n'est pas du HTML valide, et le clic de fermeture activerait l'onglet au
+   passage. */
+.onglet-doss{font-family:'Courier New',monospace;font-size:12px;padding:0 6px 0 0;gap:0;}
+.onglet-doss-l{background:none;border:none;color:inherit;font-family:inherit;
+  font-size:inherit;font-weight:inherit;padding:7px 8px 7px 15px;cursor:pointer;}
+.onglet-x{background:none;border:none;color:#a89cd8;font-size:11px;line-height:1;
+  padding:3px 5px;border-radius:2px;cursor:pointer;flex-shrink:0;}
+.onglet-x:hover{background:#cc3344;color:#fff;}
+.onglet-doss.act .onglet-x{color:#8878c8;}
+.onglet-doss.act .onglet-x:hover{background:#cc3344;color:#fff;}
+
+/* La croix de la barre de titre ferme le parcours ouvert. Sans parcours, elle
+   n'a rien à fermer : elle le montre au lieu de rester rouge et inerte. */
+.titlebar .x:disabled{background:#7a6ab0;cursor:not-allowed;opacity:.6;}
 /* Motif d'ouverture de la modale patient : dire pourquoi on la demande, quand
    ce n'est pas l'utilisateur qui l'a ouverte de lui-même. */
 .cmodal-motif{background:#fff3e0;border-bottom:1px solid #e0a030;color:#7a4f00;
@@ -399,3 +423,21 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
    l'air d'un bouton comme les autres. */
 .adm-b.cfg-sup{border-color:#ef9a9a;color:#c62828;}
 .adm-b.cfg-sup:hover{background:#ffebee;border-color:#c62828;}
+
+/* ── Choix d'un point de contrôle à l'ajout ────────────────────────────────
+   Reprendre un point déjà formulé ailleurs plutôt que le retaper : la fenêtre
+   est plus large que la recherche patient parce qu'une ligne y porte le
+   libellé, sa provenance et ses marqueurs. */
+.pt-modal{width:720px;max-width:94vw;}
+.pt-res{border:1px solid #ddd8ff;border-radius:3px;max-height:340px;overflow-y:auto;
+  background:#fff;}
+.pt-row{display:flex;align-items:center;gap:10px;padding:7px 10px;cursor:pointer;
+  border-bottom:1px solid #f0eeff;}
+.pt-row:last-child{border-bottom:none;}
+.pt-row:hover{background:#f0eeff;}
+.pt-l{flex:1;min-width:0;}
+.pt-l .n{display:block;font-size:13px;color:#222;}
+.pt-l .o{display:block;font-size:11px;color:#8878c8;font-style:italic;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pt-m{display:flex;align-items:center;gap:5px;flex-shrink:0;}
+.pt-vide{padding:22px;text-align:center;color:#aaa;font-size:13px;}
