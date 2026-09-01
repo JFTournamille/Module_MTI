@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { transaction, requete } from '../db.js'
 
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
-const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date'])
+const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date', 'liste'])
 
 export default async function dossiers (app) {
   // ── Création d'un dossier ────────────────────────────────────────────────
@@ -944,6 +944,7 @@ export default async function dossiers (app) {
                 WHEN 'valeur' THEN s.valeur_num IS NULL
                 WHEN 'texte'  THEN coalesce(btrim(s.valeur_texte), '') = ''
                 WHEN 'date'   THEN coalesce(btrim(s.valeur_texte), '') = ''
+                WHEN 'liste'  THEN coalesce(btrim(s.valeur_texte), '') = ''
                 WHEN 'timer'  THEN s.timer_debut IS NULL
                 ELSE false
               END`,

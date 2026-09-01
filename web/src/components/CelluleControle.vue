@@ -166,6 +166,25 @@ function heure (epoch) {
     />
   </div>
 
+  <!-- Liste de valeurs.
+       Un choix arrêté plutôt qu'un texte libre : « IV », « i.v. » et « voie
+       veineuse » sont trois écritures d'une même chose, qu'aucun décompte ne
+       rapproche. Les valeurs viennent de la DÉFINITION du point, donc de la
+       version du modèle : une liste modifiée plus tard ne réécrit pas ce qui a
+       été choisi. -->
+  <select
+    v-else-if="point.type === 'liste'" class="cfi cse"
+    :value="saisie.valeurTexte" :disabled="lectureSeule"
+    @change="saisie.valeurTexte = $event.target.value"
+  >
+    <option value="">— à renseigner —</option>
+    <option v-for="o in point.options ?? []" :key="o" :value="o">{{ o }}</option>
+    <!-- Une valeur enregistrée puis retirée de la liste doit rester lisible :
+         le dossier a été rempli avec, l'effacer réécrirait l'historique. -->
+    <option v-if="saisie.valeurTexte && !(point.options ?? []).includes(saisie.valeurTexte)"
+            :value="saisie.valeurTexte">{{ saisie.valeurTexte }} (retirée de la liste)</option>
+  </select>
+
   <!-- Minuteur.
        Repris de `checklist_cart_reception_v2.html` : afficheur monospace vert
        sur noir, ▶ T0 pour lancer, ■ Fin pour arrêter, et la ligne Début / Fin

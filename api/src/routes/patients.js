@@ -12,26 +12,32 @@ export default async function patients (app) {
   app.get('/api/patients', async (request) => {
     const q = String(request.query.q ?? '').trim()
 
-    // Une recherche à vide ne doit pas déverser l'annuaire.
-    if (q.length < 2) return []
+    /* Une recherche à vide ne doit pas déverser l'annuaire — SAUF demande
+       explicite, pour l'écran de codification qui montre ce que le module
+       connaît déjà. Ce n'est pas un référentiel patients : c'est la liste des
+       patients qu'un dossier a rattachés, et elle est plafonnée. Le module
+       n'en constitue pas un, l'annuaire de référence reste le SIH. */
+    const tous = request.query.tous === 'oui'
+    if (q.length < 2 && !tous) return []
 
     const { rows } = await requete(
-      `SELECT p.id, p.reference,
+      `SELECT p.id, p.reference, p.source,
               coalesce(i.nom || ' ' || coalesce(i.prenom, ''), '(identité non enregistrée)') AS nom,
               i.date_naissance, i.ipp, i.identifiants
          FROM mti.patient p
          LEFT JOIN mti.patient_identite i ON i.patient_id = p.id
-        WHERE p.reference ILIKE $1
-           OR i.nom ILIKE $1
-           OR i.prenom ILIKE $1
+        WHERE $2 OR p.reference ILIKE $1
+                  OR i.nom ILIKE $1
+                  OR i.prenom ILIKE $1
         ORDER BY i.nom NULLS LAST
-        LIMIT 20`,
-      [`%${q}%`]
+        LIMIT $3`,
+      [`%${q}%`, tous && !q, tous ? 200 : 20]
     )
 
     return rows.map((r) => ({
       id: r.id,
       reference: r.reference,
+      source: r.source,
       nom: r.nom.trim(),
       ipp: r.ipp,
       identifiants: r.identifiants ?? [],

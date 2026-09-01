@@ -3,7 +3,7 @@ import { requete, transaction } from '../db.js'
 /* Types de points reconnus, alignés sur l'enum `mti.type_point`. Dupliqué ici
    à dessein : accepter un type que la base refusera ensuite à l'écriture d'une
    saisie produirait un modèle publié mais insaisissable. */
-const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date']
+const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date', 'liste']
 
 /**
  * Contrôle de forme d'une définition de parcours.
@@ -70,6 +70,23 @@ function reprochesDefinition (definition) {
         // rien à identifier.
         if (pt?.numeroSerie === true && !(Number(pt.exemplaires) > 1 || pt.multi)) {
           erreurs.push(`${ouPt} : un n° de série suppose plusieurs exemplaires`)
+        }
+        /* Une liste sans valeurs est un menu vide : l'opérateur ne pourrait
+           rien choisir, et le point serait insaisissable une fois publié. */
+        if (pt?.type === 'liste') {
+          const opts = pt.options
+          if (!Array.isArray(opts) || opts.length < 2) {
+            erreurs.push(`${ouPt} : un point « liste » attend au moins deux valeurs`)
+          } else if (opts.some((o) => typeof o !== 'string' || !o.trim())) {
+            erreurs.push(`${ouPt} : les valeurs d'une liste sont des textes non vides`)
+          } else if (new Set(opts.map((o) => o.trim())).size !== opts.length) {
+            erreurs.push(`${ouPt} : deux valeurs identiques dans la liste`)
+          }
+        } else if (pt?.options !== undefined) {
+          /* Des valeurs sur un point qui n'est pas une liste ne s'afficheraient
+             nulle part : c'est une configuration morte, qu'on refuse plutôt que
+             de la laisser croire active. */
+          erreurs.push(`${ouPt} : « options » ne s'applique qu'à un point de type « liste »`)
         }
         if (pt?.kit && !idsKits.has(pt.kit)) {
           erreurs.push(`${ouPt} : kit « ${pt.kit} » absent de la section`)

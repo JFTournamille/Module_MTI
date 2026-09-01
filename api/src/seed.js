@@ -89,6 +89,34 @@ try {
   }
   console.log(`✓ ${produits.length} produits de référence`)
 
+  /* ── Services (unités fonctionnelles) ──
+     Données PLAUSIBLES mais fictives, comme les produits de référence : elles
+     permettent de montrer l'écran et d'éprouver les rattachements avant que
+     l'établissement n'importe les siennes. L'UF identifie, le libellé décrit —
+     c'est l'UF que porte le SIH et qui sert au rapprochement. */
+  const services = [
+    ['1301', 'Hématologie clinique — secteur protégé', 'Pôle Cancérologie'],
+    ['1302', 'Hématologie clinique — hôpital de jour', 'Pôle Cancérologie'],
+    ['1305', 'Hématologie — consultations', 'Pôle Cancérologie'],
+    ['1310', 'Oncologie médicale', 'Pôle Cancérologie'],
+    ['1420', 'Unité de thérapie cellulaire', 'Pôle Biologie'],
+    ['1425', 'Laboratoire de contrôle qualité', 'Pôle Biologie'],
+    ['2100', 'Pharmacie à usage intérieur', 'Pôle Pharmacie'],
+    ['2110', 'Unité de préparation des chimiothérapies (UPC)', 'Pôle Pharmacie'],
+    ['2115', 'Stérilisation centrale', 'Pôle Pharmacie'],
+    ['3200', 'Réanimation médicale', 'Pôle Urgences-Réanimation'],
+    ['3210', 'Surveillance continue', 'Pôle Urgences-Réanimation'],
+    ['4100', 'Pédiatrie — onco-hématologie', 'Pôle Femme-Enfant']
+  ]
+  for (const [uf, libelle, pole] of services) {
+    await client.query(
+      `INSERT INTO mti.service (uf, libelle, pole)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (uf) DO UPDATE SET libelle = EXCLUDED.libelle, pole = EXCLUDED.pole`,
+      [uf, libelle, pole])
+  }
+  console.log(`✓ ${services.length} services (unités fonctionnelles)`)
+
   // ── Utilisateur de développement ──
   if ((process.env.AUTH_MODE ?? 'dev') === 'dev' && process.env.NODE_ENV !== 'production') {
     const { rows } = await client.query(

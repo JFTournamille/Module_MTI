@@ -5,7 +5,7 @@ import PanneauReception from './components/PanneauReception.vue'
 import PanneauStandard from './components/PanneauStandard.vue'
 import ModalePatient from './components/ModalePatient.vue'
 import ModaleCatalogue from './components/ModaleCatalogue.vue'
-import PanneauUtilisateurs from './components/PanneauUtilisateurs.vue'
+import PanneauCodifications from './components/PanneauCodifications.vue'
 import PanneauConfiguration from './components/PanneauConfiguration.vue'
 import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
@@ -20,7 +20,7 @@ const onglet = ref('bord')
 const TITRES = {
   bord: 'Tableau de bord MTI',
   parcours: 'Parcours MTI — Processus chronologique',
-  utilisateurs: 'Administration — Utilisateurs',
+  codifications: 'Codifications — Utilisateurs, services, produits, patients',
   configuration: 'Configuration — Processus et points de contrôle'
 }
 
@@ -31,7 +31,7 @@ const TITRES = {
 const ONGLETS = [
   ['bord', 'Tableau de bord'],
   ['configuration', 'Configuration'],
-  ['utilisateurs', 'Utilisateurs']
+  ['codifications', 'Codifications']
 ]
 
 /** Ouvre un dossier depuis le tableau de bord et bascule sur son parcours. */
@@ -373,7 +373,7 @@ const blocages = computed(() => {
     </template>
 
     <PanneauConfiguration v-else-if="onglet === 'configuration'" />
-    <PanneauUtilisateurs v-else-if="onglet === 'utilisateurs'" />
+    <PanneauCodifications v-else-if="onglet === 'codifications'" />
   </div>
 
   <ModalePatient

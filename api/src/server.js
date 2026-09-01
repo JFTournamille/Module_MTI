@@ -6,6 +6,7 @@ import patients from './routes/patients.js'
 import dossiers from './routes/dossiers.js'
 import utilisateurs from './routes/utilisateurs.js'
 import session from './routes/session.js'
+import services from './routes/services.js'
 
 const mode = verifierConfigurationAuth()
 
@@ -170,6 +171,7 @@ await app.register(referentiels)
 await app.register(patients)
 await app.register(dossiers)
 await app.register(utilisateurs)
+await app.register(services)
 await app.register(session)
 
 const port = Number(process.env.PORT ?? 3000)

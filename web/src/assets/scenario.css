@@ -328,3 +328,9 @@ input[type=radio].ron{accent-color:#cc2200;}
 .cam-sel select{flex:1;font-size:var(--fs-sm);padding:3px 6px;border:1px solid #aaa;border-radius:2px;}
 .cmodal-ft{display:flex;justify-content:flex-end;gap:8px;padding:8px 10px;
   border-top:1px solid #e0dcf0;background:#faf9ff;}
+
+/* Point « liste » : un choix arrêté, pas un texte libre. Le rendu suit celui
+   des autres champs de saisie, sans quoi la ligne changerait de hauteur selon
+   le type du point. */
+.cse{font-family:inherit;cursor:pointer;}
+.cse:disabled{background:#f5f5f5;cursor:default;}

@@ -703,12 +703,25 @@
             },
             {
               "num": "3.3",
+              "libelle": "Voie d'administration retenue",
+              "sousLibelle": "Telle que prescrite ; conditionne le dispositif à monter",
+              "type": "liste",
+              "obligatoire": true,
+              "options": [
+                "Voie veineuse centrale",
+                "Voie veineuse périphérique",
+                "Chambre implantable",
+                "PICC line"
+              ]
+            },
+            {
+              "num": "3.4",
               "libelle": "Dispositif d'administration monté et purgé",
               "type": "ouinon",
               "obligatoire": true
             },
             {
-              "num": "3.4",
+              "num": "3.5",
               "libelle": "Étiquette nominative apposée sur la poche",
               "sousLibelle": "Nom, date de naissance, n° de dossier, n° de lot, heure limite d'administration",
               "type": "photo",

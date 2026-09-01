@@ -519,9 +519,19 @@ const creationValide = computed(() =>
         <div class="cfg-r">
           <div v-if="store.pointCourant" class="form">
             <div class="form-h">Configuration d'un point de contrôle</div>
-            <div class="aide" style="margin-left:0;">
-              Processus <strong>{{ store.iProcessus + 1 }}. {{ store.processusCourant.nom }}</strong>
-              · section <strong>{{ store.sectionCourante.titre }}</strong>.
+            <!-- Retour au processus d'où l'on vient.
+                 Ajouter ou choisir un point bascule sur ce sous-onglet pour
+                 qu'on puisse le régler ; sans chemin de retour, il fallait
+                 revenir par « Processus » PUIS retrouver le processus dans la
+                 liste — deux gestes pour défaire un enchaînement automatique.
+                 Le processus est celui du point ouvert : le bouton nomme donc
+                 toujours la bonne destination. -->
+            <div class="form-r cfg-retour">
+              <button class="adm-b" @click="sousOnglet = 'processus'">
+                ← Revenir au processus {{ store.iProcessus + 1 }}.
+                {{ store.processusCourant.nom }}
+              </button>
+              <span class="meta">section « {{ store.sectionCourante.titre }} »</span>
             </div>
 
             <div class="form-r">
@@ -555,6 +565,37 @@ const creationValide = computed(() =>
                      @input="store.poser('seuil', $event.target.value === ''
                        ? null : Number($event.target.value))">
             </div>
+            <!-- Valeurs proposées : elles vivent dans la définition du point,
+                 donc dans la version du modèle. Une liste modifiée plus tard ne
+                 réécrit pas ce qui a été choisi dans les dossiers ouverts. -->
+            <template v-if="store.pointCourant.type === 'liste'">
+              <div class="form-r" style="align-items:flex-start;">
+                <label style="padding-top:5px;">Valeurs proposées</label>
+                <div class="cfg-opts">
+                  <div v-for="(o, i) in store.pointCourant.options ?? []" :key="i" class="cfg-opt">
+                    <input type="text" :value="o"
+                           @input="store.pointCourant.options[i] = $event.target.value;
+                                   store.marquer()">
+                    <button class="cfg-mv" title="Monter" :disabled="i === 0"
+                            @click="store.deplacerOption(i, -1)">↑</button>
+                    <button class="cfg-mv" title="Descendre"
+                            :disabled="i === (store.pointCourant.options?.length ?? 0) - 1"
+                            @click="store.deplacerOption(i, 1)">↓</button>
+                    <button class="cfg-x" title="Retirer cette valeur"
+                            :disabled="(store.pointCourant.options?.length ?? 0) <= 2"
+                            @click="store.retirerOption(i)">×</button>
+                  </div>
+                  <button class="adm-b" @click="store.ajouterOption()">+ valeur</button>
+                </div>
+              </div>
+              <div class="aide">
+                Deux valeurs au minimum : à une seule, le choix n'en est plus un.
+                L'ordre est celui du menu déroulant. Une valeur retirée plus tard
+                reste lisible dans les dossiers qui la portent — elle y est
+                signalée comme retirée, elle n'y est pas effacée.
+              </div>
+            </template>
+
             <div v-if="store.pointCourant.type === 'valeur'" class="aide">
               Une valeur <strong>supérieure</strong> au seuil déclenche l'alarme, figée
               à l'enregistrement. Laisser vide pour un relevé sans seuil.

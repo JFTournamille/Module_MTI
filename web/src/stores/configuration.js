@@ -27,6 +27,7 @@ export const TYPES_POINT = [
   ['ouinon', 'Oui / Non'],
   ['valeur', 'Valeur (°C, numération…)'],
   ['texte', 'Texte libre'],
+  ['liste', 'Liste de valeurs'],
   ['date', 'Date'],
   ['photo', 'Photo'],
   ['timer', 'Minuteur'],
@@ -398,6 +399,16 @@ export const useConfiguration = defineStore('configuration', () => {
     if (!pt) return
     pt[champ] = valeur
     if (champ === 'type' && valeur !== 'valeur') delete pt.seuil
+    /* Les valeurs proposées n'ont de sens que sur une liste : les laisser sur
+       un point devenu « oui/non » serait une configuration morte, que le
+       serveur refuse d'ailleurs à la publication. Passer EN liste amorce deux
+       valeurs, une liste vide n'étant pas publiable. */
+    if (champ === 'type') {
+      if (valeur !== 'liste') delete pt.options
+      else if (!Array.isArray(pt.options) || pt.options.length < 2) {
+        pt.options = ['Première valeur', 'Deuxième valeur']
+      }
+    }
     if (champ === 'exemplaires') {
       const n = Number(valeur)
       if (!Number.isInteger(n) || n < 2) { delete pt.exemplaires; pt.numeroSerie = false }
@@ -416,6 +427,33 @@ export const useConfiguration = defineStore('configuration', () => {
       delete pt.kit
       pt.numeroSerie = false
     }
+    marquer()
+  }
+
+  // ── Valeurs d'un point « liste » ──────────────────────────────────────────
+
+  function ajouterOption () {
+    const pt = pointCourant.value
+    if (!pt || pt.type !== 'liste') return
+    pt.options = [...(pt.options ?? []), `Valeur ${(pt.options?.length ?? 0) + 1}`]
+    marquer()
+  }
+
+  function retirerOption (i) {
+    const pt = pointCourant.value
+    /* Deux valeurs au minimum : à une seule, le choix n'en est plus un, et le
+       serveur refuserait la publication. */
+    if (!pt?.options || pt.options.length <= 2) return
+    pt.options.splice(i, 1)
+    marquer()
+  }
+
+  function deplacerOption (i, sens) {
+    const pt = pointCourant.value
+    const j = i + sens
+    if (!pt?.options || j < 0 || j >= pt.options.length) return
+    const [o] = pt.options.splice(i, 1)
+    pt.options.splice(j, 0, o)
     marquer()
   }
 
@@ -555,6 +593,7 @@ export const useConfiguration = defineStore('configuration', () => {
     ajouterProcessus, retirerProcessus, deplacerProcessus,
     ajouterSection, retirerSection, ajouterPoint, retirerPoint, deplacerPoint,
     poser, ajouterKit, retirerKit, retirerPointCourant,
+    ajouterOption, retirerOption, deplacerOption,
     publier, annuler, creerParcours
   }
 })

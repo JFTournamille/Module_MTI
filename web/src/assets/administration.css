@@ -441,3 +441,23 @@ tr.tb-filtres input::placeholder{color:#a89cc8;font-style:italic;}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pt-m{display:flex;align-items:center;gap:5px;flex-shrink:0;}
 .pt-vide{padding:22px;text-align:center;color:#aaa;font-size:13px;}
+
+/* Valeurs d'un point « liste ». */
+.cfg-opts{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
+.cfg-opt{display:flex;align-items:center;gap:4px;}
+.cfg-opt input{min-width:260px;font-size:13px;padding:4px 8px;
+  border:1px solid #a090cc;border-radius:2px;}
+
+/* Référentiel des services : les cellules sont éditables sur place. Un champ
+   qui ressemble à du texte tant qu'on ne le survole pas — la table reste une
+   table, la saisie n'est qu'à un clic. */
+.sv-i{border:1px solid transparent;background:none;font:inherit;color:inherit;
+  padding:3px 5px;border-radius:2px;width:100%;}
+.sv-i:hover{border-color:#ddd8ff;background:#faf9ff;}
+.sv-i:focus{border-color:#8878c8;background:#fff;outline:none;}
+.sv-l{font-size:13px;}
+.adm-t tr.adm-off td{opacity:.55;}
+
+/* Retour au processus depuis la fiche d'un point : le chemin inverse de
+   l'enchaînement qui a amené ici. */
+.cfg-retour{margin:-2px 0 12px;padding-bottom:10px;border-bottom:1px solid #ece8fa;}
