@@ -37,6 +37,11 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+    environment:
+      # Vides par défaut : en local, aucune porte à l'entrée. Les renseigner
+      # permet d'éprouver la porte avant de la poser sur le serveur de test.
+      ACCES_UTILISATEUR: ${ACCES_UTILISATEUR:-}
+      ACCES_MOT_DE_PASSE: ${ACCES_MOT_DE_PASSE:-}
     ports: ['8080:80']
     depends_on: [api]
 

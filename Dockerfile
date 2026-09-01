@@ -28,8 +28,9 @@ FROM node:22-alpine
 
 # bash : `wait -n` de l'entrypoint n'existe pas dans l'ash de BusyBox.
 # tini : en PID 1, il transmet les signaux et récupère les processus orphelins.
-RUN apk add --no-cache nginx bash tini \
- && mkdir -p /run/nginx
+# apache2-utils : `htpasswd`, pour la porte d'entrée de la phase de test.
+RUN apk add --no-cache nginx bash tini apache2-utils \
+ && mkdir -p /run/nginx /etc/nginx/acces.d
 
 WORKDIR /app
 COPY --from=build-api /src/node_modules ./node_modules
@@ -49,7 +50,8 @@ COPY --from=build-web /src/web/dist /usr/share/nginx/html
 # à l'image officielle nginx:alpine.
 COPY deploiement/nginx-mono.conf /etc/nginx/http.d/default.conf
 COPY deploiement/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY deploiement/acces-basique.sh /usr/local/bin/acces-basique.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/acces-basique.sh
 
 ENV NODE_ENV=production
 ENV PORT=3000
