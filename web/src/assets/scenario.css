@@ -334,3 +334,19 @@ input[type=radio].ron{accent-color:#cc2200;}
    le type du point. */
 .cse{font-family:inherit;cursor:pointer;}
 .cse:disabled{background:#f5f5f5;cursor:default;}
+
+/* ── Barre latérale : le motif de la v12 ───────────────────────────────────
+   Pas de pastille. Les gros ronds de la v9 pesaient autant que le nom du
+   processus qu'ils accompagnaient, alors qu'ils ne portaient qu'un rang — et
+   ce rang ne s'affichait même pas. La v12 met à la place une simple glyphe
+   d'état dans une gouttière de 20 px (`stIco()`) et le rang DANS le nom :
+   « 1. Demande d'accès au traitement ».
+
+   La ligne est centrée verticalement, et non alignée en haut : avec deux
+   lignes de libellé, une glyphe calée en haut flotte au-dessus du vide. */
+.proc{align-items:center;}
+.pico{min-width:20px;text-align:center;flex-shrink:0;
+  font-size:14px;line-height:1;color:#6050a0;}
+.pico.ok{color:var(--vert-vif,#44bb77);font-size:16px;}
+.pico.cur{color:#a080ff;}
+.pcorps{flex:1;min-width:0;}

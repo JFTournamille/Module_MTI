@@ -337,8 +337,12 @@ await page.waitForTimeout(250)
 const nbProcApres = await page.locator('.proc').count()
 nbProcApres === NB_PROCESSUS + 1 ? ok(`${nbProcApres} processus après ajout`)
   : ko(`${nbProcApres} processus au lieu de ${NB_PROCESSUS + 1}`)
-const nomAjoute = await page.locator('.proc').nth(NB_PROCESSUS).locator('.pname').innerText()
-nomAjoute === 'Validation pharmaceutique' ? ok(`processus ajouté et sélectionné : ${nomAjoute}`)
+/* La ligne porte son rang depuis la reprise du motif v12 — « 12. Validation
+   pharmaceutique » — ce qui est justement ce qu'on veut voir. On éprouve donc
+   les deux : le rang attendu et le nom. */
+const nomAjoute = (await page.locator('.proc').nth(NB_PROCESSUS).locator('.pname').innerText()).trim()
+nomAjoute === `${NB_PROCESSUS + 1}. Validation pharmaceutique`
+  ? ok(`processus ajouté et sélectionné : ${nomAjoute}`)
   : ko(`nom inattendu : ${nomAjoute}`)
 const pointsAjoutes = await page.locator('.std-ir').count()
 pointsAjoutes === 4 ? ok('4 points de contrôle pré-chargés') : ko(`${pointsAjoutes} points`)
