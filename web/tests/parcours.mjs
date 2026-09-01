@@ -389,12 +389,27 @@ if (apiJoignable) {
 
     console.log('\n13. Retrait de la préallocation')
     await page.locator('.ch-pa-tog input[type=radio]').nth(0).check()
-    await page.waitForTimeout(200)
+    await page.waitForTimeout(900)
+    /* L'anonymat se constate EN AMONT du pivot : sur le pivot ou après, le
+       dossier est nominatif par construction, et l'y vérifier reviendrait à
+       reprocher au parcours de faire ce qu'on lui demande. */
+    if (nomAvantPivot) await allerAuProcessus(nomAvantPivot)
     const enteteRetour = await page.locator('.hdr-left .name').innerText()
     if (/En attente d'allocation/.test(enteteRetour)) {
       ok('retour à l\'anonymat, identité effacée')
     } else {
       ko(`en-tête : ${enteteRetour}`)
+    }
+    /* Le processus qui impose l'identification doit être NOMMÉ à l'écran :
+       « à la mise en fabrication » restait affiché alors que ce processus
+       avait quitté le parcours — l'écran renvoyait à une étape inexistante. */
+    if (nomPivot) {
+      await allerAuProcessus(nomPivot)
+      await page.waitForTimeout(300)
+      const enteteAuPivot = await page.locator('.hdr-left .name').innerText()
+      enteteAuPivot.includes(nomPivot)
+        ? ok(`l'en-tête nomme le processus qui impose l'identification : « ${enteteAuPivot} »`)
+        : ko(`en-tête au pivot : « ${enteteAuPivot} » (attendu : « ${nomPivot} »)`)
     }
   }
 } else {

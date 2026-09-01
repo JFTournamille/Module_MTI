@@ -846,14 +846,28 @@ export const useParcours = defineStore('parcours', () => {
 
   // ────────────────────────────────────────── Identification du patient ──
 
-  /** Règle métier : le parcours est anonyme jusqu'à la mise en fabrication.
-   *  Avant cette étape, seule une préallocation explicite fait apparaître
-   *  l'identité. C'est aussi ce qui limite l'exposition des données de santé. */
+  /**
+   * Règle métier : le parcours est anonyme jusqu'au processus PIVOT, que le
+   * modèle désigne lui-même. Avant lui, seule une préallocation explicite fait
+   * apparaître l'identité — c'est ce qui limite l'exposition des données de
+   * santé.
+   *
+   * Le pivot n'est pas le même d'un parcours à l'autre : « mise en
+   * fabrication » pour le CAR-T autologue jusqu'en v4, le rattachement patient
+   * depuis ; la thérapie génique et le MTI-PP sont nominatifs d'emblée.
+   */
   const patientIdentifie = computed(() => {
     // Un patient rattaché, quelle qu'en soit l'origine — préallocation
-    // explicite ou allocation à la mise en fabrication — est identifié.
+    // explicite ou allocation au pivot — est identifié.
     if (dossier.patient) return true
     return selection.value >= (modele.value?.indexIdentificationPatient ?? Infinity)
+  })
+
+  /** Nom du processus qui impose l'identification, tel que le modèle le porte. */
+  const processusIdentification = computed(() => {
+    const i = modele.value?.indexIdentificationPatient
+    if (i === undefined || i === null) return null
+    return processus.value[i]?.nom ?? modele.value?.processus?.[i]?.nom ?? null
   })
 
   /* ── Identifiants du patient ────────────────────────────────────────────
@@ -908,7 +922,15 @@ export const useParcours = defineStore('parcours', () => {
       return { texte: `${dossier.patient.nom} • N° ${dossier.patient.reference}`, style: 'nomme' }
     }
     if (patientIdentifie.value) {
-      return { texte: 'Patient à identifier à la mise en fabrication', style: 'attente' }
+      /* Le processus est NOMMÉ, il n'est pas supposé : « à la mise en
+         fabrication » restait affiché alors que ce processus avait quitté le
+         parcours — l'écran renvoyait l'opérateur à une étape qui n'existait
+         plus. */
+      const ou = processusIdentification.value
+      return {
+        texte: ou ? `Patient à identifier — ${ou}` : 'Patient à identifier',
+        style: 'attente'
+      }
     }
     /* « En attente d'allocation », pas « non affecté » : le dossier n'est pas
        en défaut, il est à un stade du parcours où l'identité n'a pas encore
@@ -1056,7 +1078,7 @@ export const useParcours = defineStore('parcours', () => {
     alarme,
     demarrerMinuteur, arreterMinuteur, dureeMinuteur, minuteurEnCours,
     patientIdentifie, libellePatient, ordonnancierVisible,
-    basculerPreallocation, choisirPatient,
+    basculerPreallocation, choisirPatient, processusIdentification,
     urlPhoto, deposerPhoto, retirerPhoto,
     pointsIncomplets, arreterHorloge
   }

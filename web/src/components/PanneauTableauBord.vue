@@ -127,7 +127,7 @@ const dateCourte = (v) => v
       </div>
       <div class="aide" style="margin-left:129px;">
         Aucune donnée patient n'est demandée : le dossier reste en attente d'allocation
-        jusqu'à la préallocation ou la mise en fabrication.
+        jusqu'à la préallocation ou au processus qui impose l'identification.
       </div>
       <div class="adm-r" style="margin-bottom:0;">
         <label></label>
