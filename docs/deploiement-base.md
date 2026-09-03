@@ -425,6 +425,32 @@ CapRover → *Settings* → renseigner un **Root Domain**, puis activer **HTTPS*
 (Let's Encrypt) et **Force HTTPS**. Indépendant du module MTI, mais à traiter
 avant mise en service.
 
+### 8 bis. Fermer l'accès pendant la phase de test
+
+Une adresse diffusée par courriel finit par circuler. Tant que le module tourne
+sur un serveur public avec `AUTH_MODE=dev`, n'importe qui l'ayant reçue ouvre
+les dossiers et dépose des pièces — et le navigateur y choisit lui-même quel
+opérateur il prétend être.
+
+Deux variables dans *App Configs* posent une authentification HTTP basique
+devant toute l'application, API comprise :
+
+```
+ACCES_UTILISATEUR=<un identifiant partagé entre les testeurs>
+ACCES_MOT_DE_PASSE=<choisi dans le dashboard, jamais écrit ailleurs>
+```
+
+Puis redéployer. Le navigateur demandera les deux avant la première page.
+
+Ce n'est **pas** l'authentification des opérateurs et ça ne la remplace pas :
+`AUTH_MODE` répond à « qui signe cette saisie », question de traçabilité qui
+appelle le SSO de l'établissement. Ces deux variables répondent à « qui a le
+droit d'ouvrir la page ». Un seul couple partagé ne vaut rien comme signature.
+
+Les deux variables vont par paire : l'une sans l'autre **fait échouer le
+démarrage** plutôt que de servir l'application sans porte. Les retirer toutes
+les deux, puis redéployer, rouvre l'application.
+
 ### 9. Sauvegardes
 
 Une sauvegarde de volume non testée en restauration n'est pas une sauvegarde.
