@@ -120,7 +120,7 @@ app.get('/api/sante', async (request) => {
     joignable: false,
     schemaInstalle: false,
     migrationsAppliquees: null,
-    modeleActif: null,
+    parcoursActifs: null,
     referentielsCharges: false,
     cloisonnementAudit: null,
     utilisateursActifs: null,
@@ -195,9 +195,15 @@ app.get('/api/sante', async (request) => {
       base.migrationsAppliquees = null
     }
 
+    /* Tous les parcours en service, pas un seul : il y a une version active
+       PAR CODE, et un `LIMIT 1` sans `ORDER BY` en renvoyait un au hasard —
+       deux appels successifs pouvaient nommer deux parcours différents. Le
+       champ servait précisément à vérifier qu'une version publiée depuis
+       l'écran Configuration est bien celle en service : il ne pouvait pas
+       répondre à cette question en n'en montrant qu'un. */
     const { rows: mod } = await pool.query(
-      `SELECT code, version FROM mti.modele_parcours WHERE actif LIMIT 1`)
-    base.modeleActif = mod.length ? `${mod[0].code} v${mod[0].version}` : null
+      `SELECT code, version FROM mti.modele_parcours WHERE actif ORDER BY code`)
+    base.parcoursActifs = mod.map((m) => `${m.code} v${m.version}`)
 
     const { rows: [c] } = await pool.query(
       `SELECT (SELECT count(*) FROM mti.catalogue_processus WHERE actif) > 0
@@ -227,7 +233,7 @@ app.get('/api/sante', async (request) => {
       diagnostic = "Le rôle applicatif peut effacer le journal d'audit. " +
                    "L'API tourne probablement en superutilisateur : la traçabilité " +
                    "n'a aucune valeur en l'état. Ne pas mettre en service."
-    } else if (!base.modeleActif || !base.referentielsCharges) {
+    } else if (!base.parcoursActifs.length || !base.referentielsCharges) {
       diagnostic = "Schéma installé mais référentiels absents — lancer le seed."
     } else if (base.utilisateursActifs === 0) {
       diagnostic = "Aucun utilisateur actif : les saisies n'auraient pas d'auteur. " +
