@@ -24,12 +24,32 @@ const recherche = ref(false)
 const message = ref('')
 let jeton = 0
 
+/* La route refuse une recherche de moins de deux caractères, pour ne pas
+   déverser l'annuaire. L'appeler quand même — à l'ouverture, où le champ est
+   vide — affichait « Aucun résultat » avant toute frappe : l'écran annonçait
+   un annuaire vide là où aucune recherche n'avait encore eu lieu. Les deux
+   situations ne se ressemblent pas et ne se disent pas de la même façon. */
+const LONGUEUR_MINIMALE = 2
+const INVITE = 'Saisir au moins deux caractères : nom, prénom ou n° patient.'
+
 async function chercher () {
+  const q = requete.value.trim()
+  if (q.length < LONGUEUR_MINIMALE) {
+    /* Le jeton avance sans qu'aucun appel parte : une réponse encore en vol
+       — l'utilisateur a effacé sa saisie pendant la requête — ne doit pas
+       repeupler la liste après coup. */
+    jeton++
+    resultats.value = []
+    recherche.value = false
+    message.value = INVITE
+    return
+  }
+
   const courant = ++jeton
   recherche.value = true
   message.value = ''
   try {
-    const r = await appel(`/api/patients?q=${encodeURIComponent(requete.value)}`)
+    const r = await appel(`/api/patients?q=${encodeURIComponent(q)}`)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const data = await r.json()
     if (courant !== jeton) return          // réponse obsolète, on l'ignore
@@ -45,7 +65,12 @@ async function chercher () {
 }
 
 watch(() => props.ouvert, (ouvert) => {
-  if (ouvert) { requete.value = ''; resultats.value = []; message.value = ''; chercher() }
+  if (!ouvert) return
+  jeton++
+  requete.value = ''
+  resultats.value = []
+  recherche.value = false
+  message.value = INVITE
 })
 </script>
 
