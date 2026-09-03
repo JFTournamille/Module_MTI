@@ -5,6 +5,11 @@
  * Interroge l'API, qui relaie vers le SIH. On ne constitue PAS de référentiel
  * patients local : la maquette embarquait une liste en dur (`PATS` / `fakePatients`),
  * ce qui n'est acceptable qu'en démonstration.
+ *
+ * À l'ouverture, la fenêtre montre ce que le module connaît déjà — la liste de
+ * Codifications → Patients, par le même `tous=oui`. Ce n'est pas un annuaire :
+ * ce sont les patients qu'un dossier a rattachés. La saisie prend ensuite le
+ * relais dès deux caractères.
  */
 import { appel } from '../api.js'
 import { ref, watch } from 'vue'
@@ -24,17 +29,28 @@ const recherche = ref(false)
 const message = ref('')
 let jeton = 0
 
-async function chercher () {
+/* La route refuse une recherche de moins de deux caractères, pour ne pas
+   déverser l'annuaire à chaque frappe. */
+const LONGUEUR_MINIMALE = 2
+
+/* Ce que dit une liste vide dépend de ce qu'on a demandé, et les deux phrases
+   ne sont pas interchangeables : « aucun résultat » affirme qu'un patient
+   n'existe pas, ce qu'on ne peut pas dire tant qu'on n'a rien cherché. */
+const RIEN_DE_CONNU = 'Aucun patient rattaché pour l\'instant. Le module ne tient ' +
+  'pas d\'annuaire : il ne connaît que les patients qu\'un dossier a rattachés.'
+const RIEN_DE_TROUVE = 'Aucun résultat'
+
+async function interroger (url, siVide) {
   const courant = ++jeton
   recherche.value = true
   message.value = ''
   try {
-    const r = await appel(`/api/patients?q=${encodeURIComponent(requete.value)}`)
+    const r = await appel(url)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const data = await r.json()
     if (courant !== jeton) return          // réponse obsolète, on l'ignore
     resultats.value = data
-    if (!data.length) message.value = 'Aucun résultat'
+    if (!data.length) message.value = siVide
   } catch {
     if (courant !== jeton) return
     resultats.value = []
@@ -44,8 +60,29 @@ async function chercher () {
   }
 }
 
+/* Ce que le module connaît déjà : la même liste que Codifications → Patients,
+   par le même `tous=oui`, plafonné côté serveur. La fenêtre s'ouvrait sinon
+   vide, sur un « Aucun résultat » qui laissait croire l'outil cassé alors
+   qu'aucune recherche n'avait eu lieu. */
+function listerConnus () {
+  return interroger('/api/patients?tous=oui', RIEN_DE_CONNU)
+}
+
+/* Sous deux caractères — dont l'effacement complet de la saisie — on revient à
+   cette liste de départ plutôt que d'afficher une absence de résultat. Au-delà,
+   c'est le serveur qui cherche : il voit au-delà du plafond de la liste, et il
+   compare aussi la référence et l'IPP, que le libellé affiché ne porte pas. */
+function chercher () {
+  const q = requete.value.trim()
+  if (q.length < LONGUEUR_MINIMALE) return listerConnus()
+  return interroger(`/api/patients?q=${encodeURIComponent(q)}`, RIEN_DE_TROUVE)
+}
+
 watch(() => props.ouvert, (ouvert) => {
-  if (ouvert) { requete.value = ''; resultats.value = []; message.value = ''; chercher() }
+  if (!ouvert) return
+  requete.value = ''
+  resultats.value = []
+  listerConnus()
 })
 </script>
 
