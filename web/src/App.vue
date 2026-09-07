@@ -120,6 +120,20 @@ onBeforeUnmount(() => store.arreterHorloge())
 
 const enReception = computed(() => store.processusCourant?.gabarit === 'reception')
 
+/** Ce qui reste rouge sur le processus affiché, en une ligne puis en détail. */
+const resumeCoches = computed(() => {
+  const r = store.coches.nonVertes
+  if (!r.length) return ''
+  const t = r.slice(0, 2)
+    .map((c) => `${c.point_num ? c.point_num + ' ' : ''}${c.raison}`)
+    .join(' · ')
+  return r.length > 2 ? `${t} · +${r.length - 2}` : t
+})
+const detailCoches = computed(() =>
+  store.coches.nonVertes
+    .map((c) => `${c.point_num ?? '—'} ${c.libelle} — ${c.raison}`)
+    .join('\n'))
+
 /** La validation reste bloquée tant qu'un point obligatoire n'est pas renseigné
  *  et qu'aucune conclusion de conformité n'est posée. */
 const blocages = computed(() => {
@@ -131,7 +145,14 @@ const blocages = computed(() => {
   if (store.pointsIncomplets.length) {
     raisons.push(`${store.pointsIncomplets.length} point(s) obligatoire(s) non renseigné(s)`)
   }
-  if (!store.dossier.conformite) raisons.push('conformité non conclue')
+  /* La conformité n'est plus à conclure à la main quand le serveur constate
+     que tout est vert sur le dossier : c'est la décision prise. Le blocage ne
+     subsiste donc que si rien n'est coché ET que quelque chose est rouge. */
+  if (!store.dossier.conformite && !store.conformiteAutomatiquePossible) {
+    raisons.push(store.cochesDossier.nonVertes.length
+      ? `conformité non conclue (${store.cochesDossier.nonVertes.length} coche(s) non verte(s))`
+      : 'conformité non conclue')
+  }
   return raisons
 })
 </script>
@@ -330,16 +351,54 @@ const blocages = computed(() => {
     <div class="footer">
       <button class="f-btn">Imprimer</button>
       <button class="f-btn">Exporter PDF</button>
-      <div class="conf-grp">
-        Conformité :
-        <label>
-          <input type="radio" name="conformite" value="non_conforme"
-                 v-model="store.dossier.conformite"> Non conforme
-        </label>
-        <label>
-          <input type="radio" name="conformite" value="conforme"
-                 v-model="store.dossier.conformite"> Conforme
-        </label>
+      <!-- Conformité DU PROCESSUS EN COURS, pas du dossier : « ce qui est
+           conforme » doit désigner ce qu'on est en train de valider, et non un
+           dossier dont l'opérateur ne voit qu'un onzième à l'écran.
+           Le verdict vient du serveur (`store.coches`) : le recalculer ici
+           donnerait deux réponses qui divergeraient. -->
+      <div class="conf-grp" :class="{ 'conf-vert': store.coches.charge && store.coches.toutVert,
+                                      'conf-rouge': store.coches.nonVertes.length > 0 }">
+        <template v-if="store.coches.charge && store.coches.toutVert">
+          <span class="conf-ico">✓</span>
+          <span class="conf-t">
+            <strong>{{ store.processusCourant?.nom ?? 'Processus' }} — conforme</strong>
+            <span class="conf-s">
+              toutes les coches sont vertes ; conclusion automatique à la validation
+            </span>
+          </span>
+        </template>
+        <template v-else-if="store.coches.nonVertes.length">
+          <span class="conf-ico">⚠</span>
+          <span class="conf-t">
+            <strong>{{ store.coches.nonVertes.length }} coche(s) non verte(s)</strong>
+            <span class="conf-s" :title="detailCoches">{{ resumeCoches }}</span>
+          </span>
+          <!-- Une non-conformité reste un jugement : elle se coche à la main.
+               Le module constate le vert, il ne prononce pas l'inverse. -->
+          <label class="conf-r">
+            <input type="radio" name="conformite" value="non_conforme"
+                   :disabled="store.lectureSeule"
+                   v-model="store.dossier.conformite"> Non conforme
+          </label>
+          <label class="conf-r">
+            <input type="radio" name="conformite" value="conforme"
+                   :disabled="store.lectureSeule"
+                   v-model="store.dossier.conformite"> Conforme malgré tout
+          </label>
+        </template>
+        <template v-else>
+          Conformité :
+          <label class="conf-r">
+            <input type="radio" name="conformite" value="non_conforme"
+                   :disabled="store.lectureSeule"
+                   v-model="store.dossier.conformite"> Non conforme
+          </label>
+          <label class="conf-r">
+            <input type="radio" name="conformite" value="conforme"
+                   :disabled="store.lectureSeule"
+                   v-model="store.dossier.conformite"> Conforme
+          </label>
+        </template>
       </div>
       <span v-if="store.dossierId" class="etat-enr">
         <template v-if="store.enregistrement">enregistrement…</template>
@@ -373,10 +432,14 @@ const blocages = computed(() => {
       </button>
       <button
         class="btn-val" :disabled="blocages.length > 0 || !store.dossierId || store.lectureSeule"
-        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}` : 'Valider le dossier'"
+        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}`
+          : store.dossier.conformite
+            ? `Valider le dossier — conformité conclue à la main : ${store.dossier.conformite}`
+            : 'Valider le dossier — conformité constatée automatiquement, toutes les coches sont vertes'"
         :style="(blocages.length || !store.dossierId || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
         @click="store.validerDossier()"
-      >✓ Valider</button>
+      >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
+        ? '✓ Valider — conforme (auto)' : '✓ Valider' }}</button>
       <!-- Clore n'est pas valider, et ce n'est pas l'inverse : valider conclut
            un parcours allé au bout, clore constate qu'il s'est arrêté en
            chemin. D'où un bouton distinct, et un motif obligatoire — « clos »

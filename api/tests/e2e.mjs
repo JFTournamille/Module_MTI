@@ -835,5 +835,87 @@ console.log('\n20. Clôture d\'un parcours avorté')
     : ko(`ordonnancier ${JSON.stringify(r.corps[0]?.numeroOrdonnancier)}`)
 }
 
+// ── 21. Conformité automatique : seulement si toutes les coches sont vertes ──
+console.log('\n21. Conformité automatique')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E conformité auto' })
+  const dos = r.corps?.id
+
+  /* LE POINT QUI COMPTE : un dossier vierge ne doit PAS être « tout vert ».
+     La première version de la fonction ne regardait que les saisies
+     existantes — sans saisie, rien de rouge, donc conformité automatique sur
+     un parcours que personne n'a parcouru. */
+  r = await j('GET', `/api/dossiers/${dos}/conformite`)
+  r.corps?.toutVert === false && r.corps?.nonVertes?.length > 0
+    ? ok(`dossier vierge : ${r.corps.nonVertes.length} coche(s) attendues, aucune verte`)
+    : ko(`dossier vierge déclaré « tout vert » — ${JSON.stringify(r.corps?.toutVert)}`)
+
+  r = await j('POST', `/api/dossiers/${dos}/valider`, { conformite: 'auto' })
+  r.statut === 422 ? ok('conformité automatique refusée sur un dossier vierge (422)')
+    : ko(`statut ${r.statut}`)
+
+  // Remplir tous les points obligatoires du parcours, en vert.
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const procs = r.corps.processus
+  let poses = 0
+  for (const p of procs) {
+    if (p.externe) continue
+    const lot = []
+    for (const [iS, sec] of (p.definition?.sections ?? []).entries()) {
+      for (const [iP, pt] of (sec.points ?? []).entries()) {
+        if (pt.obligatoire !== true) continue
+        const base = { sectionIndex: iS, pointIndex: iP, pointNum: pt.num ?? null,
+          pointType: pt.type, exemplaire: 1, operateurRole: 'op1', obligatoire: true }
+        /* Une valeur DANS le seuil : `hors_seuil` est figé côté serveur, et
+           une valeur au-dessus rendrait la coche rouge — ce qui est
+           exactement ce que la vérification suivante éprouve. */
+        if (pt.type === 'ouinon') lot.push({ ...base, reponse: 'oui' })
+        else if (pt.type === 'valeur') {
+          lot.push({ ...base, valeurNum: pt.seuil !== undefined ? pt.seuil - 10 : 1 })
+        } else if (pt.type === 'timer') lot.push({ ...base, timerDebut: new Date().toISOString() })
+        else if (pt.type === 'photo') lot.push({ ...base, obligatoire: false })
+        else if (pt.type === 'liste') lot.push({ ...base, valeurTexte: (pt.options ?? ['x'])[0] })
+        else lot.push({ ...base, valeurTexte: 'renseigné en recette' })
+        poses++
+      }
+    }
+    if (lot.length) await j('PUT', `/api/processus/${p.id}/saisies`, { saisies: lot })
+  }
+  poses > 0 ? ok(`${poses} point(s) obligatoire(s) renseignés en vert`) : ko('aucun point à renseigner')
+
+  r = await j('GET', `/api/dossiers/${dos}/conformite`)
+  r.corps?.toutVert === true
+    ? ok('toutes les coches sont vertes')
+    : ko(`reste ${r.corps?.nonVertes?.length} rouge(s) : ` +
+         JSON.stringify(r.corps?.nonVertes?.slice(0, 3)))
+
+  /* Le constat vient du SERVEUR : le client demande « auto », il n'affirme
+     pas « tout est vert ». */
+  r = await j('POST', `/api/dossiers/${dos}/valider`, { conformite: 'auto' })
+  r.statut === 200 && r.corps?.conformite === 'conforme' &&
+  r.corps?.conformite_automatique === true
+    ? ok('conformité constatée automatiquement, et marquée comme telle')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  // Une conformité posée à la main n'est PAS marquée automatique.
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E conformité main' })
+  const dosM = r.corps?.id
+  r = await j('POST', `/api/dossiers/${dosM}/valider`, { conformite: 'non_conforme' })
+  r.statut === 200 && r.corps?.conformite_automatique === false
+    ? ok('conclusion manuelle : non marquée automatique')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  /* L'asymétrie, éprouvée en base : la machine constate le vert, elle ne
+     prononce jamais une non-conformité. */
+  r = await j('POST', `/api/dossiers/${dos}/valider`, { conformite: 'auto' })
+  r.statut === 409 ? ok('un dossier déjà validé ne se revalide pas')
+    : ko(`statut ${r.statut}`)
+
+  r = await j('POST', `/api/dossiers/${dosM}/valider`, { conformite: 'nimporte_quoi' })
+  r.statut === 400 ? ok('conformité inconnue refusée (400)') : ko(`statut ${r.statut}`)
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

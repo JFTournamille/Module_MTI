@@ -389,3 +389,21 @@ input[type=radio].ron{accent-color:#cc2200;}
    violet sans casser la ligne de métadonnées. */
 .ent-ordo{font:inherit;font-size:12px;width:96px;padding:1px 5px;border-radius:2px;
   border:1px solid #7a68b8;background:#ffffff;color:#1e0e50;}
+
+/* ── Conformité : ce qui est évalué, et où ──────────────────────────────────
+   La zone portait deux boutons radio et le mot « Conformité », sans dire de
+   QUOI la conformité était évaluée — le dossier entier, dont l'opérateur ne
+   voit qu'un onzième. Elle nomme désormais le processus en cours, et met en
+   avant le constat quand il est acquis. */
+.conf-grp{display:flex;align-items:center;gap:8px;padding:2px 8px;border-radius:3px;}
+.conf-grp .conf-ico{font-size:15px;font-weight:bold;line-height:1;}
+.conf-grp .conf-t{display:flex;flex-direction:column;line-height:1.25;}
+.conf-grp .conf-t strong{font-size:12px;}
+.conf-grp .conf-s{font-size:10.5px;opacity:.85;max-width:330px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.conf-r{font-size:12px;white-space:nowrap;}
+
+/* Vert : le constat est acquis, il doit se voir de loin — c'est l'information
+   que l'opérateur cherche avant de valider. */
+.conf-grp.conf-vert{background:#e8f7ee;border:1px solid #7cc79a;color:#0f5c32;}
+.conf-grp.conf-rouge{background:#fdeeee;border:1px solid #e0a0a0;color:#8c1d1d;}

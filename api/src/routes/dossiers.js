@@ -395,16 +395,39 @@ export default async function dossiers (app) {
     }
 
     return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* Conformité du processus, CONSTATÉE au moment de sa validation.
+         C'est le serveur qui regarde, pas le navigateur : une conformité est
+         une signature, et la faire calculer côté client, c'est permettre
+         qu'une page périmée en pose une sur un relevé hors seuil.
+
+         Asymétrie volontaire : tout vert donne « conforme » ; rien ne donne
+         « non conforme ». Le vert est un constat mécanique, la non-conformité
+         est un jugement pharmaceutique sur ce qu'il faut en faire. La base
+         refuse d'ailleurs une non-conformité automatique
+         (dp_auto_jamais_non_conforme). */
+      let conformiteAuto = false
+      if (etat === 'valide') {
+        const { rows: rouges } = await client.query(
+          'SELECT count(*)::int AS n FROM mti.coches_non_vertes($1, $2)',
+          [contexte[0].dossier_id, request.params.id])
+        conformiteAuto = rouges[0].n === 0
+      }
+
       const { rows } = await client.query(
         `UPDATE mti.dossier_processus
             SET etat = $2::mti.etat_processus,
                 ouvert_le = CASE WHEN $2 = 'a_venir' THEN NULL
                                  ELSE coalesce(ouvert_le, now()) END,
                 valide_par = CASE WHEN $2 = 'valide' THEN $3::uuid ELSE NULL END,
-                valide_le  = CASE WHEN $2 = 'valide' THEN now() ELSE NULL END
+                valide_le  = CASE WHEN $2 = 'valide' THEN now() ELSE NULL END,
+                conformite = CASE WHEN $2 = 'valide' AND $4 THEN 'conforme'::mti.conformite
+                                  WHEN $2 = 'valide' THEN conformite
+                                  ELSE NULL END,
+                conformite_automatique = ($2 = 'valide' AND $4)
           WHERE id = $1
-          RETURNING id, ordre, nom, etat, ouvert_le, valide_le`,
-        [request.params.id, etat, request.utilisateur.id])
+          RETURNING id, ordre, nom, etat, ouvert_le, valide_le,
+                    conformite, conformite_automatique`,
+        [request.params.id, etat, request.utilisateur.id, conformiteAuto])
 
       let suivant = null
       if (etat === 'valide') {
@@ -660,7 +683,8 @@ export default async function dossiers (app) {
     if (!rows.length) return reply.code(404).send({ erreur: 'Dossier introuvable' })
 
     const { rows: processus } = await requete(
-      `SELECT id, ordre, code, nom, gabarit, externe, definition, etat
+      `SELECT id, ordre, code, nom, gabarit, externe, definition, etat,
+              conformite, conformite_automatique
          FROM mti.dossier_processus WHERE dossier_id = $1 ORDER BY ordre`,
       [request.params.id]
     )
@@ -973,10 +997,68 @@ export default async function dossiers (app) {
   })
 
   // ── Validation d'un dossier ─────────────────────────────────────────────
+  // ── Ce qui n'est pas vert ────────────────────────────────────────────────
+  //
+  // La même source que la décision de conformité automatique, exposée à
+  // l'écran. Recalculer côté navigateur ce que le serveur constate, c'est se
+  // garantir deux réponses qui divergeront : l'écran annoncerait « tout est
+  // vert » là où la validation refuse, ou l'inverse. Une seule fonction SQL,
+  // un seul verdict.
+  //
+  // `?processus=<id>` restreint au processus en cours : c'est ce que le pied
+  // de page évalue désormais, « ce qui est conforme » devant désigner le
+  // processus qu'on valide et non un dossier dont on ne voit qu'un onzième.
+  app.get('/api/dossiers/:id/conformite', async (request, reply) => {
+    const { rows: existe } = await requete(
+      'SELECT id FROM mti.dossier WHERE id = $1', [request.params.id])
+    if (!existe.length) return reply.code(404).send({ erreur: 'Dossier introuvable.' })
+
+    const pid = String(request.query.processus ?? '') || null
+    const { rows } = await requete(
+      `SELECT processus_id, processus, point_num, libelle, exemplaire,
+              role::text AS role, raison
+         FROM mti.coches_non_vertes($1, $2)`,
+      [request.params.id, pid])
+
+    return {
+      nonVertes: rows,
+      /* Le verdict est rendu par le serveur, pas déduit du tableau par le
+         client : c'est lui qui décidera à la validation. */
+      toutVert: rows.length === 0,
+      portee: pid ? 'processus' : 'dossier'
+    }
+  })
+
   app.post('/api/dossiers/:id/valider', async (request, reply) => {
     const { conformite, commentaire } = request.body ?? {}
-    if (!['conforme', 'non_conforme'].includes(conformite)) {
-      return reply.code(400).send({ erreur: "conformite doit valoir 'conforme' ou 'non_conforme'" })
+    /* `auto` n'est pas une conformité à enregistrer, c'est une DEMANDE DE
+       CONSTAT : le serveur regarde les coches et conclut lui-même. C'est la
+       seule forme qui rende l'automatisme sûr — un client ne peut pas
+       affirmer « tout est vert », il peut seulement le demander. */
+    if (!['conforme', 'non_conforme', 'auto'].includes(conformite)) {
+      return reply.code(400).send({
+        erreur: "conformite doit valoir 'conforme', 'non_conforme' ou 'auto'"
+      })
+    }
+
+    let conclusion = conformite
+    let automatique = false
+    if (conformite === 'auto') {
+      const { rows: rouges } = await requete(
+        'SELECT processus, point_num, libelle, exemplaire, raison FROM mti.coches_non_vertes($1)',
+        [request.params.id])
+      if (rouges.length) {
+        /* Refus, pas repli sur « non conforme » : le module n'a pas à
+           prononcer une non-conformité que personne n'a jugée. Il dit ce qui
+           est rouge et rend la main. */
+        return reply.code(422).send({
+          erreur: `Conformité automatique impossible : ${rouges.length} coche(s) ` +
+                  'ne sont pas vertes. Les traiter, ou conclure la conformité à la main.',
+          details: rouges
+        })
+      }
+      conclusion = 'conforme'
+      automatique = true
     }
 
     // Un dossier ne se valide pas avec des points obligatoires vides.
@@ -1009,20 +1091,26 @@ export default async function dossiers (app) {
         const { rows } = await client.query(
           `UPDATE mti.dossier
               SET statut = 'valide', conformite = $2, commentaire = $3,
-                  valide_par = $4, valide_le = now()
+                  valide_par = $4, valide_le = now(), conformite_automatique = $5
             WHERE id = $1 AND statut NOT IN ('valide', 'annule')
-            RETURNING id, statut, conformite, valide_le`,
-          [request.params.id, conformite, commentaire ?? null, request.utilisateur.id]
+            RETURNING id, statut, conformite, conformite_automatique, valide_le`,
+          [request.params.id, conclusion, commentaire ?? null, request.utilisateur.id,
+            automatique]
         )
         if (!rows.length) {
           reply.code(409)
           return { erreur: 'Dossier introuvable, déjà validé, ou clos sur un parcours avorté' }
         }
+        /* La validation du dossier valide les processus encore en cours. Ils
+           héritent du constat : si le dossier entier est vert, chacun l'est. */
         await client.query(
           `UPDATE mti.dossier_processus
-              SET etat = 'valide', valide_par = $2, valide_le = now()
+              SET etat = 'valide', valide_par = $2, valide_le = now(),
+                  conformite = CASE WHEN $3 THEN 'conforme'::mti.conformite
+                                    ELSE conformite END,
+                  conformite_automatique = $3
             WHERE dossier_id = $1 AND etat = 'en_cours'`,
-          [request.params.id, request.utilisateur.id]
+          [request.params.id, request.utilisateur.id, automatique]
         )
         return rows[0]
       })

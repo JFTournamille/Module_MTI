@@ -289,7 +289,12 @@ export const useParcours = defineStore('parcours', () => {
         sections: p.definition?.sections ?? [],
         etat: p.etat,
         operateur: null,
-        duCatalogue: p.ajoute_du_catalogue === true
+        duCatalogue: p.ajoute_du_catalogue === true,
+        /* Conformité DU PROCESSUS, constatée par le serveur à sa validation.
+           Distincte de celle du dossier : le pied de page évalue le processus
+           qu'on valide, pas un dossier dont on ne voit qu'un onzième. */
+        conformite: p.conformite ?? null,
+        conformiteAutomatique: p.conformite_automatique === true
       }))
       processusIds.value = d.processus.map((p) => p.id)
 
@@ -344,6 +349,10 @@ export const useParcours = defineStore('parcours', () => {
       const enCours = d.processus.findIndex((p) => p.etat !== 'valide')
       selection.value = enCours >= 0 ? enCours : 0
       await chargerSignatures()
+      /* L'état des coches est connu dès l'affichage : sans cela le pied de
+         page resterait muet jusqu'à la première saisie, et la conformité
+         automatique aurait l'air indisponible sur un dossier déjà complet. */
+      await rafraichirCoches()
       return true
     } catch (e) {
       erreurDossier.value = e.message || 'API injoignable.'
@@ -450,6 +459,12 @@ export const useParcours = defineStore('parcours', () => {
         return false
       }
       dernierEnregistrement.value = new Date()
+      /* Une saisie enregistrée peut avoir rendu une coche verte, ou rouge : le
+         pied de page doit le suivre, sinon il annonce l'état d'avant.
+         Attendu, pas lancé en arrière-plan : deux rafraîchissements
+         concurrents se seraient écrasés l'un l'autre, et le dernier arrivé
+         n'est pas le plus récent. */
+      await rafraichirCoches()
       return true
     } catch (e) {
       erreurDossier.value = e.message || 'API injoignable — saisies NON enregistrées.'
@@ -460,22 +475,48 @@ export const useParcours = defineStore('parcours', () => {
   }
 
   /** Enregistre tout (en-tête et processus courant) puis valide le dossier. */
+  /**
+   * Conformité automatique possible : tout est vert sur le DOSSIER entier.
+   *
+   * `charge` compte : hors ligne, on ne prétend pas que tout est vert, et
+   * l'écran redemande une conclusion à la main.
+   */
+  const conformiteAutomatiquePossible = computed(() =>
+    cochesDossier.charge && cochesDossier.toutVert && !lectureSeule.value)
+
   async function validerDossier () {
     if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
-    if (!dossier.conformite) { erreurDossier.value = 'Conclure la conformité avant de valider.'; return false }
     if (!(await enregistrerEntete())) return false
     if (!(await enregistrerProcessus())) return false
+    /* Les coches sont relues APRÈS l'enregistrement : les évaluer avant, c'est
+       juger un dossier que le serveur ne connaît pas encore. */
+    await rafraichirCoches()
+
+    /* Une conclusion posée à la main l'emporte : l'opérateur qui déclare une
+       non-conformité sur un dossier vert sait quelque chose que les coches ne
+       disent pas. Sinon, `auto` DEMANDE au serveur de constater — le client
+       n'affirme jamais « tout est vert », il le demande. */
+    const demande = dossier.conformite ?? (conformiteAutomatiquePossible.value ? 'auto' : null)
+    if (!demande) {
+      erreurDossier.value = cochesDossier.nonVertes.length
+        ? `Conclure la conformité : ${cochesDossier.nonVertes.length} coche(s) ne sont pas vertes.`
+        : 'Conclure la conformité avant de valider.'
+      return false
+    }
 
     const r = await appel(`/api/dossiers/${dossierId.value}/valider`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ conformite: dossier.conformite, commentaire: dossier.commentaire || null })
+      body: JSON.stringify({ conformite: demande, commentaire: dossier.commentaire || null })
     })
     if (!r.ok) {
       const corps = await r.json().catch(() => null)
       if (r.status === 422 && corps?.details?.length) {
         erreurDossier.value = `${corps.erreur} : ` +
           corps.details.map((d) => `${d.point_num ?? '?'} (${d.processus})`).join(', ')
+        /* Le refus du serveur remet l'écran d'accord avec lui : sans cela le
+           pied de page continuerait d'annoncer « tout est vert ». */
+        await rafraichirCoches()
       } else {
         erreurDossier.value = corps?.erreur ?? `Validation refusée (${r.status}).`
       }
@@ -1078,6 +1119,10 @@ export const useParcours = defineStore('parcours', () => {
       await enregistrerProcessus(selection.value)
     }
     selection.value = i
+    /* La portée du pied de page suit le processus affiché : c'est ce qu'il
+       évalue. Sans ce rafraîchissement il annoncerait l'état du processus
+       précédent sous le nom du nouveau. */
+    if (dossierId.value) await rafraichirCoches()
   }
   const processusCourant = computed(() => processus.value[selection.value] ?? null)
 
@@ -1085,6 +1130,46 @@ export const useParcours = defineStore('parcours', () => {
 
   /** Points obligatoires non renseignés du processus courant.
    *  Sert au blocage de la validation — ce que les maquettes ne faisaient pas. */
+
+  /* Ce que le SERVEUR constate comme non vert. Le recalculer ici donnerait
+     deux verdicts qui divergeraient : l'écran annoncerait « tout est vert » là
+     où la validation refuse. On l'affiche, on ne le décide pas.
+
+     Deux portées, parce que deux questions différentes se posent en même
+     temps : le pied de page évalue LE PROCESSUS qu'on valide (§8 : « limiter
+     au processus en cours de validation »), le bouton de validation du dossier
+     évalue LE DOSSIER. Confondre les deux, c'était annoncer « tout est vert »
+     sur un processus impeccable alors qu'un relevé hors seuil attend trois
+     processus plus haut. */
+  const coches = reactive({ nonVertes: [], toutVert: false, charge: false })
+  const cochesDossier = reactive({ nonVertes: [], toutVert: false, charge: false })
+
+  async function chargerCoches (cible, processusId) {
+    if (!dossierId.value) { cible.charge = false; return }
+    const q = processusId ? `?processus=${encodeURIComponent(processusId)}` : ''
+    try {
+      const r = await appel(`/api/dossiers/${dossierId.value}/conformite${q}`)
+      if (!r.ok) { cible.charge = false; return }
+      const d = await r.json()
+      cible.nonVertes = d.nonVertes ?? []
+      cible.toutVert = d.toutVert === true
+      cible.charge = true
+    } catch {
+      /* Hors ligne : on ne prétend pas que tout est vert. `charge` reste faux
+         et l'écran demande une conclusion à la main. */
+      cible.charge = false
+      cible.toutVert = false
+    }
+  }
+
+  /** Rafraîchit les deux portées. À appeler après toute écriture de saisie. */
+  async function rafraichirCoches () {
+    await Promise.all([
+      chargerCoches(coches, processusIds.value[selection.value]),
+      chargerCoches(cochesDossier, null)
+    ])
+  }
+
   const pointsIncomplets = computed(() => {
     const lignes = processusCourant.value?.gabarit === 'reception'
       ? lignesReception.value
@@ -1099,7 +1184,11 @@ export const useParcours = defineStore('parcours', () => {
         switch (l.point.type) {
           case 'ouinon': return s.reponse === null
           case 'valeur': return s.valeurNum === null || s.valeurNum === ''
-          case 'texte': case 'date': return !s.valeurTexte.trim()
+          /* `liste` manquait : un point obligatoire de type liste n'était
+             jamais compté incomplet côté écran, alors que la route de
+             validation le refuse. Le bouton s'armait, et la validation
+             répondait 422 sans que rien ne l'ait annoncé. */
+          case 'texte': case 'date': case 'liste': return !s.valeurTexte.trim()
           case 'timer': return !s.timerDebut
           case 'photo': return s.photos.length === 0
           case 'auto': return false
@@ -1129,6 +1218,7 @@ export const useParcours = defineStore('parcours', () => {
     patientIdentifie, libellePatient, ordonnancierVisible,
     basculerPreallocation, choisirPatient, processusIdentification,
     urlPhoto, deposerPhoto, retirerPhoto,
+    coches, cochesDossier, rafraichirCoches, conformiteAutomatiquePossible,
     pointsIncomplets, arreterHorloge
   }
 })

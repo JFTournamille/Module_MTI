@@ -572,6 +572,86 @@ BEGIN
   RAISE NOTICE '  ✓ clôture tracée dans le journal d''audit';
 END $$;
 
+\echo ''
+\echo 'TEST 21 — La machine constate le vert, elle ne prononce pas de non-conformité'
+DO $$
+DECLARE
+  v_auteur  uuid;
+  v_modele  uuid;
+  v_dossier uuid;
+  v_rouges  integer;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-CONF-AUTO-1', v_modele, v_auteur) RETURNING id INTO v_dossier;
+
+  /* L'asymétrie est tenue EN BASE, pas seulement dans la route : si un jour du
+     code tentait de poser une non-conformité automatique, il échouerait ici
+     plutôt que de produire une non-conformité que personne n'a prononcée. */
+  BEGIN
+    UPDATE mti.dossier
+       SET statut = 'valide', conformite = 'non_conforme', conformite_automatique = true,
+           valide_par = v_auteur, valide_le = now()
+     WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : non-conformité automatique acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ non-conformité automatique refusée en base';
+  END;
+
+  -- Ni une conformité « automatique » sans conclusion.
+  BEGIN
+    UPDATE mti.dossier SET conformite_automatique = true WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : automatique sans conformité accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ « automatique » sans conclusion refusé';
+  END;
+
+  UPDATE mti.dossier
+     SET statut = 'valide', conformite = 'conforme', conformite_automatique = true,
+         valide_par = v_auteur, valide_le = now()
+   WHERE id = v_dossier;
+  RAISE NOTICE '  ✓ conformité automatique acceptée';
+
+  /* Et le défaut que la migration 015 a fermé : un dossier vierge n'est pas
+     « tout vert ». La version précédente ne regardait que les saisies
+     existantes — sans saisie, rien de rouge. */
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-CONF-AUTO-2', v_modele, v_auteur) RETURNING id INTO v_dossier;
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, definition)
+  VALUES (v_dossier, 1, 'TEST', 'Processus de test', jsonb_build_object(
+    'sections', jsonb_build_array(jsonb_build_object(
+      'titre', 'Section', 'points', jsonb_build_array(
+        jsonb_build_object('num', '1.1', 'libelle', 'Point obligatoire',
+                           'type', 'ouinon', 'obligatoire', true))))));
+
+  SELECT count(*) INTO v_rouges FROM mti.coches_non_vertes(v_dossier);
+  IF v_rouges = 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : dossier sans aucune saisie déclaré « tout vert »';
+  END IF;
+  RAISE NOTICE '  ✓ un point obligatoire jamais saisi compte comme non vert';
+
+  -- Une coche posée et verte disparaît de la liste.
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index, point_num,
+                          point_type, obligatoire, reponse, operateur_id)
+  SELECT dp.id, 0, 0, '1.1', 'ouinon', true, 'oui', v_auteur
+    FROM mti.dossier_processus dp WHERE dp.dossier_id = v_dossier;
+  SELECT count(*) INTO v_rouges FROM mti.coches_non_vertes(v_dossier);
+  IF v_rouges <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : point renseigné « oui » encore compté non vert (%)', v_rouges;
+  END IF;
+  RAISE NOTICE '  ✓ point renseigné « oui » : coche verte';
+
+  -- Une réponse « non » n'est pas verte, même renseignée.
+  UPDATE mti.saisie SET reponse = 'non'
+   WHERE dossier_processus_id IN (SELECT id FROM mti.dossier_processus WHERE dossier_id = v_dossier);
+  SELECT count(*) INTO v_rouges FROM mti.coches_non_vertes(v_dossier);
+  IF v_rouges = 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : réponse « non » comptée verte';
+  END IF;
+  RAISE NOTICE '  ✓ réponse « non » : coche non verte';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

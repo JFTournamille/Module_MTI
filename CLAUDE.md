@@ -50,6 +50,22 @@ réglementaires, pas à des préférences techniques.
   un traitement, c'est ouvrir un nouveau dossier. Clore n'est pas valider :
   personne ne conclut sur la conformité d'un parcours inachevé, `conformite`
   reste `NULL`.
+- **La conformité automatique est CONSTATÉE PAR LE SERVEUR, jamais affirmée
+  par le client.** La route de validation reçoit `conformite: 'auto'` — une
+  demande de constat — et interroge `mti.coches_non_vertes()`. Ne jamais
+  calculer le vert côté navigateur : une conformité conclue est une signature,
+  et une page périmée pourrait la poser sur un relevé hors seuil.
+- **La machine confirme le vert, elle ne prononce jamais une non-conformité.**
+  Tout vert donne `conforme` + `conformite_automatique = true` ; une coche
+  rouge fait refuser le constat (422 avec le détail), jamais basculer en
+  `non_conforme` — c'est un jugement pharmaceutique. La base tient
+  l'asymétrie (`dossier_auto_jamais_non_conforme`). Ne pas la « compléter ».
+- **« Toutes les coches vertes » ne veut pas dire « il n'y a pas de coche ».**
+  `coches_non_vertes()` compare aux points obligatoires de la **définition
+  figée**, pas aux lignes de `saisie` : la première version ne regardait que
+  les saisies existantes, si bien qu'un dossier vierge était déclaré tout
+  vert. Le pied de page évalue **le processus en cours**
+  (`?processus=<id>`), la validation du dossier évalue le dossier entier.
 - **« Parcours clos » ne désigne pas un dossier validé.** Le libellé disait
   l'inverse de ce qu'il dit maintenant : validé = allé au bout
   (« Parcours validé »), clos = arrêté en chemin. Le n° d'ordonnancier est

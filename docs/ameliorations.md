@@ -75,7 +75,7 @@ retirée par cette décision, elle n'est pas oubliée.
 - la clôture est tracée dans `mti.audit` avec son auteur et le statut avant /
   après.
 
-### 1.2 Validation automatique — complétude n'est pas conformité
+### 1.2 Validation automatique — **tranché : automatique si tout est vert** ✔ fait
 
 **Demandes concernées** : §2 « si l'ensemble du processus est conforme, cocher
 automatiquement Conforme et valider automatiquement le processus », §8 « rendre
@@ -105,11 +105,53 @@ fois — sans fabriquer de signature :
 Cela couvre aussi §2 « remplacer les multiples actions de validation par un seul
 bouton Valider », qui est le vrai besoin derrière la demande.
 
-Si vous préférez malgré tout la validation entièrement automatique, dites-le et
-je l'implémente : c'est votre responsabilité professionnelle, pas la mienne. Je
-vous demanderai seulement de le tracer explicitement dans l'audit
-(« validation automatique sur complétude »), pour qu'une inspection puisse
-distinguer les deux.
+**Décision du 7 septembre 2026 : conformité automatique, à la condition que
+toutes les coches soient vertes.** Réserve levée par la décision ; elle reste
+consignée ci-dessus parce qu'elle explique la forme retenue.
+
+**Implémenté** (migrations `014_conformite_automatique.sql` et
+`015_coches_attendues.sql`) avec deux garde-fous qui portent toute la valeur de
+l'automatisme :
+
+1. **C'est le serveur qui constate.** La route de validation ne reçoit plus une
+   conformité à enregistrer mais `conformite: 'auto'` — une *demande de
+   constat* — et interroge `mti.coches_non_vertes()`. Un client ne peut pas
+   affirmer « tout est vert », il peut seulement le demander : une page
+   périmée, un bogue d'affichage ou une requête forgée ne signeront donc pas
+   « conforme » sur un relevé hors seuil.
+2. **La machine confirme le vert, elle ne prononce jamais une
+   non-conformité.** Tout vert → `conforme`, marqué
+   `conformite_automatique = true`. Une coche rouge → refus 422 avec le détail
+   de ce qui est rouge, jamais un basculement en `non_conforme` : ce serait
+   prononcer un jugement que personne n'a porté. La base tient l'asymétrie
+   (`dossier_auto_jamais_non_conforme`).
+
+Trois façons pour une coche de ne pas être verte : relevé hors seuil, réponse
+« non », point obligatoire non renseigné — **ou jamais saisi**.
+
+> **Défaut corrigé en cours de route, et il était grave.** La première version
+> de la fonction ne regardait que les lignes de `saisie` existantes. Un dossier
+> où personne n'a rien saisi n'a aucune ligne, donc rien de rouge, donc « tout
+> vert » : la conformité automatique se serait posée sur un parcours que
+> personne n'a parcouru. La fonction compare désormais aux points obligatoires
+> de la **définition figée** du processus. Un dossier vierge compte 54 coches
+> attendues, aucune verte.
+
+Une conformité automatique est marquée comme telle et se distingue donc dans le
+journal d'audit d'une conclusion signée à la main — ce qui permet à une
+inspection de faire la différence.
+
+**Couvre aussi le §8** : la zone du pied de page nomme désormais le processus
+qu'elle évalue (« Réception — conforme », « 3 coche(s) non verte(s) ») au lieu
+d'un « Conformité : » qui ne disait pas de quoi, et met le constat en évidence
+quand il est acquis. Le bouton annonce ce qu'il va faire : « Valider —
+conforme (auto) ».
+
+**Corrigé au passage** : les points de type `liste` n'étaient jamais comptés
+incomplets côté écran, alors que la route de validation les refuse — le bouton
+s'armait et la validation répondait 422 sans que rien ne l'ait annoncé. Les
+points `photo` sont inclus dans le constat de vert, ce que le contrôle de
+complétude historique ignorait.
 
 ### 1.3 Les deux boutons « Valider »
 

@@ -1878,7 +1878,75 @@ console.log('\n30. Clore un parcours avorté depuis l\'écran')
     : ko('aucun parcours ouvert en fin de groupe')
 }
 
-console.log('\n31. Console du navigateur et réseau')
+// ── 31. Conformité : ce qui est évalué, et où ──
+console.log('\n31. Conformité du processus en cours')
+{
+  await allerAuScenario()
+  await page.waitForTimeout(600)
+
+  /* La zone nomme le PROCESSUS évalué, et non plus « Conformité : » tout court
+     sur un dossier dont l'opérateur ne voit qu'un onzième à l'écran. */
+  const zone = page.locator('.conf-grp')
+  const texteZone = await zone.innerText()
+  const nomProc = (await page.locator('.ph-name').innerText()).replace(/^\d+\.\s*/, '').trim()
+  if (/coche\(s\) non verte\(s\)/.test(texteZone) || texteZone.includes(nomProc)) {
+    ok(`la zone de conformité évalue le processus affiché (« ${texteZone.split('\n')[0].slice(0, 46)} »)`)
+  } else {
+    ko(`la zone ne nomme pas ce qu'elle évalue : « ${texteZone.replace(/\n/g, ' | ').slice(0, 90)} »`)
+  }
+
+  /* Le verdict vient du serveur : l'écran l'affiche, il ne le calcule pas.
+     Ce que la vérification éprouve, c'est que les deux disent la même chose —
+     un écran qui annoncerait « tout est vert » là où la validation refuse
+     serait pire qu'un écran muet. */
+  /* L'identifiant se lit du stockage local, où le store mémorise le dossier
+     ouvert : le retrouver par sa référence obligeait à reparser le libellé de
+     l'onglet, et une référence mal découpée ne ramenait aucun dossier. */
+  const vu = await page.evaluate(async () => {
+    const id = localStorage.getItem('mti.dossier')
+    if (!id) return { erreur: 'aucun dossier mémorisé' }
+    const r = await fetch(`/api/dossiers/${id}/conformite`)
+    if (!r.ok) return { erreur: `conformite ${r.status}` }
+    const c = await r.json()
+    return { toutVert: c.toutVert, rouges: c.nonVertes.length }
+  })
+  if (vu.erreur) ko(`état des coches illisible : ${vu.erreur}`)
+  const zoneVerte = await zone.evaluate((el) => el.classList.contains('conf-vert'))
+  const zoneRouge = await zone.evaluate((el) => el.classList.contains('conf-rouge'))
+  if (vu.toutVert ? !zoneRouge : true) {
+    ok(`écran et serveur d'accord (dossier : ${vu.rouges} rouge(s), zone ` +
+       `${zoneVerte ? 'verte' : zoneRouge ? 'rouge' : 'neutre'})`)
+  } else {
+    ko(`zone rouge alors que le serveur voit tout vert`)
+  }
+
+  /* Le bouton de validation dit ce qu'il va faire : conclure à la main, ou
+     laisser le serveur constater. Sur un dossier incomplet, ni l'un ni
+     l'autre — il reste désarmé et le pied de page dit pourquoi. */
+  const libelleBouton = (await page.locator('.btn-val').innerText()).trim()
+  const annonceAuto = /Valider — conforme \(auto\)/.test(libelleBouton)
+  if (vu.rouges === 0) {
+    annonceAuto
+      ? ok('tout vert : le bouton annonce la conformité automatique')
+      : ko(`bouton « ${libelleBouton} » alors que tout est vert`)
+  } else {
+    const bloque = await page.locator('.btn-val').isDisabled() ||
+      (await page.locator('.btn-val').getAttribute('style') ?? '').includes('not-allowed')
+    bloque
+      ? ok(`${vu.rouges} coche(s) rouge(s) : la validation reste bloquée, pas d'auto`)
+      : ko('validation armée sur un dossier qui a des coches rouges')
+  }
+
+  // Et la raison est lisible, pas seulement dans une bulle.
+  if (vu.rouges > 0) {
+    const pied = await page.locator('.conf-grp .conf-s').count()
+    pied === 1
+      ? ok('la zone résume ce qui reste rouge')
+      : ko('rien ne dit ce qui est rouge')
+  }
+}
+
+console.log('\n32. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
