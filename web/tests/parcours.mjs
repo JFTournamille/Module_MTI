@@ -1779,7 +1779,106 @@ console.log('\nRemise en état des dossiers de test')
     : ko(`${echecs} détachement(s) en échec : la purge du jeu refusera de partir`)
 }
 
-console.log('\n30. Console du navigateur et réseau')
+// ── 30. Clore un parcours avorté ──
+/* Un dossier à part : la clôture est irréversible, elle ne doit toucher aucun
+   dossier dont les groupes suivants dépendent. */
+console.log('\n30. Clore un parcours avorté depuis l\'écran')
+{
+  await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
+  await page.waitForTimeout(1200)
+  await page.locator('.adm-b-p', { hasText: 'Démarrer un parcours' }).click()
+  await page.waitForTimeout(500)
+  await page.locator('#tb-mod').selectOption('PARCOURS_CART_AUTOLOGUE')
+  await page.locator('.adm-b-p', { hasText: 'Créer et ouvrir' }).click()
+  await page.waitForTimeout(2000)
+  const refClos = (await page.locator('.onglet-doss-l').innerText())
+    .replace(/^▸\s*/, '').trim()
+
+  await page.locator('.btn-clore').count() === 1
+    ? ok('le bouton « Clore le parcours » est présent sur un dossier ouvert')
+    : ko('aucun bouton de clôture')
+
+  await page.locator('.btn-clore').click()
+  await page.waitForTimeout(500)
+  await page.locator('.cat-ov.show .clo-t').count() === 1
+    ? ok('la fenêtre de clôture demande un motif')
+    : ko('la fenêtre de clôture ne s\'ouvre pas')
+
+  /* Un motif d'un caractère ne dit rien : le bouton doit rester désarmé, sans
+     attendre le 400 du serveur pour le faire savoir. */
+  await page.locator('.clo-t').fill('x')
+  await page.waitForTimeout(200)
+  await page.locator('.btn-clore-ok').isDisabled()
+    ? ok('motif trop court : la clôture reste désarmée')
+    : ko('la clôture s\'arme sur un motif d\'un caractère')
+
+  await page.locator('.clo-t').fill('Aphérèse non exploitable — viabilité cellulaire insuffisante')
+  await page.waitForTimeout(200)
+  !(await page.locator('.btn-clore-ok').isDisabled())
+    ? ok('motif renseigné : la clôture s\'arme')
+    : ko('la clôture reste désarmée sur un motif valide')
+
+  await page.locator('.btn-clore-ok').click()
+  await page.waitForTimeout(2500)
+
+  /* Le retour au tableau de bord est voulu : le dossier est figé, il n'y a
+     plus rien à y faire, et c'est là que la ligne close doit être vue. */
+  const ongletActif = (await page.locator('.onglet.act').innerText()).trim()
+  if (/Tableau de bord/.test(ongletActif)) {
+    ok('la clôture ramène au tableau de bord')
+  } else {
+    ko(`onglet actif après clôture : « ${ongletActif} »`)
+  }
+
+  await page.locator('#tb-q').fill(refClos)
+  await page.waitForTimeout(1400)
+  const ligne = page.locator('tr.tb-ligne', { hasText: refClos }).first()
+  const texteLigne = await ligne.innerText()
+  if (/Clos/.test(texteLigne) && /viabilité cellulaire/.test(texteLigne)) {
+    ok('la ligne dit « clos » ET pourquoi, sans rouvrir le dossier')
+  } else {
+    ko(`ligne close : « ${texteLigne.replace(/\n/g, ' | ').slice(0, 120)} »`)
+  }
+
+  await ligne.evaluate((el) => el.classList.contains('tb-clos'))
+    ? ok('la ligne close se distingue visuellement')
+    : ko('la ligne close a l\'apparence d\'une ligne ordinaire')
+
+  // Rouvrir le dossier clos : consultable, mais plus modifiable.
+  await ligne.click()
+  await page.waitForTimeout(2000)
+  await page.locator('.clo-bandeau').count() === 1
+    ? ok('le dossier rouvert affiche le bandeau et son motif')
+    : ko('aucun bandeau sur un dossier clos rouvert')
+  await page.locator('.btn-clore').count() === 0 &&
+  await page.locator('.f-btn', { hasText: 'Enregistrer' }).count() === 0
+    ? ok('lecture seule : ni « Enregistrer » ni « Clore » sur un dossier clos')
+    : ko('un dossier clos laisse encore des boutons d\'écriture')
+
+  /* Pas de déclôture, et l'écran ne doit pas en suggérer une : c'est la
+     décision prise, un dossier clos reste clos. */
+  const texteEcran = await page.locator('.clo-bandeau').innerText()
+  if (/ne se déclôt pas|nouveau dossier/.test(texteEcran)) {
+    ok('le bandeau dit qu\'il n\'y a pas de retour en arrière')
+  } else {
+    ko('rien n\'indique que la clôture est définitive')
+  }
+
+  /* Remise en état : ce groupe laisse un parcours OUVERT, comme il l'a trouvé.
+     Fermer l'onglet ici privait la capture finale de la suite du parcours
+     qu'elle attend — la vérification passait, et l'épilogue plantait. */
+  await page.locator('.onglet-doss .onglet-x').click()
+  await page.waitForTimeout(1000)
+  await page.locator('#tb-q').fill(refDossier)
+  await page.waitForTimeout(1300)
+  await page.locator('tr.tb-ligne', { hasText: refDossier }).first().click()
+  await page.waitForTimeout(1800)
+  await page.locator('.onglet-doss-l').count() === 1
+    ? ok('parcours de référence rouvert — la suite reste rejouable')
+    : ko('aucun parcours ouvert en fin de groupe')
+}
+
+console.log('\n31. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

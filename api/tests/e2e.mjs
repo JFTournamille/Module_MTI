@@ -300,8 +300,13 @@ Array.isArray(liste) && liste.length >= 1
 
 const ligne = liste.find((x) => x.id === dossierId)
 ligne ? ok(`le dossier ${ref} figure dans la liste`) : ko('dossier créé absent de la liste')
-ligne?.statutAffiche === 'termine' && ligne?.etape === 'Parcours clos'
-  ? ok('un dossier validé est affiché « Parcours clos »')
+/* « Parcours clos » désignait le dossier VALIDÉ, et c'était le mot le plus
+   trompeur du tableau de bord : depuis qu'un parcours peut réellement être
+   clos sur un avortement, les deux états auraient porté le même libellé en
+   disant l'inverse l'un de l'autre. Validé = allé au bout ; clos = arrêté en
+   chemin. */
+ligne?.statutAffiche === 'termine' && ligne?.etape === 'Parcours validé'
+  ? ok('un dossier validé est affiché « Parcours validé », plus « Parcours clos »')
   : ko(`statut ${ligne?.statutAffiche}, étape « ${ligne?.etape} »`)
 ligne?.nbAlarmes === 1
   ? ok(`${ligne.nbAlarmes} alarme de seuil comptée sur le dossier`)
@@ -750,6 +755,84 @@ console.log('\n19. Photos')
   } else {
     console.log(`  · dossier non validé (${r.corps.dossier.statut}) — lecture seule non éprouvée`)
   }
+}
+
+// ── 20. Clôture d'un parcours avorté ──
+console.log('\n20. Clôture d\'un parcours avorté')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E clôture' })
+  const dos = r.corps?.id
+
+  // Le motif est obligatoire, et pas seulement non vide.
+  r = await j('POST', `/api/dossiers/${dos}/clore`, { motif: 'x' })
+  r.statut === 400 ? ok('motif trop court refusé (400)') : ko(`statut ${r.statut}`)
+  r = await j('POST', `/api/dossiers/${dos}/clore`, {})
+  r.statut === 400 ? ok('clôture sans motif refusée (400)') : ko(`statut ${r.statut}`)
+
+  r = await j('POST', `/api/dossiers/${dos}/clore`,
+    { motif: 'Aphérèse non exploitable — viabilité insuffisante' })
+  r.statut === 200 && r.corps?.statut === 'annule'
+    ? ok(`clos : ${r.corps.motif_cloture.slice(0, 34)}…`)
+    : ko(`statut ${r.statut} / ${JSON.stringify(r.corps)}`)
+
+  /* Le gel est le cœur du sujet : sans lui la clôture ne serait qu'un libellé,
+     et on continuerait de saisir dans un parcours abandonné. */
+  r = await j('PATCH', `/api/dossiers/${dos}`, { numeroLot: 'APRES-CLOTURE' })
+  r.statut === 409 && /clos/i.test(r.corps?.erreur ?? '')
+    ? ok('en-tête figé, et le message dit « clos », pas « validé »')
+    : ko(`statut ${r.statut} : ${r.corps?.erreur}`)
+
+  r = await j('POST', `/api/dossiers/${dos}/processus`,
+    { code: 'CONCILIATION', nom: 'Conciliation médicamenteuse' })
+  r.statut === 409 ? ok('ajout de processus refusé (409)') : ko(`statut ${r.statut}`)
+
+  r = await j('POST', `/api/dossiers/${dos}/valider`, { conformite: 'conforme' })
+  r.statut === 409 ? ok('validation d\'un dossier clos refusée (409)') : ko(`statut ${r.statut}`)
+
+  // Pas de déclôture, et pas de seconde clôture non plus.
+  r = await j('POST', `/api/dossiers/${dos}/clore`, { motif: 'Deuxième tentative' })
+  r.statut === 409 ? ok('re-clôture refusée (409)') : ko(`statut ${r.statut}`)
+
+  // Les processus non validés cessent d'attendre.
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const restants = r.corps.processus.filter((p) => p.etat !== 'annule' && p.etat !== 'valide')
+  restants.length === 0
+    ? ok('aucun processus ne reste en attente')
+    : ko(`${restants.length} processus encore en attente`)
+
+  // Le tableau de bord : clos n'est ni terminé ni en cours.
+  r = await j('GET', '/api/dossiers?statut=clos')
+  const ligne = r.corps.find((d) => d.id === dos)
+  ligne?.statutAffiche === 'clos' && ligne?.etape === 'Parcours clos' && ligne?.cloture?.motif
+    ? ok(`ligne close, motif et auteur remontés (${ligne.cloture.par ?? '—'})`)
+    : ko(`ligne ${JSON.stringify(ligne && { s: ligne.statutAffiche, e: ligne.etape })}`)
+
+  r = await j('GET', '/api/dossiers?statut=en_cours')
+  r.corps.every((d) => d.id !== dos)
+    ? ok('absent des dossiers en cours')
+    : ko('un dossier clos apparaît encore comme en cours')
+
+  /* Un dossier VALIDÉ n'est pas un parcours avorté : il est allé au bout, et
+     le clore effacerait la conclusion du pharmacien. */
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E validé' })
+  const dosV = r.corps?.id
+  await j('POST', `/api/dossiers/${dosV}/valider`, { conformite: 'conforme' })
+  r = await j('POST', `/api/dossiers/${dosV}/clore`, { motif: 'Tentative sur un validé' })
+  r.statut === 409 && /allé au bout/.test(r.corps?.erreur ?? '')
+    ? ok('clôture d\'un dossier validé refusée, avec la raison')
+    : ko(`statut ${r.statut} : ${r.corps?.erreur}`)
+
+  // L'ordonnancier reste en saisie manuelle : c'est CHIMIO qui le fournit.
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E ordonnancier' })
+  const dosO = r.corps?.id
+  await j('PATCH', `/api/dossiers/${dosO}`, { numeroOrdonnancier: 'ORD-2026-4417' })
+  r = await j('GET', '/api/dossiers?reference=' + r.corps.reference)
+  r.corps[0]?.numeroOrdonnancier === 'ORD-2026-4417'
+    ? ok('n° d\'ordonnancier saisi à la main, remonté au tableau de bord')
+    : ko(`ordonnancier ${JSON.stringify(r.corps[0]?.numeroOrdonnancier)}`)
 }
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')

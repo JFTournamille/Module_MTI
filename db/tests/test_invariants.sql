@@ -500,6 +500,78 @@ BEGIN
   RAISE NOTICE '  ✓ pièces emportées par la suppression du dossier';
 END $$;
 
+\echo ''
+\echo 'TEST 20 — Un dossier clos dit obligatoirement pourquoi'
+DO $$
+DECLARE
+  v_auteur  uuid;
+  v_modele  uuid;
+  v_dossier uuid;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-CLOTURE-1', v_modele, v_auteur) RETURNING id INTO v_dossier;
+
+  /* Un dossier clos SANS motif ne servirait à rien : le tableau de bord
+     dirait « clos » sans dire pourquoi, et c'est la seule question que se pose
+     celui qui le relit six mois plus tard. */
+  BEGIN
+    UPDATE mti.dossier SET statut = 'annule' WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : dossier clos sans motif accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ clôture sans motif refusée';
+  END;
+
+  -- Un motif blanc n'est pas un motif.
+  BEGIN
+    UPDATE mti.dossier
+       SET statut = 'annule', motif_cloture = '   ', clos_par = v_auteur, clos_le = now()
+     WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : motif blanc accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ motif réduit à des espaces refusé';
+  END;
+
+  -- Ni sans auteur : une clôture est un acte, elle a quelqu'un derrière.
+  BEGIN
+    UPDATE mti.dossier
+       SET statut = 'annule', motif_cloture = 'Décès du patient', clos_le = now()
+     WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : clôture sans auteur acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ clôture sans auteur refusée';
+  END;
+
+  /* L'inverse compte autant : un motif de clôture sur un dossier EN COURS ne
+     veut rien dire, et se retrouverait affiché au tableau de bord sur une
+     ligne qui n'est pas close. */
+  BEGIN
+    UPDATE mti.dossier SET motif_cloture = 'Posé par erreur' WHERE id = v_dossier;
+    RAISE EXCEPTION 'ÉCHEC : motif de clôture sur un dossier en cours accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ motif de clôture sans le statut refusé';
+  END;
+
+  -- La clôture complète, elle, passe.
+  UPDATE mti.dossier
+     SET statut = 'annule', motif_cloture = 'Aphérèse non exploitable',
+         clos_par = v_auteur, clos_le = now()
+   WHERE id = v_dossier;
+  RAISE NOTICE '  ✓ clôture motivée, datée et signée acceptée';
+
+  /* Et elle est tracée : c'est la trace qui fait la valeur du geste, pas la
+     colonne. Le rôle applicatif ne peut ni la modifier ni l'effacer. */
+  IF NOT EXISTS (
+    SELECT 1 FROM mti.audit
+     WHERE table_cible = 'dossier' AND cle_cible = v_dossier::text
+       AND nouveau->>'statut' = 'annule'
+  ) THEN
+    RAISE EXCEPTION 'ÉCHEC : clôture non tracée dans l''audit';
+  END IF;
+  RAISE NOTICE '  ✓ clôture tracée dans le journal d''audit';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

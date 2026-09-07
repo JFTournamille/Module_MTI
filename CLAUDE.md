@@ -41,6 +41,20 @@ réglementaires, pas à des préférences techniques.
   `UPDATE`/`DELETE` dessus, et c'est volontaire.
 - **Un dossier validé est en lecture seule.** Toute correction passe par une
   nouvelle version, jamais par un `UPDATE`.
+- **Un parcours avorté se clôt, il ne se déclôt pas.** `POST
+  /api/dossiers/:id/clore` pose `statut = 'annule'` avec un motif obligatoire,
+  son auteur et sa date (`dossier_clos_coherent`). Un dossier clos est figé au
+  même titre qu'un dossier validé — `estFige()` dans `routes/dossiers.js` est
+  le seul point de décision, ne pas remettre de test sur `'valide'` seul. Il
+  n'y a **pas** de route de déclôture et il ne doit pas y en avoir : reprendre
+  un traitement, c'est ouvrir un nouveau dossier. Clore n'est pas valider :
+  personne ne conclut sur la conformité d'un parcours inachevé, `conformite`
+  reste `NULL`.
+- **« Parcours clos » ne désigne pas un dossier validé.** Le libellé disait
+  l'inverse de ce qu'il dit maintenant : validé = allé au bout
+  (« Parcours validé »), clos = arrêté en chemin. Le n° d'ordonnancier est
+  transmis par CHIMIO à la préparation et **saisi à la main** — pas de séquence
+  côté base, le registre est celui de CHIMIO.
 - **Un parcours se crée par reprise d'un autre.** `POST /api/modeles` ouvre un
   code nouveau en v1, le plus souvent en recopiant un parcours voisin réduit
   aux processus retenus. Pas de route de suppression d'un modèle, et il ne doit

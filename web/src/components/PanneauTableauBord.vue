@@ -20,7 +20,11 @@ const LIB_STATUT = {
   en_cours: 'En cours',
   attente: "En attente d'allocation",
   termine: 'Terminé',
-  non_conforme: 'Non conforme'
+  non_conforme: 'Non conforme',
+  /* « Clos » ne veut pas dire « terminé » : le parcours s'est arrêté en
+     chemin. Le confondre avec « terminé » laisserait croire à un traitement
+     administré. */
+  clos: 'Clos — parcours avorté'
 }
 
 const tuiles = computed(() => [
@@ -156,6 +160,7 @@ const dateCourte = (v) => v
         <thead>
           <tr>
             <th style="width:170px;">N° dossier</th>
+            <th style="width:110px;" title="Transmis par CHIMIO à la préparation">N° ordonn.</th>
             <th style="width:130px;">Produit</th>
             <th style="width:130px;">N° de lot</th>
             <th>Patient</th>
@@ -174,6 +179,10 @@ const dateCourte = (v) => v
               <input type="text" placeholder="Filtrer…" aria-label="Filtrer par n° de dossier"
                      v-model="store.filtreReference" @input="store.chargerDiffere()">
             </th>
+            <!-- Pas de filtre sur l'ordonnancier : le numéro vient de CHIMIO et
+                 n'est pas encore saisi sur la plupart des dossiers. La cellule
+                 reste, sinon les filtres se décalent d'une colonne. -->
+            <th></th>
             <th>
               <select aria-label="Filtrer par produit"
                       v-model="store.filtreProduit" @change="store.charger()">
@@ -215,8 +224,9 @@ const dateCourte = (v) => v
                       v-model="store.filtreStatut" @change="store.charger()">
                 <option value="">Tous</option>
                 <option value="attente">En attente d'allocation</option>
+                <option value="clos">Clos — parcours avorté</option>
                 <option value="en_cours">En cours</option>
-                <option value="valide">Clos</option>
+                <option value="valide">Terminé — validé</option>
               </select>
             </th>
             <th></th>
@@ -225,12 +235,14 @@ const dateCourte = (v) => v
         </thead>
         <tbody>
           <tr v-for="d in dossiersAffiches" :key="d.id" class="tb-ligne"
-              :class="{ fini: d.statutAffiche === 'termine' || d.statutAffiche === 'non_conforme' }"
+              :class="{ fini: d.statutAffiche === 'termine' || d.statutAffiche === 'non_conforme',
+                        'tb-clos': d.statutAffiche === 'clos' }"
               tabindex="0" @click="emit('ouvrir', d.id)">
             <td class="ident">
               {{ d.reference }}
               <span v-if="d.nbAlarmes" class="tb-alarme" :title="`${d.nbAlarmes} relevé(s) hors seuil`">⚠</span>
             </td>
+            <td class="meta">{{ d.numeroOrdonnancier || '—' }}</td>
             <td>{{ d.produit || '—' }}</td>
             <td class="meta">{{ d.numeroLot || '—' }}</td>
             <td>
@@ -246,7 +258,15 @@ const dateCourte = (v) => v
                 {{ d.prescriptionFaite ? '✓ faite' : '○ non' }}
               </span>
             </td>
-            <td>{{ d.etape }}</td>
+            <td>
+              {{ d.etape }}
+              <!-- Le motif est la seule chose qui rende une clôture
+                   exploitable : « clos » sans le pourquoi renvoie à ouvrir le
+                   dossier, ce que le tableau de bord est censé éviter. -->
+              <div v-if="d.cloture" class="tb-motif" :title="`Clos par ${d.cloture.par ?? '—'}`">
+                {{ d.cloture.motif }}
+              </div>
+            </td>
             <td>
               <span class="tb-jauge"><i :style="{ width: d.avancement + '%' }"></i></span>
               <span class="meta">&nbsp;{{ d.avancement }}&nbsp;%</span>
@@ -266,6 +286,9 @@ const dateCourte = (v) => v
         {{ dossiersAffiches.length }} dossier(s) affiché(s).
         Un dossier terminé reste consultable : il est figé, pas effacé — toute correction
         passe par une nouvelle version.
+        Un dossier <strong>clos</strong> est un parcours avorté : il s'est arrêté en chemin,
+        personne n'a conclu sur sa conformité, et il ne se déclôt pas — reprendre un
+        traitement, c'est ouvrir un nouveau dossier.
       </div>
     </template>
   </div>

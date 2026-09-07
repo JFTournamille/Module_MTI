@@ -350,3 +350,42 @@ input[type=radio].ron{accent-color:#cc2200;}
 .pico.ok{color:var(--vert-vif,#44bb77);font-size:16px;}
 .pico.cur{color:#a080ff;}
 .pcorps{flex:1;min-width:0;}
+
+/* ── Clôture d'un parcours avorté ───────────────────────────────────────────
+   Le bouton n'est pas rouge : clore n'est pas une erreur ni une suppression,
+   c'est un constat. Il est en revanche distinct de « Valider », parce que les
+   deux gestes disent l'inverse l'un de l'autre et qu'ils sont voisins. */
+.btn-clore,
+.btn-clore-ok{background:#7a5000;color:#fff;border:none;padding:5px 12px;border-radius:2px;
+  font-size:12px;font-weight:bold;cursor:pointer;}
+.btn-clore:hover,
+.btn-clore-ok:hover{background:#8f5e00;}
+.btn-clore-ok:disabled{opacity:.45;cursor:not-allowed;}
+
+.clo-dlg{width:520px;max-height:none;}
+.clo-corps{padding:12px 14px;overflow-y:auto;}
+.clo-p{font-size:12px;line-height:1.55;color:#333;margin:0 0 9px;}
+.clo-att{background:#fffbec;border:1px solid #e0c840;border-radius:3px;padding:7px 9px;color:#7a5000;}
+.clo-l{display:block;font-size:12px;font-weight:bold;color:#3a2870;margin:4px 0 3px;}
+.clo-t{width:100%;box-sizing:border-box;font:inherit;font-size:12px;padding:6px 7px;
+  border:1px solid #b8a8e0;border-radius:2px;resize:vertical;}
+.clo-b{display:flex;gap:8px;justify-content:flex-end;padding:9px 14px;
+  border-top:1px solid #e8e0f8;background:#faf8ff;}
+
+/* Bandeau du dossier clos : ocre comme les avertissements du pied, pas rouge —
+   un parcours avorté n'est pas une anomalie du logiciel. */
+.clo-bandeau{background:#fffbec;border-top:1px solid #d0b060;padding:5px 14px;
+  font-size:12px;color:#7a5000;font-weight:bold;}
+.clo-bandeau .clo-note{display:block;font-weight:normal;font-size:11px;margin-top:2px;}
+
+/* Ligne close du tableau de bord : atténuée comme une ligne terminée, mais le
+   motif reste lisible — c'est ce qu'on vient y chercher. */
+.tb-ligne.tb-clos td{background:#f6f4f0;color:#6a6055;}
+.tb-motif{font-size:11px;color:#7a5000;font-style:italic;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;}
+.prof.tb-s-clos{background:#7a5000;}
+
+/* N° d'ordonnancier saisi dans l'en-tête : le champ doit se voir sur le fond
+   violet sans casser la ligne de métadonnées. */
+.ent-ordo{font:inherit;font-size:12px;width:96px;padding:1px 5px;border-radius:2px;
+  border:1px solid #7a68b8;background:#ffffff;color:#1e0e50;}

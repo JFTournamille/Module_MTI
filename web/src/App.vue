@@ -57,6 +57,21 @@ function fermerParcours () {
   onglet.value = 'bord'
 }
 const modalePatient = ref(false)
+
+/* Clôture d'un parcours avorté. Le motif vit ici et non dans le store : c'est
+   la saisie d'une fenêtre, pas un état du dossier — le dossier ne porte le
+   motif qu'une fois clos, et il ne se reprend pas. */
+const clotureOuverte = ref(false)
+const motifCloture = ref('')
+async function clore () {
+  if (await store.clore(motifCloture.value)) {
+    clotureOuverte.value = false
+    motifCloture.value = ''
+    /* Retour au tableau de bord : le dossier est figé, il n'y a plus rien à y
+       faire, et c'est là que la ligne close doit être vue. */
+    retourAuBord()
+  }
+}
 /* Quand la modale est ouverte pour poser le jalon de prescription, le patient
    choisi doit AUSSI faire basculer le jalon : c'est un seul geste pour
    l'utilisateur, même s'il traverse deux écrans. */
@@ -176,8 +191,18 @@ const blocages = computed(() => {
         </div>
         <div class="meta">
           N° lot : {{ store.dossier.numeroLot || '—' }}
+          <!-- L'ordonnancier est transmis par CHIMIO au moment de la
+               préparation ; il est recopié à la main pour l'instant. Il
+               n'apparaît qu'une fois le patient identifiable : une inscription
+               au registre est nominative, elle n'a pas de sens sur un dossier
+               anonyme. -->
           <template v-if="store.ordonnancierVisible">
-            &nbsp;|&nbsp; N° ordonnancier : {{ store.dossier.numeroOrdonnancier || '—' }}
+            &nbsp;|&nbsp;
+            <label for="ent-ordo">N° ordonnancier :</label>
+            <span v-if="store.lectureSeule">{{ store.dossier.numeroOrdonnancier || '—' }}</span>
+            <input v-else id="ent-ordo" class="ent-ordo" type="text" placeholder="—"
+                   v-model="store.dossier.numeroOrdonnancier"
+                   title="Numéro transmis par CHIMIO à la préparation">
           </template>
           &nbsp;|&nbsp; Péremption : {{ store.dossier.datePeremption || '—' }}
         </div>
@@ -352,11 +377,63 @@ const blocages = computed(() => {
         :style="(blocages.length || !store.dossierId || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
         @click="store.validerDossier()"
       >✓ Valider</button>
+      <!-- Clore n'est pas valider, et ce n'est pas l'inverse : valider conclut
+           un parcours allé au bout, clore constate qu'il s'est arrêté en
+           chemin. D'où un bouton distinct, et un motif obligatoire — « clos »
+           sans le pourquoi ne dit rien à qui relit le dossier. -->
+      <button
+        class="btn-clore" v-if="store.dossierId && !store.lectureSeule"
+        title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
+        @click="clotureOuverte = true"
+      >Clore le parcours</button>
+    </div>
+
+    <!-- Clôture : la confirmation dit ce que le geste engage, parce qu'il ne
+         se défait pas. -->
+    <div class="cat-ov" :class="{ show: clotureOuverte }" @click.self="clotureOuverte = false">
+      <div class="cat-dlg clo-dlg">
+        <div class="cat-hd">
+          Clore un parcours avorté
+          <button title="Annuler" @click="clotureOuverte = false">✕</button>
+        </div>
+        <div class="clo-corps">
+        <p class="clo-p">
+          Le parcours <strong>{{ store.dossier.reference }}</strong> s'est arrêté sans
+          aboutir. La clôture le retire des dossiers en cours et le fige en lecture
+          seule.
+        </p>
+        <p class="clo-p clo-att">
+          <strong>Il n'y a pas de déclôture.</strong> Reprendre un traitement, c'est
+          ouvrir un nouveau dossier — celui-ci restera lisible pour dire ce qui s'est
+          passé. Personne ne conclut sur sa conformité : un parcours inachevé n'est ni
+          conforme ni non conforme.
+        </p>
+        <label class="clo-l" for="clo-motif">Motif — ce qui a interrompu le parcours</label>
+        <textarea id="clo-motif" class="clo-t" rows="3" v-model="motifCloture"
+                  placeholder="Décès du patient, aphérèse non exploitable, échec de fabrication, décision médicale…"></textarea>
+        </div>
+        <div class="clo-b">
+          <button class="btn-ann" @click="clotureOuverte = false">Annuler</button>
+          <button class="btn-clore-ok" :disabled="motifCloture.trim().length < 5"
+                  @click="clore()">Clore définitivement</button>
+        </div>
+      </div>
     </div>
 
     <!-- Bandeau d'état : hors-ligne et points bloquants -->
     <div v-if="session.avertissement" class="demo-bandeau">
       ⚠ {{ session.avertissement }}
+    </div>
+
+    <!-- Un dossier clos ne dit rien de lui-même : les boutons disparaissent,
+         les champs se figent, et rien n'explique pourquoi. Le bandeau porte le
+         motif — c'est la seule information qui compte sur un parcours avorté. -->
+    <div v-if="store.clos" class="clo-bandeau">
+      Parcours clos — {{ store.dossier.motifCloture }}
+      <span class="clo-note">
+        Aucune conclusion de conformité : le parcours s'est arrêté avant son terme.
+        Il ne se déclôt pas ; reprendre le traitement demande un nouveau dossier.
+      </span>
     </div>
 
     <div v-if="store.horsLigne || blocages.length || store.erreurDossier"

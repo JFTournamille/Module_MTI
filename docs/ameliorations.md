@@ -23,7 +23,7 @@ en fin de document.
 
 ## 1. Ce qui doit être décidé avant d'être écrit
 
-### 1.1 Déclôturer, dévalider — contre la règle du dossier figé
+### 1.1 Déclôturer, dévalider — **tranché : on clôt seulement** ✔ fait
 
 **Demandes concernées** : §1 « possibilité de déclôturer une ligne », §4
 « profils avancés autorisés à clôturer un parcours, à le dévalider ».
@@ -48,8 +48,32 @@ Le second couvre §1 « clôture manuelle en cas d'avortement d'un parcours ». 
 premier couvre §10 « reprise éventuelle, par exemple au niveau de la
 prescription ».
 
-**À décider** : pour un parcours avorté, voulez-vous pouvoir le reprendre plus
-tard, ou seulement le clore ? Les deux ne demandent pas le même travail.
+**Décision du 7 septembre 2026 : uniquement le clore.** Pas de reprise, donc
+pas de déclôture — la demande « possibilité de déclôturer une ligne » du §1 est
+retirée par cette décision, elle n'est pas oubliée.
+
+**Implémenté** (migration `013_cloture_dossier.sql`, route
+`POST /api/dossiers/:id/clore`) :
+
+- le motif est obligatoire, non blanc, avec son auteur et sa date — la base le
+  tient (`dossier_clos_coherent`), pas seulement l'API ;
+- un dossier clos est **figé** exactement comme un dossier validé : en-tête,
+  saisies, photos, signatures, ajout de processus, validation, tout est refusé
+  en 409. Le gel passe par un `estFige()` unique — huit gardes dispersées
+  auraient divergé, et la clôture n'aurait gelé que ce à quoi on aurait pensé ;
+- les processus non validés passent à `annule` ; ceux déjà validés ne bougent
+  pas, ils ont été faits et par quelqu'un ;
+- un dossier **validé** ne se clôt pas : il est allé au bout, le clore
+  effacerait la conclusion du pharmacien ;
+- `conformite` reste `NULL` : un parcours inachevé n'est ni conforme ni non
+  conforme, et « non conforme » sur un décès patient serait un contresens qui
+  remonterait au tableau de bord ;
+- le tableau de bord porte la colonne de statut (« Clos — parcours avorté »),
+  **le motif sous l'étape** — sans lui, « clos » renvoie à ouvrir le dossier,
+  ce que le tableau de bord est censé éviter — un filtre `clos`, et la ligne
+  sort des vues « en cours » et « en attente » ;
+- la clôture est tracée dans `mti.audit` avec son auteur et le statut avant /
+  après.
 
 ### 1.2 Validation automatique — complétude n'est pas conformité
 
@@ -101,7 +125,7 @@ dernier séparé visuellement et confirmé par une fenêtre qui rappelle son eff
 (lecture seule définitive). **À valider par vous** — c'est du vocabulaire
 métier, il doit être le vôtre.
 
-### 1.4 Le numéro d'ordonnancier et le processus qui le déclenche
+### 1.4 Le numéro d'ordonnancier — **tranché : saisie manuelle** ✔ fait
 
 **Demande** : §1 « numéro d'ordonnancier à partir de la mise en fabrication ».
 
@@ -116,9 +140,19 @@ Deux points à trancher :
    Préparation est en aval de Rattachement dans le parcours. Mais il faut le
    dire, parce que cela ferme la porte à un ordonnancier sur dossier anonyme.
 
-**À décider aussi** : le numéro est-il attribué par la base (comme le n° de
-dossier, série continue et auditable) ou repris de Pharma®/CHIMIO® ? Les deux
-se défendent ; la seconde évite deux registres qui divergent.
+**Décision du 7 septembre 2026 : le numéro est transmis par CHIMIO au moment de
+la préparation, et saisi à la main pour l'instant.** Donc **pas de séquence côté
+base** : le registre reste celui de CHIMIO, et deux séries parallèles auraient
+divergé au premier écart.
+
+**Implémenté** : le champ est saisissable dans l'en-tête du dossier (la colonne
+`dossier.numero_ordonnancier` et la route `PATCH` l'acceptaient déjà), et une
+colonne « N° ordonn. » figure au tableau de bord.
+
+Le champ n'apparaît qu'à partir du processus qui identifie le patient — une
+inscription au registre est nominative, elle n'a pas de sens sur un dossier
+anonyme. C'est un garde-fou d'écran, pas un refus de l'API : la saisie reste
+« autorisée pour l'instant », comme demandé.
 
 ---
 

@@ -74,7 +74,11 @@ export const useParcours = defineStore('parcours', () => {
     dateApherese: '',
     // Conclusion
     conformite: null,
-    commentaire: ''
+    commentaire: '',
+    /* Clôture d'un parcours avorté. Distincte de la conclusion : un parcours
+       arrêté en chemin n'est ni conforme ni non conforme, il est inachevé. */
+    motifCloture: '',
+    closLe: null
   })
 
   /* L'opérateur n'est plus en dur : il vient de la session. Le rendre calculé
@@ -185,7 +189,13 @@ export const useParcours = defineStore('parcours', () => {
   const enregistrement = ref(false)
   const dernierEnregistrement = ref(null)
   const erreurDossier = ref('')
-  const lectureSeule = computed(() => dossier.statut === 'valide')
+  /* Deux statuts figent un dossier : `valide` parce qu'un pharmacien a signé,
+     `annule` parce que le parcours a été clos sur un avortement. L'API refuse
+     l'écriture dans les deux cas ; ne verrouiller que le premier côté écran
+     aurait laissé saisir dans un dossier clos jusqu'au 409. */
+  const lectureSeule = computed(() =>
+    dossier.statut === 'valide' || dossier.statut === 'annule')
+  const clos = computed(() => dossier.statut === 'annule')
 
   /** Le dossier ouvert survit à un rechargement — sinon on perd sa saisie. */
   const CLE_DOSSIER = 'mti.dossier'
@@ -260,6 +270,8 @@ export const useParcours = defineStore('parcours', () => {
         conformite: d.dossier.conformite ?? null,
         commentaire: d.dossier.commentaire ?? '',
         statut: d.dossier.statut,
+        motifCloture: d.dossier.motif_cloture ?? '',
+        closLe: d.dossier.clos_le ?? null,
         /* Le patient vient du serveur, qui ne le joint que si le dossier en
            porte un. L'omettre ici faisait annoncer « en attente d'allocation »
            sur un dossier alloué. */
@@ -467,6 +479,43 @@ export const useParcours = defineStore('parcours', () => {
       } else {
         erreurDossier.value = corps?.erreur ?? `Validation refusée (${r.status}).`
       }
+      return false
+    }
+    await ouvrirDossier(dossierId.value)
+    return true
+  }
+
+  /**
+   * Clôt un parcours avorté, avec son motif.
+   *
+   * Ce n'est pas une validation : personne ne conclut sur la conformité d'un
+   * parcours qui s'est arrêté en chemin. Et ce n'est pas réversible — reprendre
+   * un traitement, c'est ouvrir un nouveau dossier.
+   *
+   * Les saisies en cours sont enregistrées AVANT la clôture : ce qui a été
+   * constaté avant l'arrêt fait partie de ce que le dossier doit dire, et la
+   * clôture verrouille l'écriture. L'ordre inverse les perdrait.
+   */
+  async function clore (motif) {
+    if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
+    const m = String(motif ?? '').trim()
+    if (m.length < 5) {
+      erreurDossier.value = 'Indiquer ce qui a interrompu le parcours (5 caractères au moins).'
+      return false
+    }
+    if (!lectureSeule.value) {
+      if (!(await enregistrerEntete())) return false
+      if (!(await enregistrerProcessus())) return false
+    }
+
+    const r = await appel(`/api/dossiers/${dossierId.value}/clore`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ motif: m })
+    })
+    if (!r.ok) {
+      const corps = await r.json().catch(() => null)
+      erreurDossier.value = corps?.erreur ?? `Clôture refusée (${r.status}).`
       return false
     }
     await ouvrirDossier(dossierId.value)
@@ -1066,8 +1115,8 @@ export const useParcours = defineStore('parcours', () => {
     saisies, lignesReception, lignesStandard, nbCopies,
     charger, instancierProcessus, selectionner, ajouterProcessus,
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
-    lectureSeule, creerDossier, ouvrirDossier, enregistrerEntete,
-    enregistrerProcessus, validerDossier, fermerDossier, dossierMemorise,
+    lectureSeule, clos, creerDossier, ouvrirDossier, enregistrerEntete,
+    enregistrerProcessus, validerDossier, clore, fermerDossier, dossierMemorise,
     changerEtatProcessus,
     commentaireOuvert, basculerCommentaire,
     signatures, pointsDoubleValidation, contresignature, chargerSignatures, contresigner,

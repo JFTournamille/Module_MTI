@@ -4,6 +4,23 @@ import { transaction, requete } from '../db.js'
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
 const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date', 'liste'])
 
+/**
+ * Les deux statuts qui figent un dossier, et ce qu'on répond alors.
+ *
+ * Ils figent pour deux raisons différentes — `valide` parce qu'un pharmacien a
+ * signé, `annule` parce que le parcours a été clos sur un avortement — mais
+ * l'effet est le même : plus aucune écriture. Un seul point de décision, parce
+ * que sept gardes dispersées auraient divergé dès la première évolution : la
+ * clôture n'aurait gelé que ce à quoi on aurait pensé, et on aurait pu
+ * continuer à saisir dans un dossier clos.
+ */
+const STATUTS_FIGES = new Map([
+  ['valide', 'Dossier validé'],
+  ['annule', 'Dossier clos']
+])
+const estFige = (statut) => STATUTS_FIGES.has(statut)
+const prefixeFige = (statut) => STATUTS_FIGES.get(statut) ?? 'Dossier figé'
+
 export default async function dossiers (app) {
   // ── Création d'un dossier ────────────────────────────────────────────────
   app.post('/api/dossiers', async (request, reply) => {
@@ -86,9 +103,9 @@ export default async function dossiers (app) {
     const { rows: dossierRows } = await requete(
       'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
     if (!dossierRows.length) return reply.code(404).send({ erreur: 'Dossier introuvable.' })
-    if (dossierRows[0].statut === 'valide') {
+    if (estFige(dossierRows[0].statut)) {
       return reply.code(409).send({
-        erreur: "Dossier validé : on n'y ajoute plus de processus. Toute correction " +
+        erreur: `${prefixeFige(dossierRows[0].statut)} : on n'y ajoute plus de processus. Toute correction ` +
                 'passe par une nouvelle version du dossier.'
       })
     }
@@ -194,7 +211,7 @@ export default async function dossiers (app) {
              entre les deux. */
           const r = await client.query(
             `UPDATE mti.dossier SET ${colonnes.join(', ')}
-              WHERE id = $1 AND statut <> 'valide'
+              WHERE id = $1 AND statut NOT IN ('valide', 'annule')
               RETURNING id, statut`,
             [request.params.id, ...valeurs])
           return r
@@ -220,8 +237,8 @@ export default async function dossiers (app) {
         'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
       if (!existe.length) return reply.code(404).send({ erreur: 'Dossier introuvable.' })
       return reply.code(409).send({
-        erreur: 'Dossier validé : son en-tête est en lecture seule. Toute correction ' +
-                'passe par une nouvelle version du dossier.'
+        erreur: `${prefixeFige(existe[0].statut)} : son en-tête est en lecture seule. ` +
+                'Toute correction passe par une nouvelle version du dossier.'
       })
     }
     return { id: rows[0].id, statut: rows[0].statut }
@@ -250,8 +267,9 @@ export default async function dossiers (app) {
         WHERE dp.id = $1`,
       [request.params.id])
     if (!ctx.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
-    if (ctx[0].statut === 'valide') {
-      return reply.code(409).send({ erreur: 'Dossier validé : les signatures sont figées.' })
+    if (estFige(ctx[0].statut)) {
+      return reply.code(409).send({
+        erreur: `${prefixeFige(ctx[0].statut)} : les signatures sont figées.` })
     }
 
     // Une contresignature par la même personne que la 1re n'en est pas une :
@@ -369,9 +387,9 @@ export default async function dossiers (app) {
         WHERE dp.id = $1`,
       [request.params.id])
     if (!contexte.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
-    if (contexte[0].statut === 'valide') {
+    if (estFige(contexte[0].statut)) {
       return reply.code(409).send({
-        erreur: 'Dossier validé : son avancement est figé. Toute correction passe par ' +
+        erreur: `${prefixeFige(contexte[0].statut)} : son avancement est figé. Toute correction passe par ` +
                 'une nouvelle version du dossier.'
       })
     }
@@ -494,8 +512,16 @@ export default async function dossiers (app) {
     // `attente` n'est pas un statut stocké : c'est l'absence de patient sur un
     // dossier encore ouvert. Le calculer ici évite de dupliquer la règle côté
     // front, où elle finirait par diverger.
-    if (statut === 'attente') conditions.push("d.patient_id IS NULL AND d.statut <> 'valide'")
-    else if (statut === 'en_cours') conditions.push("d.statut <> 'valide'")
+    if (statut === 'attente') {
+      conditions.push("d.patient_id IS NULL AND d.statut NOT IN ('valide', 'annule')")
+    } else if (statut === 'en_cours') {
+      /* Un dossier clos n'est plus en cours : il n'attend rien. L'omettre
+         d'`en_cours` est tout l'intérêt de la clôture — sinon un parcours
+         avorté continuerait d'encombrer la vue par défaut. */
+      conditions.push("d.statut NOT IN ('valide', 'annule')")
+    } else if (statut === 'clos') {
+      conditions.push("d.statut = 'annule'")
+    }
     else if (statut) { params.push(statut); conditions.push(`d.statut = $${params.length}`) }
 
     if (q) {
@@ -521,19 +547,22 @@ export default async function dossiers (app) {
     const { rows } = await requete(
       `SELECT d.id, d.reference, d.numero_lot, d.statut, d.conformite, d.preallocation,
               d.patient_id, d.prescription_faite, d.cree_le, d.valide_le,
+              d.numero_ordonnancier, d.motif_cloture, d.clos_le,
+              btrim(concat_ws(' ', clos.titre, clos.prenom, clos.nom)) AS clos_par_libelle,
               coalesce(d.designation_produit, pr.denomination) AS produit,
               pr.id AS produit_id, pat.reference AS patient_reference,
               i.nom AS patient_nom, i.prenom AS patient_prenom,
               m.code AS code_modele, m.version AS version_modele,
               proc.etape, proc.nb_processus, proc.nb_valides, proc.dernier_valide,
               coalesce(al.nb_alarmes, 0) AS nb_alarmes,
-              greatest(d.cree_le, d.valide_le, proc.dernier_valide, al.derniere_saisie)
-                AS derniere_activite
+              greatest(d.cree_le, d.valide_le, d.clos_le, proc.dernier_valide,
+                       al.derniere_saisie) AS derniere_activite
          FROM mti.dossier d
          JOIN mti.modele_parcours m ON m.id = d.modele_parcours_id
          LEFT JOIN mti.produit pr ON pr.id = d.produit_id
          LEFT JOIN mti.patient pat ON pat.id = d.patient_id
          LEFT JOIN mti.patient_identite i ON i.patient_id = pat.id
+         LEFT JOIN mti.utilisateur clos ON clos.id = d.clos_par
          LEFT JOIN LATERAL (
            SELECT count(*)::int AS nb_processus,
                   count(*) FILTER (WHERE dp.etat = 'valide')::int AS nb_valides,
@@ -572,15 +601,33 @@ export default async function dossiers (app) {
            ouvert. */
         statutAffiche: r.statut === 'valide'
           ? (r.conformite === 'non_conforme' ? 'non_conforme' : 'termine')
-          : (alloue ? 'en_cours' : 'attente'),
+          /* Clos n'est ni terminé ni en cours : le parcours s'est arrêté en
+             chemin. Le confondre avec « terminé » ferait croire à un
+             traitement administré. */
+          : r.statut === 'annule' ? 'clos'
+            : (alloue ? 'en_cours' : 'attente'),
         /* La conformité est la seule chose qui distingue deux dossiers clos.
            Sans elle le tableau de bord affichait « terminé, 100 % » sur un
            dossier déclaré non conforme — l'information la plus importante du
            dossier était la seule à ne pas remonter. */
         conformite: r.conformite,
-        /* Un dossier validé est clos, même si tous ses processus n'ont pas été
-           validés un à un : c'est la validation du dossier qui le fige. */
-        etape: r.statut === 'valide' ? 'Parcours clos' : (r.etape ?? 'Parcours clos'),
+        /* « Parcours clos » désignait jusqu'ici un dossier VALIDÉ, ce qui
+           était le mot le plus trompeur du tableau de bord : depuis qu'un
+           parcours peut réellement être clos sur un avortement, les deux
+           états auraient porté le même libellé alors qu'ils disent l'inverse
+           l'un de l'autre — allé au bout, ou arrêté en chemin.
+
+           Un dossier validé est figé même si ses processus n'ont pas tous été
+           validés un à un : c'est la validation du dossier qui fige. */
+        etape: r.statut === 'valide' ? 'Parcours validé'
+          : r.statut === 'annule' ? 'Parcours clos'
+            : (r.etape ?? 'Tous les processus validés'),
+        numeroOrdonnancier: r.numero_ordonnancier,
+        /* Le motif remonte : le tableau de bord doit pouvoir dire POURQUOI un
+           parcours s'est arrêté, sans rouvrir le dossier. */
+        cloture: r.statut === 'annule'
+          ? { motif: r.motif_cloture, par: r.clos_par_libelle, le: r.clos_le }
+          : null,
         nbProcessus: r.nb_processus,
         nbValides: r.nb_valides,
         avancement: r.nb_processus ? Math.round((r.nb_valides / r.nb_processus) * 100) : 0,
@@ -744,9 +791,9 @@ export default async function dossiers (app) {
         WHERE dp.id = $1 AND dp.dossier_id = $2`,
       [request.params.pid, request.params.id])
     if (!garde.length) return reply.code(404).send({ erreur: 'Processus introuvable pour ce dossier.' })
-    if (garde[0].statut === 'valide') {
+    if (estFige(garde[0].statut)) {
       return reply.code(409).send({
-        erreur: "Dossier validé : lecture seule. Une correction passe par une nouvelle version."
+        erreur: `${prefixeFige(garde[0].statut)} : lecture seule. Une correction passe par une nouvelle version.`
       })
     }
 
@@ -806,8 +853,8 @@ export default async function dossiers (app) {
         WHERE pj.id = $1`,
       [request.params.id])
     if (!rows.length) return reply.code(404).send({ erreur: 'Pièce introuvable.' })
-    if (rows[0].statut === 'valide') {
-      return reply.code(409).send({ erreur: 'Dossier validé : lecture seule.' })
+    if (estFige(rows[0].statut)) {
+      return reply.code(409).send({ erreur: `${prefixeFige(rows[0].statut)} : lecture seule.` })
     }
     return transaction(request.utilisateur.id, request.ip, async (client) => {
       await client.query('DELETE FROM mti.piece_jointe WHERE id = $1', [request.params.id])
@@ -963,13 +1010,13 @@ export default async function dossiers (app) {
           `UPDATE mti.dossier
               SET statut = 'valide', conformite = $2, commentaire = $3,
                   valide_par = $4, valide_le = now()
-            WHERE id = $1 AND statut <> 'valide'
+            WHERE id = $1 AND statut NOT IN ('valide', 'annule')
             RETURNING id, statut, conformite, valide_le`,
           [request.params.id, conformite, commentaire ?? null, request.utilisateur.id]
         )
         if (!rows.length) {
           reply.code(409)
-          return { erreur: 'Dossier introuvable ou déjà validé' }
+          return { erreur: 'Dossier introuvable, déjà validé, ou clos sur un parcours avorté' }
         }
         await client.query(
           `UPDATE mti.dossier_processus
@@ -983,5 +1030,87 @@ export default async function dossiers (app) {
       if (/dévalid/.test(e.message)) return reply.code(409).send({ erreur: e.message })
       throw e
     }
+  })
+
+  // ── Clôture d'un parcours avorté ─────────────────────────────────────────
+  //
+  // Un parcours s'arrête parfois sans aboutir : décès, aphérèse non
+  // exploitable, échec de fabrication, décision médicale. Sans cette route un
+  // tel dossier restait « en cours » indéfiniment et réclamait au tableau de
+  // bord une suite qui ne viendrait pas.
+  //
+  // Clore N'EST PAS valider, et ce n'est pas non plus l'inverse :
+  //
+  //   — valider  = le parcours est allé au bout, un pharmacien conclut sur sa
+  //                conformité et signe ;
+  //   — clore    = le parcours s'arrête en chemin, personne ne conclut sur
+  //                rien, et on dit pourquoi.
+  //
+  // D'où l'absence de `conformite` ici : un parcours avorté n'est ni conforme
+  // ni non conforme, il est inachevé. Poser « non conforme » sur un décès
+  // patient serait un contresens, et cette valeur remonte au tableau de bord.
+  //
+  // IL N'Y A PAS DE DÉCLÔTURE, et il ne doit pas y en avoir : c'est la
+  // décision prise. Reprendre un traitement, c'est ouvrir un nouveau dossier.
+  // Rendre modifiable un dossier clos reviendrait à effacer ce que quelqu'un a
+  // constaté, par un UPDATE — exactement ce que la règle du dossier figé
+  // interdit.
+  app.post('/api/dossiers/:id/clore', async (request, reply) => {
+    /* Le motif est obligatoire, et pas seulement non vide : « x » ne dit rien
+       à celui qui relira le dossier dans six mois, et c'est précisément la
+       question qu'il se posera. La base porte la même exigence
+       (dossier_clos_coherent) — ici c'est pour le message. */
+    const motif = String(request.body?.motif ?? '').trim()
+    if (motif.length < 5) {
+      return reply.code(400).send({
+        erreur: 'Le motif de clôture est obligatoire et doit dire ce qui a interrompu ' +
+                "le parcours (décès, aphérèse non exploitable, échec de fabrication, " +
+                'décision médicale…).'
+      })
+    }
+    if (motif.length > 500) {
+      return reply.code(400).send({ erreur: 'Motif de clôture trop long (500 caractères).' })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* La condition est DANS le UPDATE : une lecture préalable laisserait la
+         place à une validation concurrente entre les deux, et le dossier
+         serait clos après avoir été signé. */
+      const { rows } = await client.query(
+        `UPDATE mti.dossier
+            SET statut = 'annule', motif_cloture = $2,
+                clos_par = $3, clos_le = now()
+          WHERE id = $1 AND statut NOT IN ('valide', 'annule')
+          RETURNING id, statut, motif_cloture, clos_le`,
+        [request.params.id, motif, request.utilisateur.id])
+
+      if (!rows.length) {
+        const { rows: etat } = await client.query(
+          'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
+        if (!etat.length) {
+          reply.code(404)
+          return { erreur: 'Dossier introuvable.' }
+        }
+        reply.code(409)
+        return {
+          erreur: etat[0].statut === 'valide'
+            /* Un dossier validé n'est pas un parcours avorté : il est allé au
+               bout. Le clore effacerait la conclusion du pharmacien. */
+            ? 'Dossier validé : il est allé au bout du parcours, il ne se clôt pas ' +
+              'sur un avortement. Sa conclusion de conformité est signée.'
+            : 'Dossier déjà clos.'
+        }
+      }
+
+      /* Les processus non validés cessent d'attendre. `annule` existait dans
+         `etat_processus` sans emploi : c'est ici qu'il sert. Les processus
+         DÉJÀ validés ne bougent pas — ils ont été faits, et par qui. */
+      await client.query(
+        `UPDATE mti.dossier_processus SET etat = 'annule'
+          WHERE dossier_id = $1 AND etat <> 'valide'`,
+        [request.params.id])
+
+      return rows[0]
+    })
   })
 }
