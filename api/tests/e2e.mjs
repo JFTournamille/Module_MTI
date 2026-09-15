@@ -698,7 +698,7 @@ console.log('\n19. Photos')
      du dépôt, sinon il échoue pour une raison qui n'a rien à voir. */
   const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
-  const poser = (corps) => j('POST', `/api/dossiers/${dossierPh}/processus/${procPh.id}/photos`,
+  const poser = (corps) => j('POST', `/api/dossiers/${dossierPh}/processus/${procPh.id}/pieces`,
     { sectionIndex: 0, pointIndex: 4, exemplaire: 1, operateurRole: 'op1', ...corps })
 
   r = await poser({ mime: 'image/png', nomFichier: 'essai.png', libelle: 'Avant', contenu: PNG_1x1 })
@@ -714,14 +714,14 @@ console.log('\n19. Photos')
   const saisiePh = r.corps.saisies.find((x) => x.point_type === 'photo')
   saisiePh ? ok('la saisie porteuse est créée par le dépôt lui-même')
     : ko('aucune saisie photo après le dépôt')
-  r.corps.photos?.length === 1 && r.corps.photos[0].id === photoId
+  r.corps.pieces?.length === 1 && r.corps.pieces[0].id === photoId
     ? ok('la photo remonte avec le dossier, sans son contenu')
-    : ko(`photos du dossier : ${JSON.stringify(r.corps.photos)}`)
-  r.corps.photos?.[0]?.contenu === undefined
+    : ko(`pièces du dossier : ${JSON.stringify(r.corps.pieces)}`)
+  r.corps.pieces?.[0]?.contenu === undefined
     ? ok('le contenu ne voyage pas dans la réponse du dossier')
     : ko('le contenu est embarqué dans la réponse : ouverture alourdie pour rien')
 
-  const brut = await fetch(`${base}/api/photos/${photoId}`)
+  const brut = await fetch(`${base}/api/pieces/${photoId}`)
   const octets = Buffer.from(await brut.arrayBuffer())
   brut.status === 200 && brut.headers.get('content-type') === 'image/png' &&
     octets.length === Buffer.from(PNG_1x1, 'base64').length
@@ -737,8 +737,8 @@ console.log('\n19. Photos')
   r.statut === 400 ? ok('base64 illisible refusée (400), pas de pièce vide')
     : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
 
-  r = await j('DELETE', `/api/photos/${photoId}`)
-  const apresRetrait = await fetch(`${base}/api/photos/${photoId}`)
+  r = await j('DELETE', `/api/pieces/${photoId}`)
+  const apresRetrait = await fetch(`${base}/api/pieces/${photoId}`)
   r.statut === 204 && apresRetrait.status === 404
     ? ok('retrait effectif : la pièce n\'est plus servie')
     : ko(`retrait ${r.statut}, lecture ${apresRetrait.status}`)
@@ -753,7 +753,7 @@ console.log('\n19. Photos')
   if (r.corps.dossier.statut === 'valide') {
     r = await poser({ mime: 'image/png', nomFichier: 'trop-tard.png', contenu: PNG_1x1 })
     r.statut === 409 ? ok('dossier validé : dépôt refusé (409)') : ko(`statut ${r.statut}`)
-    r = await j('DELETE', `/api/photos/${photoAvantCloture}`)
+    r = await j('DELETE', `/api/pieces/${photoAvantCloture}`)
     r.statut === 409 ? ok('dossier validé : retrait refusé (409)') : ko(`statut ${r.statut}`)
   } else {
     console.log(`  · dossier non validé (${r.corps.dossier.statut}) — lecture seule non éprouvée`)
@@ -877,7 +877,12 @@ console.log('\n21. Conformité automatique')
         else if (pt.type === 'valeur') {
           lot.push({ ...base, valeurNum: pt.seuil !== undefined ? pt.seuil - 10 : 1 })
         } else if (pt.type === 'timer') lot.push({ ...base, timerDebut: new Date().toISOString() })
-        else if (pt.type === 'photo') lot.push({ ...base, obligatoire: false })
+        else if (pt.type === 'photo' || pt.type === 'fichier') {
+          /* Un point pièce ne se « renseigne » pas par une saisie : il attend
+             un document. Le laisser obligatoire rendrait le dossier
+             éternellement rouge dans ce groupe, qui éprouve autre chose. */
+          lot.push({ ...base, obligatoire: false })
+        }
         else if (pt.type === 'liste') lot.push({ ...base, valeurTexte: (pt.options ?? ['x'])[0] })
         else lot.push({ ...base, valeurTexte: 'renseigné en recette' })
         poses++
@@ -1016,6 +1021,102 @@ console.log('\n22. Réouverture d\'un parcours clos')
     r.statut === 409 && /allé au bout/.test(r.corps?.erreur ?? '')
       ? ok('réouverture d\'un dossier validé refusée, avec la raison')
       : ko(`statut ${r.statut} : ${r.corps?.erreur}`)
+  }
+}
+
+// ── 23. Fichiers joints : dissociés des photos, PDF accepté ──
+console.log('\n23. Fichiers joints — dissociés des photos')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E fichier' })
+  const dos = r.corps?.id
+  r = await j('GET', `/api/dossiers/${dos}`)
+
+  // Le parcours doit porter des points « fichier » distincts des points photo.
+  let cible = null
+  let nbFichier = 0
+  let nbPhoto = 0
+  for (const p of r.corps.processus) {
+    for (const [iS, sec] of (p.definition?.sections ?? []).entries()) {
+      for (const [iP, pt] of (sec.points ?? []).entries()) {
+        if (pt.type === 'fichier') { nbFichier++; cible ??= { pid: p.id, iS, iP, pt } }
+        if (pt.type === 'photo') nbPhoto++
+      }
+    }
+  }
+  nbFichier > 0 && nbPhoto > 0
+    ? ok(`${nbFichier} point(s) « fichier » et ${nbPhoto} point(s) « photo » — les deux coexistent`)
+    : ko(`fichier: ${nbFichier}, photo: ${nbPhoto}`)
+
+  if (!cible) {
+    ko('aucun point « fichier » au parcours : le reste du groupe est sans objet')
+  } else {
+    const { pid, iS, iP, pt } = cible
+    const socle = { sectionIndex: iS, pointIndex: iP, pointNum: pt.num ?? null,
+      exemplaire: 1, operateurRole: 'op1', obligatoire: true }
+    /* Un vrai PDF, pas des octets quelconques : ce qui est éprouvé est que le
+       contenu revient IDENTIQUE — un certificat recompressé ne vaut rien. */
+    const pdf = Buffer.from(
+      '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
+    const b64 = pdf.toString('base64')
+
+    r = await j('POST', `/api/dossiers/${dos}/processus/${pid}/pieces`,
+      { ...socle, pointType: 'fichier', mime: 'application/pdf',
+        nomFichier: 'coa-lot-4471.pdf', libelle: 'CoA lot 4471', contenu: b64 })
+    const pieceId = r.corps?.id
+    r.statut === 201 && pieceId
+      ? ok(`PDF accepté sur un point « fichier » (${r.corps.taille} octets)`)
+      : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+    /* LA DISSOCIATION : le même PDF sur un point PHOTO doit être refusé. Sans
+       ce refus, « dissocier » ne serait qu'un libellé. */
+    r = await j('POST', `/api/dossiers/${dos}/processus/${pid}/pieces`,
+      { ...socle, pointType: 'photo', mime: 'application/pdf',
+        nomFichier: 'x.pdf', contenu: b64 })
+    r.statut === 415 && /photo/.test(r.corps?.erreur ?? '')
+      ? ok('le même PDF est refusé sur un point « photo » (415)')
+      : ko(`statut ${r.statut} : ${r.corps?.erreur}`)
+
+    /* SVG et HTML portent du script, et le contenu est servi depuis l'origine
+       de l'application. Leur refus n'est pas une commodité. */
+    for (const [mime, nom] of [['image/svg+xml', 'x.svg'], ['text/html', 'x.html']]) {
+      r = await j('POST', `/api/dossiers/${dos}/processus/${pid}/pieces`,
+        { ...socle, pointType: 'fichier', mime, nomFichier: nom, contenu: b64 })
+      r.statut === 415
+        ? ok(`${mime} refusé — format scriptable`)
+        : ko(`${mime} accepté (${r.statut}) : il s'exécuterait dans la page`)
+    }
+
+    // Le contenu revient octet pour octet, et se TÉLÉCHARGE au lieu de s'ouvrir.
+    const brut = await fetch(`${base}/api/pieces/${pieceId}`)
+    const recu = Buffer.from(await brut.arrayBuffer())
+    recu.equals(pdf)
+      ? ok('le PDF est relu à l\'identique, sans recompression')
+      : ko(`${recu.length} octets relus contre ${pdf.length} déposés`)
+    const disposition = brut.headers.get('content-disposition') ?? ''
+    disposition.includes('attachment')
+      ? ok('servi en pièce à télécharger, pas ouvert dans la page')
+      : ko(`content-disposition : ${disposition}`)
+    brut.headers.get('x-content-type-options') === 'nosniff'
+      ? ok('nosniff : le navigateur ne devine pas un type plus permissif')
+      : ko('en-tête nosniff absent')
+
+    // Une image reste servie en ligne : elle s'affiche à sa place.
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const piece = r.corps.pieces?.find((x) => x.id === pieceId)
+    piece && piece.mime === 'application/pdf' && piece.contenu === undefined
+      ? ok('la pièce remonte avec le dossier, sans son contenu')
+      : ko(`pièce : ${JSON.stringify(piece)}`)
+
+    /* Un point « fichier » obligatoire sans document n'est pas une coche
+       verte : c'est ce que la migration 019 a ajouté. */
+    r = await j('DELETE', `/api/pieces/${pieceId}`)
+    r.statut === 204 ? ok('retrait du document') : ko(`retrait ${r.statut}`)
+    r = await j('GET', `/api/dossiers/${dos}/conformite?processus=${pid}`)
+    const rouge = r.corps?.nonVertes?.some((c) => /obligatoire/.test(c.raison))
+    rouge
+      ? ok('un point « fichier » obligatoire sans document reste rouge')
+      : ko(`aucune coche rouge après retrait : ${JSON.stringify(r.corps?.nonVertes)}`)
   }
 }
 

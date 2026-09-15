@@ -1550,7 +1550,7 @@ if (await page.locator('tr.tb-ligne').count() === 0) {
    n'existe nulle part. Ce qui est vérifié ici n'est pas qu'un bouton réagit,
    mais qu'une image DÉPOSÉE se retrouve en base et se réaffiche après
    rechargement — une preuve qui ne survit pas au rechargement n'en est pas une. */
-console.log('\n27. Photos : fichier et prise de vue')
+console.log('\n27. Photos : image choisie et prise de vue')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1200)
 await page.locator('#tb-q').fill(refDossier)
@@ -1561,9 +1561,14 @@ await allerAuProcessus('Réception (+/-')
 
 const lignePhoto = page.locator('.chk .crow').filter({ hasText: 'état externe conteneur' }).first()
 const nbPhAvant = await lignePhoto.locator('.cph').count()
-await lignePhoto.locator('.cth2[title*="fichier"]').count() === 1
-  ? ok('un bouton de choix de fichier est proposé sur un point photo')
-  : ko('aucun bouton de choix de fichier')
+await lignePhoto.locator('.cth2[title*="image"]').count() === 1
+  ? ok('un bouton de choix d\'image est proposé sur un point photo')
+  : ko('aucun bouton de choix d\'image')
+/* Un point PHOTO ne propose pas de joindre un document : c'est la
+   dissociation, vue de l'écran. */
+await lignePhoto.locator('.cdoc-b').count() === 0
+  ? ok('un point photo ne propose pas de joindre un document')
+  : ko('le bouton « joindre un document » apparaît sur un point photo')
 await lignePhoto.locator('.cth2[title*="caméra"]').count() === 1
   ? ok('un bouton de prise de vue est proposé')
   : ko('aucun bouton de prise de vue')
@@ -1634,7 +1639,75 @@ restantes === nbPhAvant
   ? ok('photos retirées, la ligne est rendue à son état de départ')
   : ko(`${restantes} photo(s) restante(s) au lieu de ${nbPhAvant}`)
 
-console.log('\n28. Filtres par colonne du tableau de bord')
+console.log('\n28. Fichiers joints : un document n\'est pas une photo')
+{
+  await allerAuProcessus('Demande d\'accès')
+  const ligneDoc = page.locator('.chk .crow, .std-ir')
+    .filter({ hasText: 'Compte rendu de RCP' }).first()
+  if (await ligneDoc.count() === 0) {
+    ko('aucune ligne « Compte rendu de RCP » : le parcours n\'a pas de point fichier')
+  } else {
+    await ligneDoc.locator('.cdoc-b').count() === 1
+      ? ok('un point fichier propose « joindre un document »')
+      : ko('aucun bouton de dépôt de document')
+    /* Et PAS de caméra : on ne photographie pas un PDF. C'est l'autre moitié
+       de la dissociation. */
+    await ligneDoc.locator('.cth2').count() === 0
+      ? ok('un point fichier ne propose ni vignette ni caméra')
+      : ko('les boutons photo apparaissent sur un point fichier')
+
+    const nbAvant = await ligneDoc.locator('.cdoc-l').count()
+    const PDF = Buffer.from(
+      '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
+    await ligneDoc.locator('input[type=file]').setInputFiles({
+      name: 'compte-rendu-rcp.pdf', mimeType: 'application/pdf', buffer: PDF
+    })
+    await page.waitForTimeout(2500)
+    const nbApres = await ligneDoc.locator('.cdoc-l').count()
+    nbApres === nbAvant + 1
+      ? ok(`document déposé : ${nbApres} ligne(s) de document`)
+      : ko(`${nbApres} document(s) au lieu de ${nbAvant + 1}`)
+
+    /* Ce qui se lit sur un document, c'est son NOM et son POIDS — pas une
+       vignette, qui ne dirait rien d'un PDF. */
+    const texteDoc = await ligneDoc.locator('.cdoc-l').last().innerText()
+    const nomme = texteDoc.includes('compte-rendu-rcp.pdf')
+    const pese = /Kio|Mio/.test(texteDoc)
+    nomme && pese
+      ? ok(`le document se lit par son nom et son poids (« ${texteDoc.replace(/\n/g, ' ')} »)`)
+      : ko(`ligne de document : « ${texteDoc.replace(/\n/g, ' | ')} »`)
+    await ligneDoc.locator('.cdoc-l img').count() === 0
+      ? ok('aucune vignette sur un document')
+      : ko('le document est rendu comme une image')
+
+    // Et il survit au rechargement : il est en base, pas dans la page.
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForTimeout(1800)
+    await allerAuScenario()
+    await allerAuProcessus('Demande d\'accès')
+    const ligneDoc2 = page.locator('.chk .crow, .std-ir')
+      .filter({ hasText: 'Compte rendu de RCP' }).first()
+    const relus = await ligneDoc2.locator('.cdoc-l').count()
+    relus >= nbApres
+      ? ok(`${relus} document(s) relu(s) depuis la base`)
+      : ko(`${relus} document(s) relu(s), le dépôt n'est pas persisté`)
+
+    // Remise en état.
+    let reste = await ligneDoc2.locator('.cdoc-l').count()
+    while (reste > nbAvant) {
+      await ligneDoc2.locator('.cdoc-x').last().click()
+      await page.waitForTimeout(900)
+      const n = await ligneDoc2.locator('.cdoc-l').count()
+      if (n === reste) break
+      reste = n
+    }
+    reste === nbAvant
+      ? ok('documents retirés, la ligne est rendue à son état de départ')
+      : ko(`${reste} document(s) restant(s) au lieu de ${nbAvant}`)
+  }
+}
+
+console.log('\n29. Filtres par colonne du tableau de bord')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1300)
 await page.locator('.adm-b', { hasText: 'Réinitialiser' }).click()
@@ -1701,7 +1774,7 @@ await page.locator('.tb-restreint').count() === 0
    La croix de la barre de titre venait de la maquette et n'était reliée à
    RIEN : elle avait l'apparence d'une fermeture de fenêtre et ne faisait rien
    du tout. Personne ne l'avait vu parce que rien ne la cliquait. */
-console.log('\n29. Fermer le parcours')
+console.log('\n30. Fermer le parcours')
 await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
 await page.waitForTimeout(1200)
 await page.locator('#tb-q').fill(refDossier)
@@ -1785,7 +1858,7 @@ console.log('\nRemise en état des dossiers de test')
 // ── 30. Clore un parcours avorté ──
 /* Un dossier à part : la clôture est irréversible, elle ne doit toucher aucun
    dossier dont les groupes suivants dépendent. */
-console.log('\n30. Clore un parcours avorté depuis l\'écran')
+console.log('\n31. Clore un parcours avorté depuis l\'écran')
 {
   await page.locator('.onglet', { hasText: 'Tableau de bord' }).click()
   await page.waitForTimeout(1200)
@@ -1892,7 +1965,7 @@ console.log('\n30. Clore un parcours avorté depuis l\'écran')
 }
 
 // ── 31. Conformité : ce qui est évalué, et où ──
-console.log('\n31. Pied de page : parcours et processus séparés')
+console.log('\n32. Pied de page : parcours et processus séparés')
 {
   await allerAuScenario()
   await page.waitForTimeout(700)
@@ -1970,7 +2043,7 @@ console.log('\n31. Pied de page : parcours et processus séparés')
   }
 }
 
-console.log('\n32. Conformité du processus en cours')
+console.log('\n33. Conformité du processus en cours')
 {
   await allerAuScenario()
   await page.waitForTimeout(600)
@@ -2046,7 +2119,7 @@ console.log('\n32. Conformité du processus en cours')
   }
 }
 
-console.log('\n33. Console du navigateur et réseau')
+console.log('\n34. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

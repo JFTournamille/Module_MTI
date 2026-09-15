@@ -11,6 +11,7 @@ const badge = {
   ouinon: ['b-yn', 'Oui/Non'],
   valeur: ['b-val', 'Valeur'],
   photo: ['b-photo', 'Photo'],
+  fichier: ['b-fichier', 'Fichier'],
   timer: ['b-timer', 'Minuteur'],
   texte: ['b-texte', 'Texte'],
   auto: ['b-auto', 'Auto']

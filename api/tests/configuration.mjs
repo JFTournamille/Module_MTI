@@ -273,6 +273,59 @@ r.corps.some((m) => m.code === CODE_NEUF)
   ? ko('le parcours de test subsiste : la suite encombrerait le sélecteur')
   : ok('parcours de test retiré — la suite reste rejouable')
 
+// ── 8. Les listes de types acceptés ne doivent pas diverger ──
+//
+// Il existe TROIS listes des types de points : l'enum `mti.type_point` en
+// base, `TYPES_POINT` de routes/referentiels.js (ce qu'un parcours peut
+// CONTENIR) et `TYPES` de routes/dossiers.js (ce qu'une saisie peut ÊTRE).
+// Elles ont déjà divergé deux fois — `liste`, puis `fichier` — et la seconde
+// fois le parcours EN SERVICE ne pouvait plus être republié du tout : la
+// validation refusait ses propres points.
+//
+// Cette vérification part de la base, seule source qui ne ment pas, et
+// éprouve chaque valeur contre la route de création.
+console.log('\n8. Types de points : base, configuration et saisie alignés')
+{
+  const { rows } = await pool.query(
+    `SELECT unnest(enum_range(NULL::mti.type_point))::text AS t ORDER BY 1`)
+  const typesBase = rows.map((r) => r.t)
+  ok(`${typesBase.length} type(s) dans l'enum : ${typesBase.join(', ')}`)
+
+  const refuses = []
+  const crees = []
+  for (const t of typesBase) {
+    const code = `PARCOURS_TYPE_${t.toUpperCase()}_${Date.now() % 100000}`
+    const point = { libelle: `Point ${t}`, type: t, obligatoire: false }
+    /* `liste` exige ses options : la contrainte est légitime, elle ne doit pas
+       faire passer le type pour inconnu. */
+    if (t === 'liste') point.options = ['A', 'B']
+    const r = await j('POST', '/api/modeles', {
+      code,
+      libelle: `Parcours de recette ${t}`,
+      definition: {
+        libelle: `Parcours de recette ${t}`,
+        processus: [{ code: 'RECETTE', nom: 'Recette', gabarit: 'standard',
+          sections: [{ titre: 'Section', points: [point] }] }]
+      }
+    })
+    if (r.statut === 201) crees.push({ code, id: r.corps?.id })
+    else refuses.push(`${t} → ${r.statut} ${String(r.corps?.erreur).slice(0, 70)}`)
+  }
+  refuses.length === 0
+    ? ok('tous les types de la base sont acceptés par la configuration')
+    : ko(`type(s) refusé(s) alors qu'ils existent en base :\n     ${refuses.join('\n     ')}`)
+
+  // Remise en état : ces parcours de recette n'ont rien à faire au sélecteur.
+  for (const c of crees) {
+    await pool.query('DELETE FROM mti.modele_parcours WHERE code = $1', [c.code])
+  }
+  const { rows: restants } = await pool.query(
+    `SELECT count(*)::int AS n FROM mti.modele_parcours WHERE code LIKE 'PARCOURS_TYPE_%'`)
+  restants[0].n === 0
+    ? ok('parcours de recette retirés')
+    : ko(`${restants[0].n} parcours de recette subsistent`)
+}
+
 await pool.end()
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

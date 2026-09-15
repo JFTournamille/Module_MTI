@@ -21,8 +21,9 @@ const store = useParcours()
 const saisie = computed(() => store.saisie(props.cle, props.point))
 const alarme = computed(() => store.alarme(props.cle, props.point))
 
-// ── Photos ──
+// ── Pièces jointes : photos d'un côté, documents de l'autre ──
 const champFichier = ref(null)
+const champDocument = ref(null)
 const cameraOuverte = ref(false)
 const envoiEnCours = ref(false)
 
@@ -63,14 +64,14 @@ function reduire (fichier) {
   })
 }
 
-async function fichiersChoisis (evenement) {
+async function imagesChoisies (evenement) {
   const fichiers = [...(evenement.target.files ?? [])]
   evenement.target.value = ''   // le même fichier doit pouvoir être repris
   envoiEnCours.value = true
   try {
     for (const f of fichiers) {
       const image = await reduire(f).catch((e) => { store.erreurDossier = e.message; return null })
-      if (image) await store.deposerPhoto(props.cle, { ...image, libelle: f.name })
+      if (image) await store.deposerPiece(props.cle, { ...image, libelle: f.name })
     }
   } finally { envoiEnCours.value = false }
 }
@@ -78,8 +79,68 @@ async function fichiersChoisis (evenement) {
 async function photoCapturee (image) {
   cameraOuverte.value = false
   envoiEnCours.value = true
-  try { await store.deposerPhoto(props.cle, { ...image, libelle: 'Prise de vue' }) }
+  try { await store.deposerPiece(props.cle, { ...image, libelle: 'Prise de vue' }) }
   finally { envoiEnCours.value = false }
+}
+
+/**
+ * Documents téléversés — un point « fichier ».
+ *
+ * AUCUNE réduction ici, contrairement aux photos : un certificat de conformité
+ * se transmet tel qu'il a été reçu et signé. Le recompresser, ce serait
+ * produire un document qui n'est plus celui du fabricant, et une pièce de
+ * traçabilité altérée ne vaut rien.
+ */
+const TAILLE_MAX = 20 * 1024 * 1024
+function lireTelQuel (fichier) {
+  return new Promise((resoudre, rejeter) => {
+    const lecteur = new FileReader()
+    lecteur.onerror = () => rejeter(new Error('Fichier illisible.'))
+    lecteur.onload = () => {
+      const url = String(lecteur.result)
+      resoudre({
+        octets: url.slice(url.indexOf(',') + 1),
+        /* Le type déclaré par le navigateur, pas deviné de l'extension : le
+           serveur le vérifiera de toute façon contre sa liste. */
+        mime: fichier.type || 'application/octet-stream',
+        nomFichier: fichier.name
+      })
+    }
+    lecteur.readAsDataURL(fichier)
+  })
+}
+
+async function documentsChoisis (evenement) {
+  const fichiers = [...(evenement.target.files ?? [])]
+  evenement.target.value = ''
+  envoiEnCours.value = true
+  try {
+    for (const f of fichiers) {
+      /* Refus AVANT lecture : lire 40 Mio en mémoire pour apprendre que le
+         serveur les refusera n'a aucun intérêt, et fige l'onglet le temps de
+         l'encodage en base64. */
+      if (f.size > TAILLE_MAX) {
+        store.erreurDossier = `« ${f.name} » pèse ${Math.round(f.size / 1024 / 1024)} Mio, ` +
+          `plafond ${TAILLE_MAX / 1024 / 1024} Mio.`
+        continue
+      }
+      const doc = await lireTelQuel(f).catch((e) => { store.erreurDossier = e.message; return null })
+      if (doc) await store.deposerPiece(props.cle, { ...doc, libelle: f.name })
+    }
+  } finally { envoiEnCours.value = false }
+}
+
+/** Taille lisible : « 412 Kio », « 3,2 Mio ». */
+const poids = (o) => o >= 1024 * 1024
+  ? `${(o / 1024 / 1024).toFixed(1).replace('.', ',')} Mio`
+  : `${Math.round(o / 1024)} Kio`
+
+/** Pictogramme du document, d'après son type déclaré. */
+const icone = (mime) => {
+  if (mime === 'application/pdf') return '📕'
+  if (mime.startsWith('image/')) return '🖼️'
+  if (mime.startsWith('text/')) return '📃'
+  return '📎'
 }
 
 /** Heure d'un jalon de minuteur, ou « — » tant qu'il n'est pas posé. */
@@ -130,21 +191,21 @@ function heure (epoch) {
        de photo du tout. Elle porte maintenant de vraies pièces. -->
   <div v-else-if="point.type === 'photo'" class="cthr">
     <a
-      v-for="photo in saisie.photos" :key="photo.id"
-      class="cph" :href="store.urlPhoto(photo.id)" target="_blank" rel="noopener"
-      :title="`${photo.libelle || photo.nomFichier} — ${Math.round(photo.taille / 1024)} Kio`
+      v-for="photo in saisie.pieces" :key="photo.id"
+      class="cph" :href="store.urlPiece(photo.id)" target="_blank" rel="noopener"
+      :title="`${photo.libelle || photo.nomFichier} — ${poids(photo.taille)}`
         + (photo.ajoutePar ? ` — ${photo.ajoutePar}` : '')"
     >
-      <img :src="store.urlPhoto(photo.id)" :alt="photo.libelle || photo.nomFichier">
+      <img :src="store.urlPiece(photo.id)" :alt="photo.libelle || photo.nomFichier">
       <span
         v-if="!lectureSeule" class="cph-x" title="Retirer cette photo"
-        @click.prevent.stop="store.retirerPhoto(cle, photo.id)"
+        @click.prevent.stop="store.retirerPiece(cle, photo.id)"
       >✕</span>
     </a>
 
     <template v-if="!lectureSeule">
       <button
-        class="cth2" title="Choisir un fichier image" :disabled="envoiEnCours"
+        class="cth2" title="Choisir une image" :disabled="envoiEnCours"
         @click="champFichier.click()"
       >📁</button>
       <button
@@ -152,18 +213,58 @@ function heure (epoch) {
         :disabled="envoiEnCours" @click="cameraOuverte = true"
       >📷</button>
       <span v-if="envoiEnCours" class="cph-att">envoi…</span>
+      <!-- `accept="image/*"` : un point photo ne reçoit que des images, et le
+           serveur le vérifie de nouveau. Ici, c'est pour éviter à l'opérateur
+           de choisir un PDF qui sera refusé. -->
       <input
         ref="champFichier" type="file" accept="image/*" multiple hidden
-        @change="fichiersChoisis"
+        @change="imagesChoisies"
       >
     </template>
-    <span v-else-if="!saisie.photos.length" class="cph-att">aucune photo</span>
+    <span v-else-if="!saisie.pieces.length" class="cph-att">aucune photo</span>
 
     <CapturePhoto
       :ouvert="cameraOuverte"
       @fermer="cameraOuverte = false"
       @capturer="photoCapturee"
     />
+  </div>
+
+  <!-- Documents téléversés.
+       DISSOCIÉ de la photo, et pas seulement par le type accepté : une photo
+       se regarde en vignette, un certificat de conformité se lit par son nom,
+       son poids et son auteur. Une miniature de PDF ne dit rien ; ce qu'on
+       veut voir, c'est « certificat-lot-4471.pdf, 2,3 Mio, déposé par
+       Dr Fauchereau ». Pas de caméra ici, et aucune recompression : un
+       document signé se transmet tel qu'il a été reçu. -->
+  <div v-else-if="point.type === 'fichier'" class="cdoc">
+    <a
+      v-for="doc in saisie.pieces" :key="doc.id"
+      class="cdoc-l" :href="store.urlPiece(doc.id)" target="_blank" rel="noopener"
+      :title="doc.ajoutePar ? `Déposé par ${doc.ajoutePar}` : 'Télécharger'"
+    >
+      <span class="cdoc-i">{{ icone(doc.mime) }}</span>
+      <span class="cdoc-n">{{ doc.libelle || doc.nomFichier }}</span>
+      <span class="cdoc-p">{{ poids(doc.taille) }}</span>
+      <span
+        v-if="!lectureSeule" class="cdoc-x" title="Retirer ce document"
+        @click.prevent.stop="store.retirerPiece(cle, doc.id)"
+      >✕</span>
+    </a>
+
+    <template v-if="!lectureSeule">
+      <button
+        class="cdoc-b" :disabled="envoiEnCours" @click="champDocument.click()"
+        title="Joindre un document (PDF, image, texte, Word, Excel)"
+      >📎 Joindre un document</button>
+      <span v-if="envoiEnCours" class="cph-att">envoi…</span>
+      <input
+        ref="champDocument" type="file" multiple hidden
+        accept="application/pdf,image/*,text/plain,text/csv,.doc,.docx,.xls,.xlsx"
+        @change="documentsChoisis"
+      >
+    </template>
+    <span v-else-if="!saisie.pieces.length" class="cph-att">aucun document</span>
   </div>
 
   <!-- Liste de valeurs.

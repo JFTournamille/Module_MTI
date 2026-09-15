@@ -231,15 +231,44 @@ const { rows: [unePiece] } = await pool.query(
      JOIN mti.dossier d ON d.id = dp.dossier_id
     WHERE d.reference LIKE 'DEMO-MTI-%' LIMIT 1`)
 if (unePiece) {
-  const image = await fetch(`${base}/api/photos/${unePiece.id}`)
+  const image = await fetch(`${base}/api/pieces/${unePiece.id}`)
   const recu = (await image.arrayBuffer()).byteLength
   image.status === 200 && image.headers.get('content-type') === unePiece.mime &&
     recu === Number(unePiece.taille)
-    ? ok(`une photo de démonstration se sert : ${recu} octets en ${unePiece.mime}`)
+    ? ok(`une pièce de démonstration se sert : ${recu} octets en ${unePiece.mime}`)
     : ko(`lecture : ${image.status} ${image.headers.get('content-type')} ${recu} octets`)
 } else {
   ko('aucune pièce jointe dans le jeu de démonstration')
 }
+
+/* Les deux genres doivent être représentés : sans PDF dans le jeu, la
+   dissociation ne se voit nulle part en démonstration, et un point
+   « certificat de conformité » porterait une image. */
+const { rows: [genres] } = await pool.query(
+  `SELECT count(*) FILTER (WHERE pj.mime LIKE 'image/%')::int AS images,
+          count(*) FILTER (WHERE pj.mime = 'application/pdf')::int AS pdf
+     FROM mti.piece_jointe pj
+     JOIN mti.saisie s ON s.id = pj.saisie_id
+     JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+     JOIN mti.dossier d ON d.id = dp.dossier_id
+    WHERE d.reference LIKE 'DEMO-MTI-%'`)
+genres.images > 0 && genres.pdf > 0
+  ? ok(`${genres.images} image(s) et ${genres.pdf} PDF : les deux genres sont montrés`)
+  : ko(`images ${genres.images}, PDF ${genres.pdf} — un genre manque au jeu`)
+
+/* Et un point « fichier » ne doit pas porter d'image : ce serait exactement la
+   confusion que la dissociation vient de lever. */
+const { rows: [melange] } = await pool.query(
+  `SELECT count(*)::int AS n
+     FROM mti.piece_jointe pj
+     JOIN mti.saisie s ON s.id = pj.saisie_id
+     JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
+     JOIN mti.dossier d ON d.id = dp.dossier_id
+    WHERE d.reference LIKE 'DEMO-MTI-%'
+      AND s.point_type = 'fichier' AND pj.mime LIKE 'image/%'`)
+melange.n === 0
+  ? ok('aucun point « fichier » ne porte une image')
+  : ko(`${melange.n} point(s) « fichier » portent une image`)
 
 // ─────────────────────────────────────────────────────────── Idempotence ──
 console.log('\n6. Idempotence')

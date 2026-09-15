@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { transaction, requete } from '../db.js'
 
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
-const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date', 'liste'])
+const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date',
+  'liste', 'fichier'])
 
 /**
  * Les deux statuts qui figent un dossier, et ce qu'on répond alors.
@@ -749,7 +750,7 @@ export default async function dossiers (app) {
         [saisies.map((s) => s.id)])
       : { rows: [] }
 
-    return { dossier: rows[0], patient, processus, saisies, photos }
+    return { dossier: rows[0], patient, processus, saisies, pieces: photos }
   })
 
   // ── Photos : dépôt, lecture, retrait ─────────────────────────────────────
@@ -765,23 +766,55 @@ export default async function dossiers (app) {
   // donc la saisie si elle n'existe pas encore — déposer une photo est un
   // geste de saisie à part entière, il n'a pas à en attendre un autre.
 
-  /** Formats acceptés. Un point « photo » reçoit une image, pas un document. */
+  /**
+   * Formats acceptés, PAR GENRE DE POINT — c'est là que se fait la
+   * dissociation demandée entre photo et document.
+   *
+   * Un point « photo » reçoit une image, et rien d'autre : c'est un cliché
+   * pris devant la cuve, il s'affiche en vignette. Un point « fichier »
+   * reçoit un document — le certificat de conformité du fabricant, d'abord —
+   * et s'affiche comme une ligne à ouvrir.
+   *
+   * Ce qui n'est JAMAIS accepté, dans aucun des deux : `image/svg+xml` et
+   * `text/html`. Ils portent du script, et le contenu est servi depuis
+   * l'origine de l'application — un SVG déposé en pièce jointe s'exécuterait
+   * avec les droits de la page qui l'affiche. Leur absence de cette liste
+   * n'est pas un oubli.
+   */
   const MIMES_PHOTO = new Set(['image/jpeg', 'image/png', 'image/webp'])
-  const TAILLE_MAX = 8 * 1024 * 1024
+  const MIMES_FICHIER = new Set([
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/webp', 'image/tiff',
+    'text/plain', 'text/csv',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ])
+  const MIMES_PAR_TYPE = { photo: MIMES_PHOTO, fichier: MIMES_FICHIER }
+  /** Aligné sur `piece_jointe_taille_plafond` (migration 018). */
+  const TAILLE_MAX = 20 * 1024 * 1024
 
   /* Le plafond de corps est relevé pour CETTE route seulement. Le serveur est
      à 2 Mio, ce qui suffit à tout le reste ; une image de 8 Mio pèse 10,7 Mio
      une fois en base64, et Fastify la refuserait avant que le contrôle
      ci-dessous ait pu dire pourquoi. Un « 413 » sans message n'apprend rien à
      celui qui vient de prendre la photo. */
-  app.post('/api/dossiers/:id/processus/:pid/photos', {
-    bodyLimit: 12 * 1024 * 1024
+  app.post('/api/dossiers/:id/processus/:pid/pieces', {
+    /* 20 Mio de contenu pèsent 26,7 Mio une fois en base64 : sans cette marge
+       Fastify refuserait avant que le contrôle ci-dessous ait pu dire
+       pourquoi, et un « 413 » sans message n'apprend rien à celui qui vient
+       de joindre le certificat. */
+    bodyLimit: 28 * 1024 * 1024
   }, async (request, reply) => {
     const c = request.body ?? {}
-    if (!MIMES_PHOTO.has(c.mime)) {
+    /* Le genre du point décide des formats. Par défaut « photo » : c'est ce
+       que faisait la route avant qu'elle accepte des documents, et les
+       parcours déjà ouverts ne connaissent que ce type. */
+    const genre = c.pointType === 'fichier' ? 'fichier' : 'photo'
+    const acceptes = MIMES_PAR_TYPE[genre]
+    if (!acceptes.has(c.mime)) {
       return reply.code(415).send({
-        erreur: `Format non accepté : ${c.mime ?? '(absent)'}. Attendu : ` +
-                [...MIMES_PHOTO].join(', ') + '.'
+        erreur: `Format non accepté pour un point « ${genre} » : ` +
+                `${c.mime ?? '(absent)'}. Attendu : ${[...acceptes].join(', ')}.`
       })
     }
     if (!Number.isInteger(c.sectionIndex) || !Number.isInteger(c.pointIndex)) {
@@ -804,7 +837,8 @@ export default async function dossiers (app) {
     }
     if (octets.length > TAILLE_MAX) {
       return reply.code(413).send({
-        erreur: `Image trop lourde : ${Math.round(octets.length / 1024)} Kio, ` +
+        erreur: `${genre === 'photo' ? 'Image' : 'Fichier'} trop lourd : ` +
+                `${Math.round(octets.length / 1024)} Kio, ` +
                 `plafond ${TAILLE_MAX / 1024 / 1024} Mio.`
       })
     }
@@ -829,13 +863,13 @@ export default async function dossiers (app) {
         `INSERT INTO mti.saisie
            (dossier_processus_id, section_index, point_index, point_num, point_type,
             exemplaire, operateur_role, obligatoire, operateur_id)
-         VALUES ($1,$2,$3,$4,'photo',$5,$6,$7,$8)
+         VALUES ($1,$2,$3,$4,$9::mti.type_point,$5,$6,$7,$8)
          ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire, operateur_role)
          DO UPDATE SET saisi_le = now()
          RETURNING id`,
         [request.params.pid, c.sectionIndex, c.pointIndex, c.pointNum ?? null,
           c.exemplaire ?? 1, c.operateurRole ?? 'op1', c.obligatoire === true,
-          request.utilisateur.id])
+          request.utilisateur.id, genre])
 
       const sha = createHash('sha256').update(octets).digest('hex')
       const { rows: [piece] } = await client.query(
@@ -853,22 +887,32 @@ export default async function dossiers (app) {
 
   /* Le contenu se sert par son URL, avec un cache long : l'identifiant est un
      UUID et la pièce est immuable — elle se remplace, elle ne se réécrit pas. */
-  app.get('/api/photos/:id', async (request, reply) => {
+  app.get('/api/pieces/:id', async (request, reply) => {
     const { rows } = await requete(
       'SELECT mime, nom_fichier, contenu FROM mti.piece_jointe WHERE id = $1',
       [request.params.id])
     if (!rows.length || !rows[0].contenu) {
       return reply.code(404).send({ erreur: 'Pièce introuvable.' })
     }
+    /* Une image s'affiche à sa place dans la page. Tout le reste se TÉLÉCHARGE,
+       même un PDF : servi `inline`, il s'ouvrirait dans le visualiseur du
+       navigateur À L'ORIGINE DE L'APPLICATION, et un PDF porte du script. Le
+       coût est un clic de plus, le gain est qu'un document déposé par un tiers
+       ne s'exécute jamais dans la page qui l'affiche. */
+    const image = rows[0].mime.startsWith('image/')
     return reply
       .header('content-type', rows[0].mime)
       .header('cache-control', 'private, max-age=31536000, immutable')
+      /* Ceinture et bretelles : le navigateur ne doit pas deviner un type
+         plus permissif que celui qu'on annonce. */
+      .header('x-content-type-options', 'nosniff')
       .header('content-disposition',
-        `inline; filename="${String(rows[0].nom_fichier).replace(/[^\w.-]/g, '_')}"`)
+        `${image ? 'inline' : 'attachment'}; ` +
+        `filename="${String(rows[0].nom_fichier).replace(/[^\w.-]/g, '_')}"`)
       .send(rows[0].contenu)
   })
 
-  app.delete('/api/photos/:id', async (request, reply) => {
+  app.delete('/api/pieces/:id', async (request, reply) => {
     const { rows } = await requete(
       `SELECT d.statut FROM mti.piece_jointe pj
          JOIN mti.saisie s ON s.id = pj.saisie_id

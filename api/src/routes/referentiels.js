@@ -3,7 +3,14 @@ import { requete, transaction } from '../db.js'
 /* Types de points reconnus, alignés sur l'enum `mti.type_point`. Dupliqué ici
    à dessein : accepter un type que la base refusera ensuite à l'écriture d'une
    saisie produirait un modèle publié mais insaisissable. */
-const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date', 'liste']
+/* Doit rester aligné sur l'enum `mti.type_point` ET sur `TYPES` de
+   routes/dossiers.js. Cette liste-ci décide de ce qu'un parcours peut
+   CONTENIR, l'autre de ce qu'une saisie peut ÊTRE : les oublier
+   désynchronisées produit un parcours qui se publie et ne se saisit pas, ou
+   — comme avec `fichier` — un parcours en service qu'on ne peut plus
+   republier du tout, la validation refusant ses propres points. */
+const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date',
+  'liste', 'fichier']
 
 /**
  * Contrôle de forme d'une définition de parcours.

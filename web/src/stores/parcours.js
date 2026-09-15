@@ -23,7 +23,7 @@ const saisieVide = () => ({
   valeurTexte: '',
   horodatage: '',
   obligatoire: false,
-  photos: [],             // [{ id, libelle, nomFichier, mime, taille, ajoutePar }]
+  pieces: [],             // [{ id, libelle, nomFichier, mime, taille, ajoutePar }]
   timerDebut: null,       // epoch ms
   timerFin: null,
   operateur: '',
@@ -312,9 +312,9 @@ export const useParcours = defineStore('parcours', () => {
           valeurTexte: s.valeur_texte ?? '',
           horodatage: s.horodatage ? versDatetimeLocal(new Date(s.horodatage)) : '',
           obligatoire: s.obligatoire === true,
-          /* Les photos sont rattachées plus bas, par identifiant de saisie :
+          /* Les pièces sont rattachées plus bas, par identifiant de saisie :
              elles viennent de `piece_jointe`, pas de la ligne de saisie. */
-          photos: [],
+          pieces: [],
           timerDebut: s.timer_debut ? new Date(s.timer_debut).getTime() : null,
           timerFin: s.timer_fin ? new Date(s.timer_fin).getTime() : null,
           operateur: s.operateur_libelle ?? '',
@@ -327,14 +327,14 @@ export const useParcours = defineStore('parcours', () => {
         cleParSaisieId.set(s.id, cle)
       }
 
-      /* Les photos arrivent à plat, référencées par identifiant de saisie : on
+      /* Les pièces arrivent à plat, référencées par identifiant de saisie : on
          les range sur la ligne à laquelle elles appartiennent. Leur contenu
          n'est PAS dans la réponse — chaque vignette ira le chercher par son
          URL, sinon l'ouverture d'un dossier rapatrierait tous ses clichés. */
-      for (const ph of d.photos ?? []) {
+      for (const ph of d.pieces ?? []) {
         const cle = cleParSaisieId.get(ph.saisie_id)
         if (!cle || !saisies[cle]) continue
-        saisies[cle].photos.push({
+        saisies[cle].pieces.push({
           id: ph.id,
           libelle: ph.libelle ?? '',
           nomFichier: ph.nom_fichier,
@@ -853,37 +853,43 @@ export const useParcours = defineStore('parcours', () => {
     return true
   }
 
-  // ───────────────────────────────────────────────────────────────── Photos ──
+  // ─────────────────────────────────────────────────────── Pièces jointes ──
   //
-  // Une photo n'attend pas « Enregistrer » : elle part dès qu'elle est prise.
-  // Le contraire ferait perdre le cliché à un changement d'onglet, et un
-  // opérateur qui vient de photographier un conteneur endommagé ne recommence
-  // pas la manipulation.
+  // Une pièce n'attend pas « Enregistrer » : elle part dès qu'elle est prise
+  // ou choisie. Le contraire ferait perdre le cliché à un changement
+  // d'onglet, et un opérateur qui vient de photographier un conteneur
+  // endommagé ne recommence pas la manipulation.
+  //
+  // DEUX GENRES, un seul mécanisme de transport : un point `photo` reçoit une
+  // image prise à la webcam ou choisie, un point `fichier` reçoit un document
+  // — le certificat de conformité du fabricant d'abord. Ce qui les sépare est
+  // la liste des formats acceptés (tenue par le serveur) et le rendu à
+  // l'écran, pas le chemin par lequel les octets arrivent.
 
   /** URL de lecture d'une pièce. Le contenu ne transite jamais par le JSON. */
-  const urlPhoto = (id) => `/api/photos/${id}`
+  const urlPiece = (id) => `/api/pieces/${id}`
 
   /**
-   * Dépose une image sur un point de contrôle.
+   * Dépose une pièce sur un point de contrôle.
    *
    * `cle` porte déjà tout ce qu'il faut pour localiser le point : la fonction
    * la relit plutôt que de demander à l'appelant de répéter cinq paramètres
    * qu'il a sous la main sous forme de clé.
    */
-  async function deposerPhoto (cle, { octets, mime, nomFichier, libelle = '' }) {
+  async function deposerPiece (cle, { octets, mime, nomFichier, libelle = '', pointType }) {
     if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
     if (lectureSeule.value) return false
     const [iProc, iSec, iPt, ex, role] = cle.split('|')
     const pid = processusIds.value[Number(iProc)]
     if (!pid) {
-      erreurDossier.value = "Ce processus n'existe pas côté serveur : la photo ne " +
+      erreurDossier.value = "Ce processus n'existe pas côté serveur : la pièce ne " +
         'serait rattachée à rien. Rouvrez le dossier.'
       return false
     }
     const point = processus.value[Number(iProc)]?.sections?.[Number(iSec)]?.points?.[Number(iPt)]
 
     erreurDossier.value = ''
-    const r = await appel(`/api/dossiers/${dossierId.value}/processus/${pid}/photos`, {
+    const r = await appel(`/api/dossiers/${dossierId.value}/processus/${pid}/pieces`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -893,6 +899,10 @@ export const useParcours = defineStore('parcours', () => {
         exemplaire: Number(ex),
         operateurRole: role,
         obligatoire: saisie(cle, point).obligatoire === true,
+        /* Le genre vient du POINT, pas de l'appelant : c'est lui qui décide
+           des formats acceptés côté serveur, et un composant ne doit pas
+           pouvoir élargir cette liste en se déclarant « fichier ». */
+        pointType: pointType ?? point?.type ?? 'photo',
         libelle,
         nomFichier,
         mime,
@@ -900,12 +910,12 @@ export const useParcours = defineStore('parcours', () => {
       })
     })
     if (!r.ok) {
-      erreurDossier.value = await messageDe(r, `Photo refusée (${r.status}).`)
+      erreurDossier.value = await messageDe(r, `Pièce refusée (${r.status}).`)
       return false
     }
     const p = await r.json()
     cleParSaisieId.set(p.saisie_id, cle)
-    saisie(cle, point).photos.push({
+    saisie(cle, point).pieces.push({
       id: p.id,
       libelle: p.libelle ?? '',
       nomFichier: p.nom_fichier,
@@ -918,15 +928,15 @@ export const useParcours = defineStore('parcours', () => {
   }
 
   /** Retire une pièce. Le retrait est tracé côté base comme le dépôt. */
-  async function retirerPhoto (cle, id) {
+  async function retirerPiece (cle, id) {
     if (lectureSeule.value) return false
-    const r = await appel(`/api/photos/${id}`, { method: 'DELETE' })
+    const r = await appel(`/api/pieces/${id}`, { method: 'DELETE' })
     if (!r.ok) {
       erreurDossier.value = await messageDe(r, `Retrait refusé (${r.status}).`)
       return false
     }
     const s = saisies[cle]
-    if (s) s.photos = s.photos.filter((p) => p.id !== id)
+    if (s) s.pieces = s.pieces.filter((p) => p.id !== id)
     return true
   }
 
@@ -1233,7 +1243,7 @@ export const useParcours = defineStore('parcours', () => {
              répondait 422 sans que rien ne l'ait annoncé. */
           case 'texte': case 'date': case 'liste': return !s.valeurTexte.trim()
           case 'timer': return !s.timerDebut
-          case 'photo': return s.photos.length === 0
+          case 'photo': case 'fichier': return s.pieces.length === 0
           case 'auto': return false
           default: return false
         }
@@ -1261,7 +1271,7 @@ export const useParcours = defineStore('parcours', () => {
     demarrerMinuteur, arreterMinuteur, dureeMinuteur, minuteurEnCours,
     patientIdentifie, libellePatient, ordonnancierVisible,
     basculerPreallocation, choisirPatient, processusIdentification,
-    urlPhoto, deposerPhoto, retirerPhoto,
+    urlPiece, deposerPiece, retirerPiece,
     coches, cochesDossier, rafraichirCoches, conformiteAutomatiquePossible,
     pointsIncomplets, arreterHorloge
   }

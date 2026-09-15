@@ -30,6 +30,7 @@ export const TYPES_POINT = [
   ['liste', 'Liste de valeurs'],
   ['date', 'Date'],
   ['photo', 'Photo'],
+  ['fichier', 'Fichier joint (PDF, document…)'],
   ['timer', 'Minuteur'],
   ['auto', 'Automatique (à la validation)']
 ]

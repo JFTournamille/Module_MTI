@@ -241,7 +241,7 @@ anonyme. C'est un garde-fou d'écran, pas un refus de l'API : la saisie reste
 
 | Demande | Ce que ça implique |
 |---|---|
-| §3 **dissocier fichiers téléversés et photos**, accepter le PDF | nouvelle valeur `fichier` dans l'enum `type_point` (migration **seule dans son fichier**, contrainte PostgreSQL), élargissement de `MIMES_PHOTO`, et **relèvement du plafond de 8 Mio** — un PDF de certificat le dépasse vite. Le plafond est un `CHECK` en base : nouvelle migration. |
+| §3 **dissocier fichiers téléversés et photos**, accepter le PDF | ✔ **fait** — voir ci-dessous |
 | §3 nombre d'exemplaires porté par **le processus en cours** | `dossier.nb_exemplaires` existe déjà mais vaut pour le dossier entier. Il faut le porter sur `dossier_processus`, et retirer `multi` de la fiche de contrôle. Les dossiers ouverts gardent leur définition figée : prévoir la reprise. |
 | §3 date et heure automatiques à la première coche d'une ligne | `saisie.saisi_le` existe ; ce qui manque est de le figer à la première coche et de le laisser modifiable en fin de parcours — donc de distinguer « horodatage constaté » et « horodatage corrigé », les deux tracés |
 | §4 **codification des profils utilisateurs** + profils de test | l'onglet Codifications existe et accueillera la table ; les droits qu'un profil ouvre (clore, reprendre) dépendent de 1.1 |
@@ -298,6 +298,48 @@ réalisée », qui impose le rattachement patient — c'est le point d'accroche.
 la réponse détermine 1.1.
 
 ---
+
+## 3 bis. §3 — fichiers téléversés dissociés des photos ✔ fait
+
+Migrations `017` (type `fichier`, seule dans son fichier — contrainte
+PostgreSQL sur `ALTER TYPE ... ADD VALUE`), `018` (plafond porté de 8 à
+20 Mio) et `019` (un point `fichier` sans document n'est pas une coche verte).
+
+**Le modèle portait trois documents déclarés comme photos** : le certificat de
+conformité (CoA), l'accusé de commande, le compte rendu de RCP. On les
+archivait par une image faute de pouvoir joindre un PDF. Le parcours CAR-T
+passe en **v6** avec ces trois points en type `fichier` ; les sept vrais points
+photo — état du conteneur, aspect de la poche, jauge d'azote, étiquetage —
+restent des photos.
+
+Ce qui sépare réellement les deux :
+
+- **les formats acceptés**, tenus par le serveur et par genre de point : un PDF
+  déposé sur un point photo est refusé en 415 ;
+- **le rendu** : une photo se regarde en vignette, un document se lit par son
+  nom, son poids et son auteur. Un point `fichier` n'a ni vignette ni caméra —
+  on ne photographie pas un PDF ;
+- **la recompression** : les photos sont réduites à 1600 px avant l'envoi, un
+  document est transmis **tel quel**. Recompresser un certificat signé
+  produirait un document qui n'est plus celui du fabricant.
+
+Deux points de sécurité traités avec :
+
+- **`image/svg+xml` et `text/html` sont refusés dans les deux genres.** Ils
+  portent du script, et le contenu est servi depuis l'origine de
+  l'application : un SVG déposé en pièce jointe s'exécuterait avec les droits
+  de la page qui l'affiche.
+- **Un document se télécharge, il ne s'ouvre pas dans la page**
+  (`Content-Disposition: attachment` + `nosniff`). Un PDF servi en ligne
+  s'ouvrirait dans le visualiseur du navigateur à l'origine de l'application,
+  et un PDF peut porter du script. Les images restent affichées en place.
+
+> **Défaut rattrapé avant le push, et il aurait été bloquant.** La route de
+> configuration tenait sa PROPRE liste de types, qui ignorait `fichier` : le
+> parcours en service en contenant trois, **toute republication depuis l'écran
+> Configuration aurait été refusée**. C'est la deuxième divergence de ces
+> listes (`liste` avait eu le même sort). Une vérification part désormais de
+> l'enum de la base et éprouve chaque valeur contre la route de création.
 
 ## 4. Ordre proposé
 

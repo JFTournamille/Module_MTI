@@ -34,6 +34,21 @@ réglementaires, pas à des préférences techniques.
   (`piece_jointe.contenu`), le conteneur CapRover étant éphémère. Le dépôt part
   aussitôt, sans attendre « Enregistrer », et crée sa saisie porteuse. La
   réponse du dossier ne transporte jamais les octets.
+- **Un document n'est pas une photo.** Le type `fichier` est dissocié de
+  `photo` : formats acceptés différents (`MIMES_PAR_TYPE` dans
+  `routes/dossiers.js`), rendu différent (vignette contre nom + poids), et
+  **aucune recompression sur un document** — un certificat signé se transmet
+  tel qu'il a été reçu, le recompresser produirait une pièce qui n'est plus
+  celle du fabricant. `image/svg+xml` et `text/html` sont refusés PARTOUT :
+  ils portent du script et le contenu est servi depuis l'origine de
+  l'application. Une pièce non-image est servie en `Content-Disposition:
+  attachment` avec `nosniff`, pour qu'un PDF ne s'ouvre pas dans la page.
+- **Trois listes de types de points doivent rester alignées** : l'enum
+  `mti.type_point`, `TYPES_POINT` de `routes/referentiels.js` (ce qu'un
+  parcours peut CONTENIR) et `TYPES` de `routes/dossiers.js` (ce qu'une saisie
+  peut ÊTRE). Elles ont divergé deux fois ; la seconde rendait le parcours en
+  service **impossible à republier**. `api/tests/configuration.mjs` part de
+  l'enum et éprouve chaque valeur : ne pas retirer cette vérification.
 - **Un dossier de démonstration périmé se refait.** Le seed compare son modèle
   à celui en service. `--regenerer` force la reprise après un changement de
   scénario, que la version du modèle ne trahit pas.
@@ -133,8 +148,8 @@ Un point de contrôle :
 }
 ```
 
-- `type` : `ouinon` | `valeur` | `photo` | `timer` | `texte` | `auto` | `date`
-  (aligné sur l'enum `mti.type_point`)
+- `type` : `ouinon` | `valeur` | `photo` | `fichier` | `timer` | `texte` |
+  `auto` | `date` | `liste` (aligné sur l'enum `mti.type_point`)
 - `multi` : `false` | `"photo"` | `"cuve"` — duplication par n exemplaires
 - `seuil` : déclenche l'alarme de température, figée à l'enregistrement dans
   `saisie.hors_seuil` côté serveur

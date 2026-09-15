@@ -1,6 +1,6 @@
 {
   "code": "PARCOURS_CART_AUTOLOGUE",
-  "version": 5,
+  "version": 6,
   "libelle": "Parcours MTI — CAR-T autologue",
   "description": "Parcours CAR-T autologue, vu depuis la PUI. La v5 le recentre sur ce que l'établissement fait réellement : « Fabrication » devient « Préparation en UPC » — les opérations pharmaceutiques de mise en forme du MTI dans les conditions d'administration souhaitées — et les cinq processus qui traçaient le travail interne du fabricant (mise en fabrication, fabrication, libération, stockage fabricant, envoi) sont repliés en sections de la COMMANDE : certificat de conformité, n° de lot, autorisation d'expédition et suivi logistique sont du suivi de commande, pas des étapes du parcours pharmaceutique. L'aphérèse n'y figure toujours pas : elle vit en jalon d'en-tête du dossier (dossier.apherese_faite / date_apherese), au même titre que la prescription. Les versions précédentes restent consultables : les dossiers ouverts sous elles conservent leur définition figée.",
   "indexIdentificationPatient": 2,
@@ -38,8 +38,9 @@
             },
             {
               "libelle": "Compte rendu de RCP joint au dossier",
-              "type": "photo",
-              "obligatoire": false
+              "type": "fichier",
+              "obligatoire": false,
+              "sousLibelle": "Joindre le compte rendu (PDF)"
             }
           ]
         }
@@ -89,8 +90,9 @@
             },
             {
               "libelle": "Accusé de commande archivé",
-              "type": "photo",
-              "obligatoire": false
+              "type": "fichier",
+              "obligatoire": false,
+              "sousLibelle": "Joindre l'accusé reçu du fabricant (PDF)"
             },
             {
               "libelle": "Transmission au pharmacien référent",
@@ -142,9 +144,10 @@
             },
             {
               "libelle": "Certificat de conformité (CoA) reçu et archivé",
-              "type": "photo",
+              "type": "fichier",
               "obligatoire": true,
-              "lieAuMedicament": true
+              "lieAuMedicament": true,
+              "sousLibelle": "Joindre le CoA tel qu'il a été reçu et signé — non recompressé"
             },
             {
               "libelle": "Stérilité / mycoplasmose négatifs au CoA",

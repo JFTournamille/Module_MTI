@@ -205,6 +205,42 @@ const iso = (d) => d.toISOString().slice(0, 10)
  * C'est une vingtaine de lignes et zéro dépendance, contre une bibliothèque
  * d'images pour un seul usage.
  */
+/**
+ * PDF minimal, valide et lisible par un visualiseur.
+ *
+ * Écrit à la main plutôt que tiré d'une bibliothèque : le jeu de démonstration
+ * n'a pas à faire entrer une dépendance de production pour produire trois
+ * pages de texte. La table des références croisées est calculée, sinon le
+ * fichier s'ouvre sur une erreur et la démonstration montre un document cassé.
+ */
+function pdfMinimal (titre) {
+  const texte = String(titre).replace(/[\\()]/g, ' ').slice(0, 78)
+  const objets = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] ' +
+      '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    null,   // flux de contenu, construit ci-dessous
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ]
+  const flux = `BT /F1 12 Tf 60 780 Td (Document de demonstration) Tj ` +
+               `0 -22 Td (${texte}) Tj ET`
+  objets[3] = `<< /Length ${flux.length} >>\nstream\n${flux}\nendstream`
+
+  let pdf = '%PDF-1.4\n'
+  const offsets = []
+  objets.forEach((o, i) => {
+    offsets.push(pdf.length)
+    pdf += `${i + 1} 0 obj\n${o}\nendobj\n`
+  })
+  const debutXref = pdf.length
+  pdf += `xref\n0 ${objets.length + 1}\n0000000000 65535 f \n`
+  for (const o of offsets) pdf += `${String(o).padStart(10, '0')} 00000 n \n`
+  pdf += `trailer\n<< /Size ${objets.length + 1} /Root 1 0 R >>\n` +
+         `startxref\n${debutXref}\n%%EOF\n`
+  return Buffer.from(pdf, 'latin1')
+}
+
 function imagePng (largeur, hauteur, [r, v, b]) {
   const brut = Buffer.alloc(hauteur * (1 + largeur * 3))
   for (let y = 0; y < hauteur; y++) {
@@ -531,7 +567,8 @@ try {
               const non = sc.clos === 'non_conforme' && dp.code === 'RECEPTION'
                 && /Alarme température durant|Alarme temp/.test(point.libelle)
               const v = valeurPour(point, { alarme, non, jours: dp.jour, texte: 'Conforme' })
-              if (Object.keys(v).length === 0 && point.type !== 'auto' && point.type !== 'photo') continue
+              if (Object.keys(v).length === 0 && point.type !== 'auto' &&
+                  point.type !== 'photo' && point.type !== 'fichier') continue
 
               const horsSeuil = v.seuil != null && v.valeurNum != null
                 ? Number(v.valeurNum) > Number(v.seuil) : null
@@ -570,18 +607,33 @@ try {
                  reste vide sur les dix dossiers et rien ne montre la fonction.
                  `RETURNING id` ne renvoie rien si le DO NOTHING a joué : la
                  saisie était déjà là, donc sa photo aussi. */
-              if (point.type === 'photo' && saisieCreee.rows.length) {
-                const octets = imagePng(320, 240, TEINTES[(iS + iP + ex) % TEINTES.length])
+              if ((point.type === 'photo' || point.type === 'fichier') &&
+                  saisieCreee.rows.length) {
+                /* Un point photo reçoit une IMAGE, un point fichier un PDF :
+                   déposer un PNG sur un point « certificat de conformité »
+                   montrerait exactement la confusion que la dissociation
+                   vient de lever. */
+                const doc = point.type === 'fichier'
+                  ? {
+                      octets: pdfMinimal(point.libelle),
+                      mime: 'application/pdf',
+                      nom: `demo-${dp.code.toLowerCase()}-${iS}${iP}${ex}.pdf`,
+                      libelle: `Document de démonstration — ${point.libelle.slice(0, 60)}`
+                    }
+                  : {
+                      octets: imagePng(320, 240, TEINTES[(iS + iP + ex) % TEINTES.length]),
+                      mime: 'image/png',
+                      nom: `demo-${dp.code.toLowerCase()}-${iS}${iP}${ex}.png`,
+                      libelle: `Cliché de démonstration — ${point.libelle.slice(0, 60)}`
+                    }
                 await client.query(
                   `INSERT INTO mti.piece_jointe
                      (saisie_id, libelle, nom_fichier, mime, taille, sha256, contenu,
                       ajoute_par, ajoute_le)
-                   VALUES ($1,$2,$3,'image/png',$4,$5,$6,$7,$8)`,
-                  [saisieCreee.rows[0].id,
-                    `Cliché de démonstration — ${point.libelle.slice(0, 60)}`,
-                    `demo-${dp.code.toLowerCase()}-${iS}${iP}${ex}.png`,
-                    octets.length, createHash('sha256').update(octets).digest('hex'),
-                    octets, operateur.id, jadis(dp.jour, 10, 15)])
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                  [saisieCreee.rows[0].id, doc.libelle, doc.nom, doc.mime,
+                    doc.octets.length, createHash('sha256').update(doc.octets).digest('hex'),
+                    doc.octets, operateur.id, jadis(dp.jour, 10, 15)])
               }
             }
           }

@@ -459,3 +459,25 @@ input[type=radio].ron{accent-color:#cc2200;}
 .btn-cadenas{background:#e8e0f8;border:1px solid #b8a8e0;border-radius:3px;
   padding:2px 7px;font-size:13px;line-height:1.2;cursor:pointer;}
 .btn-cadenas:hover{background:#d4c8f0;}
+
+/* ── Documents téléversés ───────────────────────────────────────────────────
+   Dissociés des photos : une photo se regarde en vignette, un certificat se
+   lit par son nom, son poids et son auteur. Une miniature de PDF ne dit rien
+   de ce qu'il contient. */
+.cdoc{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+.cdoc-l{display:flex;align-items:center;gap:6px;max-width:100%;
+  background:#f4f1fc;border:1px solid #d0c4ec;border-radius:3px;
+  padding:2px 7px;font-size:12px;color:#3a2870;text-decoration:none;}
+.cdoc-l:hover{background:#e8e0f8;}
+.cdoc-i{font-size:13px;line-height:1;}
+.cdoc-n{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdoc-p{color:#7a6ea8;font-size:11px;white-space:nowrap;}
+.cdoc-x{color:#a03030;font-weight:bold;cursor:pointer;padding:0 2px;}
+.cdoc-b{background:#e8e0f8;border:1px solid #b8a8e0;border-radius:3px;
+  padding:3px 9px;font-size:12px;cursor:pointer;color:#3a2870;white-space:nowrap;}
+.cdoc-b:hover{background:#d4c8f0;}
+.cdoc-b:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Badge du type « fichier », distinct de celui de la photo : c'est la
+   différence que la demande porte, elle doit se voir dans le tableau. */
+.b-fichier{background:#4a3880;color:#fff;}
