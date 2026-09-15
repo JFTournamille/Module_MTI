@@ -434,16 +434,17 @@ input[type=radio].ron{accent-color:#cc2200;}
 
 /* DEUX LIGNES, et c'est voulu. Mesuré : les deux groupes ne tiennent pas sur
    une rangée de 1400 px, ils passaient donc à la ligne par accident — avec un
-   trait de séparation vertical devenu sans objet. Le parcours prend la
-   première ligne entière, le processus la seconde : la séparation se lit sans
-   qu'il faille chercher le trait, et elle ne dépend plus de la largeur de la
-   fenêtre. */
-.pied-parcours{flex:1 0 100%;background:#efeaff;border-bottom:2px solid #b8a8e0;}
-.pied-processus{flex:1;}
-/* Pousse les sorties (exports, fermeture) au bout de la ligne du parcours :
-   ce sont des issues, pas des décisions, elles n'ont pas à voisiner avec
-   « Valider » et « Clore ». */
-.pied-espace{flex:1;}
+   trait de séparation vertical devenu sans objet. Chacun prend une ligne
+   entière : la séparation se lit sans qu'il faille chercher le trait, et elle
+   ne dépend plus de la largeur de la fenêtre.
+
+   LE PROCESSUS EN HAUT, POUSSÉ À DROITE : c'est le geste courant, il suit la
+   main qui vient de saisir la dernière ligne du tableau. LE PARCOURS ET LES
+   SORTIES TOUT EN BAS À GAUCHE : gestes rares et lourds de conséquence,
+   tenus à l'écart du flux de saisie. */
+.pied-processus{flex:1 0 100%;justify-content:flex-end;
+  border-bottom:2px solid #b8a8e0;}
+.pied-parcours{flex:1 0 100%;justify-content:flex-start;background:#efeaff;}
 
 /* Un libellé de bouton qui passe à la ligne fait grandir toute la rangée et
    rend le pied bancal — « Valider ce processus » le faisait. */

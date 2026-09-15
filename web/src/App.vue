@@ -373,48 +373,6 @@ const blocages = computed(() => {
          l'autre. Deux groupes nommés, séparés, et le parcours à gauche. -->
     <div class="footer" v-if="store.dossierId">
 
-      <!-- ── LE PARCOURS ── conclure, clore, rouvrir. Les gestes rares et
-           lourds de conséquence, tenus à l'écart des gestes de saisie. -->
-      <div class="pied-grp pied-parcours">
-        <span class="pied-lbl">Parcours {{ store.dossier.reference }}</span>
-        <button
-          class="btn-val" :disabled="blocages.length > 0 || store.lectureSeule"
-          :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}`
-            : store.dossier.conformite
-              ? `Valider le parcours — conformité conclue à la main : ${store.dossier.conformite}`
-              : 'Valider le parcours — conformité constatée automatiquement, toutes les coches sont vertes'"
-          :style="(blocages.length || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
-          @click="store.validerDossier()"
-        >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
-          ? '✓ Valider le parcours — conforme (auto)' : '✓ Valider le parcours' }}</button>
-        <button
-          class="btn-clore" v-if="!store.lectureSeule"
-          title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
-          @click="clotureOuverte = true"
-        >Clore le parcours</button>
-        <!-- La réouverture est un droit de profil, refusé côté serveur : le
-             bouton n'est masqué ici que pour ne pas proposer un geste qui
-             serait refusé. Ce n'est pas lui qui protège. -->
-        <button
-          class="btn-declore" v-if="store.clos && peutDeclore"
-          title="Rouvrir ce parcours : la clôture reste tracée"
-          @click="declotureOuverte = true"
-        >Rouvrir le parcours</button>
-
-        <!-- Ces deux boutons venaient de la maquette et n'ont JAMAIS rien
-             fait : aucun gestionnaire, aucun export. Les laisser d'apparence
-             active laissait croire à un export qui n'existe pas — le même
-             défaut que la croix de la barre de titre. Désarmés en attendant
-             l'export réel (§8 : PDF et XLS, l'impression se faisant depuis le
-             document exporté).
-             Ils sont sur la ligne du PARCOURS parce qu'on exporte un dossier,
-             pas l'écran qu'on regarde. -->
-        <span class="pied-espace"></span>
-        <button class="f-btn" disabled title="Export non encore implémenté">Exporter PDF</button>
-        <button class="f-btn" disabled title="Export non encore implémenté">Exporter XLS</button>
-        <button class="btn-ann" @click="fermerParcours()">Fermer</button>
-      </div>
-
       <!-- ── LE PROCESSUS AFFICHÉ ── sa conformité, son avancement, sa
            sauvegarde. Tout ce qui ne concerne QUE l'écran en cours. -->
       <div class="pied-grp pied-processus">
@@ -509,6 +467,47 @@ const blocages = computed(() => {
           </template>
           <template v-else>non enregistré</template>
         </span>
+      </div>
+
+      <!-- ── LE PARCOURS ── conclure, clore, rouvrir. Les gestes rares et
+           lourds de conséquence, tenus à l'écart des gestes de saisie. -->
+      <div class="pied-grp pied-parcours">
+        <span class="pied-lbl">Parcours {{ store.dossier.reference }}</span>
+        <button
+          class="btn-val" :disabled="blocages.length > 0 || store.lectureSeule"
+          :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}`
+            : store.dossier.conformite
+              ? `Valider le parcours — conformité conclue à la main : ${store.dossier.conformite}`
+              : 'Valider le parcours — conformité constatée automatiquement, toutes les coches sont vertes'"
+          :style="(blocages.length || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
+          @click="store.validerDossier()"
+        >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
+          ? '✓ Valider le parcours — conforme (auto)' : '✓ Valider le parcours' }}</button>
+        <button
+          class="btn-clore" v-if="!store.lectureSeule"
+          title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
+          @click="clotureOuverte = true"
+        >Clore le parcours</button>
+        <!-- La réouverture est un droit de profil, refusé côté serveur : le
+             bouton n'est masqué ici que pour ne pas proposer un geste qui
+             serait refusé. Ce n'est pas lui qui protège. -->
+        <button
+          class="btn-declore" v-if="store.clos && peutDeclore"
+          title="Rouvrir ce parcours : la clôture reste tracée"
+          @click="declotureOuverte = true"
+        >Rouvrir le parcours</button>
+
+        <!-- Ces deux boutons venaient de la maquette et n'ont JAMAIS rien
+             fait : aucun gestionnaire, aucun export. Les laisser d'apparence
+             active laissait croire à un export qui n'existe pas — le même
+             défaut que la croix de la barre de titre. Désarmés en attendant
+             l'export réel (§8 : PDF et XLS, l'impression se faisant depuis le
+             document exporté).
+             Ils sont sur la ligne du PARCOURS parce qu'on exporte un dossier,
+             pas l'écran qu'on regarde. -->
+        <button class="f-btn" disabled title="Export non encore implémenté">Exporter PDF</button>
+        <button class="f-btn" disabled title="Export non encore implémenté">Exporter XLS</button>
+        <button class="btn-ann" @click="fermerParcours()">Fermer</button>
       </div>
 
     </div>

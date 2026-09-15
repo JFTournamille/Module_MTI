@@ -1978,15 +1978,26 @@ console.log('\n32. Pied de page : parcours et processus séparés')
     ? ok('deux groupes distincts : parcours et processus')
     : ko('les groupes du pied de page ne sont pas séparés')
 
-  /* Le parcours prend la PREMIÈRE LIGNE du pied, entière : mesuré, les deux
-     groupes ne tiennent pas côte à côte sur 1400 px, et la séparation ne doit
-     pas dépendre de la largeur de la fenêtre. Ce qu'on vérifie est donc
-     « au-dessus et à gauche », pas « à gauche de ». */
+  /* Chaque groupe prend une ligne entière : mesuré, les deux ne tiennent pas
+     côte à côte sur 1400 px, et la séparation ne doit pas dépendre de la
+     largeur de la fenêtre.
+
+     Le PROCESSUS est en haut et poussé à DROITE — le geste courant, près de
+     la main qui vient de saisir. Le PARCOURS est tout en bas à GAUCHE —
+     gestes rares, à l'écart du flux de saisie. */
   const bPar = await grpParcours.boundingBox()
   const bProc = await grpProcessus.boundingBox()
-  bPar.y < bProc.y && bPar.x <= bProc.x
-    ? ok('les gestes du parcours occupent la première ligne du pied')
-    : ko(`parcours (${bPar.x}, ${bPar.y}), processus (${bProc.x}, ${bProc.y})`)
+  bProc.y < bPar.y
+    ? ok('le processus occupe la ligne du haut, le parcours celle du bas')
+    : ko(`processus à y=${bProc.y}, parcours à y=${bPar.y}`)
+
+  /* « À droite » et « à gauche » se mesurent sur le CONTENU, pas sur le bloc :
+     les deux groupes occupent toute la largeur. */
+  const boutonProc = await grpProcessus.locator('.f-btn').first().boundingBox()
+  const boutonPar = await grpParcours.locator('.btn-val').boundingBox()
+  boutonProc.x > boutonPar.x
+    ? ok('les gestes du processus sont à droite, ceux du parcours à gauche')
+    : ko(`processus à x=${boutonProc.x}, parcours à x=${boutonPar.x}`)
 
   // Chaque groupe porte ce qui le concerne, et rien d'autre.
   const tPar = await grpParcours.innerText()
