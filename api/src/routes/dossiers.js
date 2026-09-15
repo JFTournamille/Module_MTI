@@ -997,6 +997,122 @@ export default async function dossiers (app) {
   })
 
   // ── Validation d'un dossier ─────────────────────────────────────────────
+  /**
+   * Profils autorisés à rouvrir un parcours clos.
+   *
+   * Ni le préparateur ni l'IDE : rouvrir un parcours arrêté est une décision
+   * sur la conduite du traitement, pas un geste d'exécution. Le profil
+   * « qualité » en est écarté aussi — il constate et documente les déviations,
+   * il ne décide pas de reprendre un traitement.
+   *
+   * Liste volontairement courte et modifiable ici seulement : c'est le premier
+   * endroit du module où `utilisateur.profil` conditionne réellement un droit,
+   * et il doit rester un.
+   */
+  const PROFILS_DECLOTURE = new Set(['pharmacien', 'administrateur'])
+
+  // ── Déclôture d'un parcours ──────────────────────────────────────────────
+  //
+  // Rouvrir n'efface pas la clôture : l'épisode reste dans `mti.cloture` avec
+  // son motif, son auteur et sa date, et reçoit en plus le motif, l'auteur et
+  // la date de la réouverture. Les colonnes de `dossier` ne portent que la
+  // clôture en vigueur et sont donc vidées — c'est l'historique qui garde la
+  // mémoire, pas elles.
+  //
+  // Ce que le module doit pouvoir dire après coup : combien de fois ce
+  // parcours a été arrêté puis repris, par qui, et pourquoi. C'est ce qu'une
+  // inspection viendrait chercher, et c'est ce qu'un simple retour de statut
+  // aurait perdu.
+  app.post('/api/dossiers/:id/declore', async (request, reply) => {
+    const profil = request.utilisateur?.profil ?? null
+    if (!PROFILS_DECLOTURE.has(profil)) {
+      return reply.code(403).send({
+        erreur: 'Rouvrir un parcours clos demande un profil pharmacien ou ' +
+                `administrateur. Profil courant : ${profil ?? 'non attribué'}.`,
+        code: 'profil_insuffisant'
+      })
+    }
+
+    const motif = String(request.body?.motif ?? '').trim()
+    if (motif.length < 5) {
+      return reply.code(400).send({
+        erreur: 'Le motif de réouverture est obligatoire et doit dire pourquoi le ' +
+                'parcours reprend (erreur de clôture, reprise du traitement décidée…).'
+      })
+    }
+    if (motif.length > 500) {
+      return reply.code(400).send({ erreur: 'Motif de réouverture trop long (500 caractères).' })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* La condition est dans le UPDATE : une lecture préalable laisserait la
+         place à une seconde réouverture concurrente entre les deux. */
+      const { rows } = await client.query(
+        `UPDATE mti.dossier
+            SET statut = 'en_cours',
+                motif_cloture = NULL, clos_par = NULL, clos_le = NULL
+          WHERE id = $1 AND statut = 'annule'
+          RETURNING id, statut`,
+        [request.params.id])
+
+      if (!rows.length) {
+        const { rows: etat } = await client.query(
+          'SELECT statut FROM mti.dossier WHERE id = $1', [request.params.id])
+        if (!etat.length) { reply.code(404); return { erreur: 'Dossier introuvable.' } }
+        reply.code(409)
+        return {
+          erreur: etat[0].statut === 'valide'
+            ? 'Dossier validé : il n\'est pas clos, il est allé au bout. Le rouvrir ' +
+              'reviendrait à défaire la conclusion signée du pharmacien.'
+            : 'Ce dossier n\'est pas clos.'
+        }
+      }
+
+      /* L'épisode se referme dans l'historique au lieu de disparaître. */
+      const { rows: episode } = await client.query(
+        `UPDATE mti.cloture
+            SET motif_reouverture = $2, reouvert_par = $3, reouvert_le = now()
+          WHERE dossier_id = $1 AND reouvert_le IS NULL
+          RETURNING id, motif, clos_le, reouvert_le`,
+        [request.params.id, motif, request.utilisateur.id])
+
+      /* Les processus annulés par la clôture redeviennent « à venir ». Ceux
+         qui étaient VALIDÉS avant l'arrêt ne bougent pas : ils ont été faits,
+         et par quelqu'un — les rouvrir effacerait leur validation. */
+      await client.query(
+        `UPDATE mti.dossier_processus SET etat = 'a_venir'
+          WHERE dossier_id = $1 AND etat = 'annule'`,
+        [request.params.id])
+
+      /* Le premier processus non validé reprend la main, sinon le dossier
+         rouvrirait sans rien d'ouvert et paraîtrait bloqué. */
+      await client.query(
+        `UPDATE mti.dossier_processus
+            SET etat = 'en_cours', ouvert_le = coalesce(ouvert_le, now())
+          WHERE id = (SELECT id FROM mti.dossier_processus
+                       WHERE dossier_id = $1 AND etat = 'a_venir'
+                       ORDER BY ordre LIMIT 1)`,
+        [request.params.id])
+
+      return { id: rows[0].id, statut: rows[0].statut, episode: episode[0] ?? null }
+    })
+  })
+
+  // ── Historique des clôtures d'un dossier ─────────────────────────────────
+  app.get('/api/dossiers/:id/clotures', async (request) => {
+    const { rows } = await requete(
+      `SELECT c.id, c.motif, c.clos_le, c.motif_reouverture, c.reouvert_le,
+              btrim(concat_ws(' ', cu.titre, cu.prenom, cu.nom)) AS clos_par,
+              btrim(concat_ws(' ', ru.titre, ru.prenom, ru.nom)) AS reouvert_par
+         FROM mti.cloture c
+         LEFT JOIN mti.utilisateur cu ON cu.id = c.clos_par
+         LEFT JOIN mti.utilisateur ru ON ru.id = c.reouvert_par
+        WHERE c.dossier_id = $1
+        ORDER BY c.clos_le DESC`,
+      [request.params.id])
+    return rows
+  })
+
   // ── Ce qui n'est pas vert ────────────────────────────────────────────────
   //
   // La même source que la décision de conformité automatique, exposée à
@@ -1189,6 +1305,15 @@ export default async function dossiers (app) {
             : 'Dossier déjà clos.'
         }
       }
+
+      /* L'épisode entre dans l'historique. Les colonnes de `dossier` ne
+         portent que la clôture EN VIGUEUR — elles seront vidées à la
+         réouverture — et sans cette ligne on perdrait le motif dès qu'un
+         profil avancé rouvrirait le parcours. */
+      await client.query(
+        `INSERT INTO mti.cloture (dossier_id, motif, clos_par)
+         VALUES ($1, $2, $3)`,
+        [request.params.id, motif, request.utilisateur.id])
 
       /* Les processus non validés cessent d'attendre. `annule` existait dans
          `etat_processus` sans emploi : c'est ici qu'il sert. Les processus

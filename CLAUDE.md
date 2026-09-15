@@ -41,15 +41,24 @@ réglementaires, pas à des préférences techniques.
   `UPDATE`/`DELETE` dessus, et c'est volontaire.
 - **Un dossier validé est en lecture seule.** Toute correction passe par une
   nouvelle version, jamais par un `UPDATE`.
-- **Un parcours avorté se clôt, il ne se déclôt pas.** `POST
+- **Un parcours avorté se clôt, et se rouvre par un profil avancé.** `POST
   /api/dossiers/:id/clore` pose `statut = 'annule'` avec un motif obligatoire,
   son auteur et sa date (`dossier_clos_coherent`). Un dossier clos est figé au
   même titre qu'un dossier validé — `estFige()` dans `routes/dossiers.js` est
-  le seul point de décision, ne pas remettre de test sur `'valide'` seul. Il
-  n'y a **pas** de route de déclôture et il ne doit pas y en avoir : reprendre
-  un traitement, c'est ouvrir un nouveau dossier. Clore n'est pas valider :
-  personne ne conclut sur la conformité d'un parcours inachevé, `conformite`
-  reste `NULL`.
+  le seul point de décision, ne pas remettre de test sur `'valide'` seul.
+  Clore n'est pas valider : personne ne conclut sur la conformité d'un parcours
+  inachevé, `conformite` reste `NULL`.
+- **Rouvrir n'efface pas la clôture.** `POST /api/dossiers/:id/declore` est
+  réservé aux profils `pharmacien` et `administrateur` (`PROFILS_DECLOTURE`) —
+  c'est le premier endroit où `utilisateur.profil` conditionne un droit, et il
+  doit rester le seul point de décision. Les colonnes de `dossier` ne portent
+  que la clôture **en vigueur** et sont vidées à la réouverture ; l'historique
+  vit dans `mti.cloture`, un épisode par arrêt, avec les motifs, auteurs et
+  dates des deux gestes. Ne jamais faire repartir un statut sans fermer son
+  épisode : l'index partiel `cloture_en_vigueur_unique` l'interdit. Un dossier
+  **validé** ne se rouvre pas — il n'est pas clos, il est allé au bout.
+  Les processus `annule` redeviennent `a_venir` ; ceux déjà `valide` ne bougent
+  pas, les rouvrir effacerait leur validation.
 - **La conformité automatique est CONSTATÉE PAR LE SERVEUR, jamais affirmée
   par le client.** La route de validation reçoit `conformite: 'auto'` — une
   demande de constat — et interroge `mti.coches_non_vertes()`. Ne jamais

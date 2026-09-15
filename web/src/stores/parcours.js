@@ -353,6 +353,10 @@ export const useParcours = defineStore('parcours', () => {
          page resterait muet jusqu'à la première saisie, et la conformité
          automatique aurait l'air indisponible sur un dossier déjà complet. */
       await rafraichirCoches()
+      /* L'historique n'est utile que sur un dossier clos, mais il est chargé
+         d'office : le bandeau doit pouvoir dire combien de fois le parcours a
+         été arrêté sans déclencher un aller-retour au moment où on le lit. */
+      await chargerClotures()
       return true
     } catch (e) {
       erreurDossier.value = e.message || 'API injoignable.'
@@ -537,6 +541,45 @@ export const useParcours = defineStore('parcours', () => {
    * constaté avant l'arrêt fait partie de ce que le dossier doit dire, et la
    * clôture verrouille l'écriture. L'ordre inverse les perdrait.
    */
+  /**
+   * Rouvre un parcours clos. Réservé aux profils avancés, côté serveur.
+   *
+   * La clôture n'est PAS effacée : son épisode reste dans l'historique avec son
+   * motif et son auteur, et reçoit ceux de la réouverture. Ce que le module
+   * doit pouvoir dire après coup, c'est combien de fois un parcours a été
+   * arrêté puis repris, par qui et pourquoi.
+   */
+  async function declore (motif) {
+    if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
+    const m = String(motif ?? '').trim()
+    if (m.length < 5) {
+      erreurDossier.value = 'Indiquer pourquoi le parcours reprend (5 caractères au moins).'
+      return false
+    }
+    const r = await appel(`/api/dossiers/${dossierId.value}/declore`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ motif: m })
+    })
+    if (!r.ok) {
+      const corps = await r.json().catch(() => null)
+      erreurDossier.value = corps?.erreur ?? `Réouverture refusée (${r.status}).`
+      return false
+    }
+    await ouvrirDossier(dossierId.value)
+    return true
+  }
+
+  /** Historique des clôtures et réouvertures, pour le bandeau du dossier clos. */
+  const clotures = ref([])
+  async function chargerClotures () {
+    if (!dossierId.value) { clotures.value = []; return }
+    try {
+      const r = await appel(`/api/dossiers/${dossierId.value}/clotures`)
+      clotures.value = r.ok ? await r.json() : []
+    } catch { clotures.value = [] }
+  }
+
   async function clore (motif) {
     if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
     const m = String(motif ?? '').trim()
@@ -1205,7 +1248,8 @@ export const useParcours = defineStore('parcours', () => {
     charger, instancierProcessus, selectionner, ajouterProcessus,
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
     lectureSeule, clos, creerDossier, ouvrirDossier, enregistrerEntete,
-    enregistrerProcessus, validerDossier, clore, fermerDossier, dossierMemorise,
+    enregistrerProcessus, validerDossier, clore, declore, fermerDossier, dossierMemorise,
+    clotures, chargerClotures,
     changerEtatProcessus,
     commentaireOuvert, basculerCommentaire,
     signatures, pointsDoubleValidation, contresignature, chargerSignatures, contresigner,

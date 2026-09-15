@@ -34,14 +34,17 @@ export default async function session (app) {
       selectionPossible,
       enTete: EN_TETE_OPERATEUR,
       operateur: request.utilisateur,
-      operateurs,
-      /* Affiché dans l'interface : une démonstration ne doit pas pouvoir passer
-         pour une mise en service. */
-      avertissement: selectionPossible
-        ? "Mode démonstration : l'opérateur est choisi dans l'interface, sans " +
-          'authentification. La double validation et la signature électronique ' +
-          "n'ont pas de valeur probante dans cet état."
-        : null
+      operateurs
+      /* Le bandeau « mode démonstration » a été retiré de l'interface à la
+         demande. `mode` et `selectionPossible` disent toujours la même chose à
+         qui interroge /api/session : ce qui disparaît, c'est la phrase
+         affichée en permanence, pas l'information.
+
+         Ce que cet avertissement portait reste vrai et doit être dit
+         ailleurs qu'à l'écran : en AUTH_MODE=dev l'opérateur est choisi dans
+         l'interface, sans authentification, et la double validation comme la
+         signature électronique n'ont donc pas de valeur probante. C'est
+         consigné dans docs/architecture.md et rappelé par /api/sante. */
     }
   })
 }

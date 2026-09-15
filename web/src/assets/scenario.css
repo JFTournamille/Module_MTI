@@ -407,3 +407,55 @@ input[type=radio].ron{accent-color:#cc2200;}
    que l'opérateur cherche avant de valider. */
 .conf-grp.conf-vert{background:#e8f7ee;border:1px solid #7cc79a;color:#0f5c32;}
 .conf-grp.conf-rouge{background:#fdeeee;border:1px solid #e0a0a0;color:#8c1d1d;}
+
+/* ── Réouverture d'un parcours clos ─────────────────────────────────────────
+   Le bouton vit DANS le bandeau du dossier clos : c'est là qu'on lit qu'un
+   parcours est arrêté, donc là qu'on décide de le reprendre. L'ouvrir depuis
+   le pied de page aurait obligé à chercher. */
+.clo-bandeau .clo-l1{display:flex;align-items:center;gap:10px;}
+.btn-declore{background:#3a2870;color:#fff;border:none;padding:3px 10px;border-radius:2px;
+  font-size:11px;font-weight:bold;cursor:pointer;}
+.btn-declore:hover{background:#4a3880;}
+.btn-declore-ok{background:#3a2870;color:#fff;border:none;padding:5px 12px;border-radius:2px;
+  font-size:12px;font-weight:bold;cursor:pointer;}
+.btn-declore-ok:hover{background:#4a3880;}
+.btn-declore-ok:disabled{opacity:.45;cursor:not-allowed;}
+
+/* ── Pied de page : deux portées, deux groupes ──────────────────────────────
+   Le pied mêlait ce qui valide LE PROCESSUS affiché et ce qui conclut LE
+   PARCOURS : deux boutons presque identiques se touchaient, et la conformité
+   entre les deux n'annonçait ni l'une ni l'autre. Le parcours est à gauche,
+   parce que ses gestes sont rares et lourds de conséquence ; le processus au
+   centre, parce qu'on y revient à chaque écran. */
+.footer{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;}
+.pied-grp{display:flex;align-items:center;gap:7px;padding:5px 12px;position:relative;}
+.pied-lbl{font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:.4px;
+  color:#6a5a9a;white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis;}
+
+/* DEUX LIGNES, et c'est voulu. Mesuré : les deux groupes ne tiennent pas sur
+   une rangée de 1400 px, ils passaient donc à la ligne par accident — avec un
+   trait de séparation vertical devenu sans objet. Le parcours prend la
+   première ligne entière, le processus la seconde : la séparation se lit sans
+   qu'il faille chercher le trait, et elle ne dépend plus de la largeur de la
+   fenêtre. */
+.pied-parcours{flex:1 0 100%;background:#efeaff;border-bottom:2px solid #b8a8e0;}
+.pied-processus{flex:1;}
+/* Pousse les sorties (exports, fermeture) au bout de la ligne du parcours :
+   ce sont des issues, pas des décisions, elles n'ont pas à voisiner avec
+   « Valider » et « Clore ». */
+.pied-espace{flex:1;}
+
+/* Un libellé de bouton qui passe à la ligne fait grandir toute la rangée et
+   rend le pied bancal — « Valider ce processus » le faisait. */
+.footer .f-btn,
+.footer .btn-val,
+.footer .btn-clore,
+.footer .btn-declore,
+.footer .btn-ann{white-space:nowrap;}
+
+/* Cadenas de réouverture d'un processus validé. Petit et discret : c'est un
+   geste de correction, pas une action courante — mais il doit être là, sinon
+   corriger une erreur obligerait à clore le parcours. */
+.btn-cadenas{background:#e8e0f8;border:1px solid #b8a8e0;border-radius:3px;
+  padding:2px 7px;font-size:13px;line-height:1.2;cursor:pointer;}
+.btn-cadenas:hover{background:#d4c8f0;}

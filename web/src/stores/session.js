@@ -14,7 +14,6 @@ export const useSession = defineStore('session', () => {
   const selectionPossible = ref(false)
   const operateur = ref(null)
   const operateurs = ref([])
-  const avertissement = ref(null)
   const erreur = ref('')
 
   async function charger () {
@@ -27,7 +26,6 @@ export const useSession = defineStore('session', () => {
       selectionPossible.value = s.selectionPossible
       operateur.value = s.operateur
       operateurs.value = s.operateurs ?? []
-      avertissement.value = s.avertissement
 
       // Le serveur a pu retenir un autre opérateur que celui demandé (compte
       // désactivé entre-temps) : on réaligne la mémoire locale sur la réalité.
@@ -46,6 +44,6 @@ export const useSession = defineStore('session', () => {
     await charger()
   }
 
-  return { mode, selectionPossible, operateur, operateurs, avertissement, erreur,
+  return { mode, selectionPossible, operateur, operateurs, erreur,
     charger, choisir }
 })

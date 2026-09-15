@@ -244,9 +244,12 @@ r = await j('GET', '/api/session')
 r.statut === 200 && r.corps.mode === 'dev' && r.corps.selectionPossible === true
   ? ok(`mode ${r.corps.mode}, sélection de l'opérateur permise`)
   : ko(`statut ${r.statut} — ${JSON.stringify(r.corps)}`)
-r.corps.avertissement && /valeur probante/.test(r.corps.avertissement)
-  ? ok('un avertissement signale que la démonstration n\'a pas valeur probante')
-  : ko('aucun avertissement de mode démonstration')
+/* Le champ `avertissement` a été retiré avec le bandeau qu'il alimentait :
+   `mode` et `selectionPossible` ci-dessus portent la même information à qui
+   interroge la session. */
+r.corps.avertissement === undefined
+  ? ok('plus de champ « avertissement » : le bandeau a été retiré')
+  : ko('le champ « avertissement » subsiste sans rien pour l\'afficher')
 r.corps.operateurs.some((o) => o.id === compteId)
   ? ok(`${r.corps.operateurs.length} opérateur(s) proposé(s) au choix`)
   : ko('le compte de test ne figure pas parmi les opérateurs proposés')
@@ -884,9 +887,22 @@ console.log('\n21. Conformité automatique')
   }
   poses > 0 ? ok(`${poses} point(s) obligatoire(s) renseignés en vert`) : ko('aucun point à renseigner')
 
+  /* Et surtout : les points NON obligatoires sont restés vides. « Toutes les
+     coches vertes » ne doit pas vouloir dire « tout est rempli » — un point
+     facultatif laissé blanc n'empêche pas de conclure la conformité. */
+  let facultatifs = 0
+  for (const p of procs) {
+    for (const sec of (p.definition?.sections ?? [])) {
+      for (const pt of (sec.points ?? [])) if (pt.obligatoire !== true) facultatifs++
+    }
+  }
+  facultatifs > 0
+    ? ok(`${facultatifs} point(s) facultatif(s) laissés vides — ils ne doivent rien bloquer`)
+    : console.log('  · aucun point facultatif au parcours — cas non éprouvé')
+
   r = await j('GET', `/api/dossiers/${dos}/conformite`)
   r.corps?.toutVert === true
-    ? ok('toutes les coches sont vertes')
+    ? ok('tout vert MALGRÉ les points facultatifs vides')
     : ko(`reste ${r.corps?.nonVertes?.length} rouge(s) : ` +
          JSON.stringify(r.corps?.nonVertes?.slice(0, 3)))
 
@@ -915,6 +931,92 @@ console.log('\n21. Conformité automatique')
 
   r = await j('POST', `/api/dossiers/${dosM}/valider`, { conformite: 'nimporte_quoi' })
   r.statut === 400 ? ok('conformité inconnue refusée (400)') : ko(`statut ${r.statut}`)
+}
+
+// ── 22. Réouverture d'un parcours clos ──
+console.log('\n22. Réouverture d\'un parcours clos')
+{
+  const enTete = (id) => ({ 'x-mti-operateur': id })
+  let r = await j('GET', '/api/session')
+  const comptes = r.corps.operateurs ?? []
+  const pharmacien = comptes.find((o) => o.profil === 'pharmacien')
+  const preparateur = comptes.find((o) => o.profil === 'preparateur')
+
+  if (!pharmacien || !preparateur) {
+    console.log('  · pas de compte pharmacien ET préparateur — groupe sans objet')
+  } else {
+    r = await j('POST', '/api/dossiers',
+      { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E réouverture' })
+    const dos = r.corps?.id
+    await j('POST', `/api/dossiers/${dos}/clore`, { motif: 'Aphérèse non exploitable' })
+
+    /* Le droit est tenu par le SERVEUR : un client qui appelle la route sans
+       le profil doit être refusé, que l'écran lui ait montré un bouton ou non. */
+    r = await j('POST', `/api/dossiers/${dos}/declore`,
+      { motif: 'Je tente quand même' }, enTete(preparateur.id))
+    r.statut === 403 && r.corps?.code === 'profil_insuffisant'
+      ? ok('préparateur : réouverture refusée (403), le profil est dit')
+      : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+    // Et le dossier est resté clos.
+    r = await j('GET', `/api/dossiers/${dos}`)
+    r.corps.dossier.statut === 'annule'
+      ? ok('le refus n\'a rien changé au dossier')
+      : ko(`statut ${r.corps.dossier.statut} après un refus`)
+
+    // Motif obligatoire, même pour un profil autorisé.
+    r = await j('POST', `/api/dossiers/${dos}/declore`, { motif: 'x' }, enTete(pharmacien.id))
+    r.statut === 400 ? ok('motif de réouverture trop court refusé (400)')
+      : ko(`statut ${r.statut}`)
+
+    r = await j('POST', `/api/dossiers/${dos}/declore`,
+      { motif: 'Clôture par erreur, le lot est exploitable' }, enTete(pharmacien.id))
+    r.statut === 200 && r.corps?.statut === 'en_cours'
+      ? ok('pharmacien : parcours rouvert')
+      : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+    /* LE POINT QUI COMPTE : rouvrir n'efface pas la clôture. Les colonnes de
+       `dossier` sont vidées — la contrainte l'impose — mais l'épisode reste. */
+    r = await j('GET', `/api/dossiers/${dos}/clotures`)
+    const ep = r.corps?.[0]
+    ep?.motif === 'Aphérèse non exploitable' && ep?.clos_par && ep?.reouvert_par &&
+    ep?.motif_reouverture
+      ? ok(`l'épisode garde tout : clos par ${ep.clos_par}, rouvert par ${ep.reouvert_par}`)
+      : ko(`épisode incomplet : ${JSON.stringify(ep)}`)
+
+    // Le dossier redevient modifiable, et réapparaît dans les dossiers en cours.
+    r = await j('PATCH', `/api/dossiers/${dos}`, { numeroLot: 'REPRIS-E2E' })
+    r.statut === 200 ? ok('le dossier rouvert est de nouveau modifiable')
+      : ko(`PATCH ${r.statut} : ${r.corps?.erreur}`)
+
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const enAttente = r.corps.processus.filter((p) => p.etat === 'annule').length
+    const ouverts = r.corps.processus.filter((p) => p.etat === 'en_cours').length
+    enAttente === 0 && ouverts === 1
+      ? ok('les processus ont repris, un seul est ouvert')
+      : ko(`${enAttente} encore annulé(s), ${ouverts} ouvert(s)`)
+
+    // Re-clore puis rouvrir : deux épisodes, pas un écrasé.
+    await j('POST', `/api/dossiers/${dos}/clore`, { motif: 'Second arrêt du parcours' })
+    await j('POST', `/api/dossiers/${dos}/declore`,
+      { motif: 'Seconde reprise décidée en RCP' }, enTete(pharmacien.id))
+    r = await j('GET', `/api/dossiers/${dos}/clotures`)
+    r.corps?.length === 2
+      ? ok('deux arrêts, deux épisodes : rien n\'est écrasé')
+      : ko(`${r.corps?.length} épisode(s) après deux clôtures`)
+
+    /* Un dossier VALIDÉ n'est pas clos : le rouvrir défairait la conclusion
+       signée du pharmacien. */
+    r = await j('POST', '/api/dossiers',
+      { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E réouv validé' })
+    const dosV = r.corps?.id
+    await j('POST', `/api/dossiers/${dosV}/valider`, { conformite: 'conforme' })
+    r = await j('POST', `/api/dossiers/${dosV}/declore`,
+      { motif: 'Tentative sur un dossier validé' }, enTete(pharmacien.id))
+    r.statut === 409 && /allé au bout/.test(r.corps?.erreur ?? '')
+      ? ok('réouverture d\'un dossier validé refusée, avec la raison')
+      : ko(`statut ${r.statut} : ${r.corps?.erreur}`)
+  }
 }
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')

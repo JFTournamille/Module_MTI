@@ -63,6 +63,23 @@ const modalePatient = ref(false)
    motif qu'une fois clos, et il ne se reprend pas. */
 const clotureOuverte = ref(false)
 const motifCloture = ref('')
+
+/* Réouverture d'un parcours clos. Le droit est tenu par le SERVEUR (403 sur un
+   profil insuffisant) ; ce calcul ne sert qu'à ne pas proposer un bouton dont
+   le clic serait refusé. */
+const PROFILS_DECLOTURE = ['pharmacien', 'administrateur']
+const peutDeclore = computed(() =>
+  PROFILS_DECLOTURE.includes(session.operateur?.profil))
+const reouvertures = computed(() =>
+  store.clotures.filter((c) => c.reouvert_le).length)
+const declotureOuverte = ref(false)
+const motifDecloture = ref('')
+async function declore () {
+  if (await store.declore(motifDecloture.value)) {
+    declotureOuverte.value = false
+    motifDecloture.value = ''
+  }
+}
 async function clore () {
   if (await store.clore(motifCloture.value)) {
     clotureOuverte.value = false
@@ -150,7 +167,8 @@ const blocages = computed(() => {
      subsiste donc que si rien n'est coché ET que quelque chose est rouge. */
   if (!store.dossier.conformite && !store.conformiteAutomatiquePossible) {
     raisons.push(store.cochesDossier.nonVertes.length
-      ? `conformité non conclue (${store.cochesDossier.nonVertes.length} coche(s) non verte(s))`
+      ? `conformité non conclue (${store.cochesDossier.nonVertes.length} point(s) ` +
+        'obligatoire(s) à traiter — les points facultatifs laissés vides ne comptent pas)'
       : 'conformité non conclue')
   }
   return raisons
@@ -348,111 +366,174 @@ const blocages = computed(() => {
       </div>
     </div>
 
-    <div class="footer">
-      <button class="f-btn">Imprimer</button>
-      <button class="f-btn">Exporter PDF</button>
-      <!-- Conformité DU PROCESSUS EN COURS, pas du dossier : « ce qui est
-           conforme » doit désigner ce qu'on est en train de valider, et non un
-           dossier dont l'opérateur ne voit qu'un onzième à l'écran.
-           Le verdict vient du serveur (`store.coches`) : le recalculer ici
-           donnerait deux réponses qui divergeraient. -->
-      <div class="conf-grp" :class="{ 'conf-vert': store.coches.charge && store.coches.toutVert,
-                                      'conf-rouge': store.coches.nonVertes.length > 0 }">
-        <template v-if="store.coches.charge && store.coches.toutVert">
-          <span class="conf-ico">✓</span>
-          <span class="conf-t">
-            <strong>{{ store.processusCourant?.nom ?? 'Processus' }} — conforme</strong>
-            <span class="conf-s">
-              toutes les coches sont vertes ; conclusion automatique à la validation
-            </span>
-          </span>
-        </template>
-        <template v-else-if="store.coches.nonVertes.length">
-          <span class="conf-ico">⚠</span>
-          <span class="conf-t">
-            <strong>{{ store.coches.nonVertes.length }} coche(s) non verte(s)</strong>
-            <span class="conf-s" :title="detailCoches">{{ resumeCoches }}</span>
-          </span>
-          <!-- Une non-conformité reste un jugement : elle se coche à la main.
-               Le module constate le vert, il ne prononce pas l'inverse. -->
-          <label class="conf-r">
-            <input type="radio" name="conformite" value="non_conforme"
-                   :disabled="store.lectureSeule"
-                   v-model="store.dossier.conformite"> Non conforme
-          </label>
-          <label class="conf-r">
-            <input type="radio" name="conformite" value="conforme"
-                   :disabled="store.lectureSeule"
-                   v-model="store.dossier.conformite"> Conforme malgré tout
-          </label>
-        </template>
-        <template v-else>
-          Conformité :
-          <label class="conf-r">
-            <input type="radio" name="conformite" value="non_conforme"
-                   :disabled="store.lectureSeule"
-                   v-model="store.dossier.conformite"> Non conforme
-          </label>
-          <label class="conf-r">
-            <input type="radio" name="conformite" value="conforme"
-                   :disabled="store.lectureSeule"
-                   v-model="store.dossier.conformite"> Conforme
-          </label>
-        </template>
+    <!-- Le pied de page mêlait deux portées : ce qui valide LE PROCESSUS
+         affiché et ce qui conclut LE PARCOURS. Deux boutons presque
+         identiques — « Valider ce processus » et « ✓ Valider » — se
+         touchaient, et la conformité entre les deux n'annonçait ni l'une ni
+         l'autre. Deux groupes nommés, séparés, et le parcours à gauche. -->
+    <div class="footer" v-if="store.dossierId">
+
+      <!-- ── LE PARCOURS ── conclure, clore, rouvrir. Les gestes rares et
+           lourds de conséquence, tenus à l'écart des gestes de saisie. -->
+      <div class="pied-grp pied-parcours">
+        <span class="pied-lbl">Parcours {{ store.dossier.reference }}</span>
+        <button
+          class="btn-val" :disabled="blocages.length > 0 || store.lectureSeule"
+          :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}`
+            : store.dossier.conformite
+              ? `Valider le parcours — conformité conclue à la main : ${store.dossier.conformite}`
+              : 'Valider le parcours — conformité constatée automatiquement, toutes les coches sont vertes'"
+          :style="(blocages.length || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
+          @click="store.validerDossier()"
+        >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
+          ? '✓ Valider le parcours — conforme (auto)' : '✓ Valider le parcours' }}</button>
+        <button
+          class="btn-clore" v-if="!store.lectureSeule"
+          title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
+          @click="clotureOuverte = true"
+        >Clore le parcours</button>
+        <!-- La réouverture est un droit de profil, refusé côté serveur : le
+             bouton n'est masqué ici que pour ne pas proposer un geste qui
+             serait refusé. Ce n'est pas lui qui protège. -->
+        <button
+          class="btn-declore" v-if="store.clos && peutDeclore"
+          title="Rouvrir ce parcours : la clôture reste tracée"
+          @click="declotureOuverte = true"
+        >Rouvrir le parcours</button>
+
+        <!-- Ces deux boutons venaient de la maquette et n'ont JAMAIS rien
+             fait : aucun gestionnaire, aucun export. Les laisser d'apparence
+             active laissait croire à un export qui n'existe pas — le même
+             défaut que la croix de la barre de titre. Désarmés en attendant
+             l'export réel (§8 : PDF et XLS, l'impression se faisant depuis le
+             document exporté).
+             Ils sont sur la ligne du PARCOURS parce qu'on exporte un dossier,
+             pas l'écran qu'on regarde. -->
+        <span class="pied-espace"></span>
+        <button class="f-btn" disabled title="Export non encore implémenté">Exporter PDF</button>
+        <button class="f-btn" disabled title="Export non encore implémenté">Exporter XLS</button>
+        <button class="btn-ann" @click="fermerParcours()">Fermer</button>
       </div>
-      <span v-if="store.dossierId" class="etat-enr">
-        <template v-if="store.enregistrement">enregistrement…</template>
-        <template v-else-if="store.lectureSeule">dossier validé — lecture seule</template>
-        <template v-else-if="store.dernierEnregistrement">
-          enregistré à {{ store.dernierEnregistrement.toLocaleTimeString('fr-FR',
-            { hour: '2-digit', minute: '2-digit' }) }}
-        </template>
-        <template v-else>non enregistré</template>
-      </span>
-      <button class="btn-ann" v-if="store.dossierId" @click="fermerParcours()">Fermer</button>
-      <!-- Avancement du processus courant : sans lui, un processus « à venir »
-           reste en lecture seule et le parcours ne peut pas progresser. -->
-      <button v-if="store.dossierId && !store.lectureSeule && store.processusCourant"
-              class="f-btn proc-etat" :disabled="store.processusCourant.etat === 'valide'"
-              :title="store.processusCourant.etat === 'a_venir'
-                ? 'Ouvrir ce processus à la saisie'
-                : store.processusCourant.etat === 'valide'
-                  ? 'Processus déjà validé'
-                  : 'Valider ce processus et ouvrir le suivant'"
-              @click="store.changerEtatProcessus(
-                store.processusCourant.etat === 'a_venir' ? 'en_cours' : 'valide')">
-        {{ store.processusCourant.etat === 'a_venir' ? 'Ouvrir ce processus'
-           : store.processusCourant.etat === 'valide' ? '✓ Processus validé'
-           : 'Valider ce processus' }}
-      </button>
-      <button class="f-btn" v-if="store.dossierId && !store.lectureSeule"
-              :disabled="store.enregistrement"
-              @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">
-        Enregistrer
-      </button>
-      <button
-        class="btn-val" :disabled="blocages.length > 0 || !store.dossierId || store.lectureSeule"
-        :title="blocages.length ? `Validation bloquée : ${blocages.join(' ; ')}`
-          : store.dossier.conformite
-            ? `Valider le dossier — conformité conclue à la main : ${store.dossier.conformite}`
-            : 'Valider le dossier — conformité constatée automatiquement, toutes les coches sont vertes'"
-        :style="(blocages.length || !store.dossierId || store.lectureSeule) ? 'opacity:.5;cursor:not-allowed;' : ''"
-        @click="store.validerDossier()"
-      >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
-        ? '✓ Valider — conforme (auto)' : '✓ Valider' }}</button>
-      <!-- Clore n'est pas valider, et ce n'est pas l'inverse : valider conclut
-           un parcours allé au bout, clore constate qu'il s'est arrêté en
-           chemin. D'où un bouton distinct, et un motif obligatoire — « clos »
-           sans le pourquoi ne dit rien à qui relit le dossier. -->
-      <button
-        class="btn-clore" v-if="store.dossierId && !store.lectureSeule"
-        title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
-        @click="clotureOuverte = true"
-      >Clore le parcours</button>
+
+      <!-- ── LE PROCESSUS AFFICHÉ ── sa conformité, son avancement, sa
+           sauvegarde. Tout ce qui ne concerne QUE l'écran en cours. -->
+      <div class="pied-grp pied-processus">
+        <span class="pied-lbl">{{ store.processusCourant?.nom ?? 'Processus' }}</span>
+        <!-- Conformité DU PROCESSUS EN COURS, pas du dossier : « ce qui est
+             conforme » doit désigner ce qu'on est en train de valider, et non
+             un dossier dont l'opérateur ne voit qu'un onzième à l'écran.
+             Le verdict vient du serveur (`store.coches`) : le recalculer ici
+             donnerait deux réponses qui divergeraient. -->
+        <div class="conf-grp" :class="{ 'conf-vert': store.coches.charge && store.coches.toutVert,
+                                        'conf-rouge': store.coches.nonVertes.length > 0 }">
+          <template v-if="store.coches.charge && store.coches.toutVert">
+            <span class="conf-ico">✓</span>
+            <span class="conf-t">
+              <strong>Conforme</strong>
+              <span class="conf-s">toutes les coches sont vertes</span>
+            </span>
+          </template>
+          <template v-else-if="store.coches.nonVertes.length">
+            <span class="conf-ico">⚠</span>
+            <span class="conf-t">
+              <strong>{{ store.coches.nonVertes.length }} point(s) obligatoire(s) à traiter</strong>
+              <span class="conf-s" :title="detailCoches">{{ resumeCoches }}</span>
+            </span>
+            <!-- Une non-conformité reste un jugement : elle se coche à la main.
+                 Le module constate le vert, il ne prononce pas l'inverse. -->
+            <label class="conf-r">
+              <input type="radio" name="conformite" value="non_conforme"
+                     :disabled="store.lectureSeule"
+                     v-model="store.dossier.conformite"> Non conforme
+            </label>
+            <label class="conf-r">
+              <input type="radio" name="conformite" value="conforme"
+                     :disabled="store.lectureSeule"
+                     v-model="store.dossier.conformite"> Conforme malgré tout
+            </label>
+          </template>
+          <template v-else>
+            Conformité :
+            <label class="conf-r">
+              <input type="radio" name="conformite" value="non_conforme"
+                     :disabled="store.lectureSeule"
+                     v-model="store.dossier.conformite"> Non conforme
+            </label>
+            <label class="conf-r">
+              <input type="radio" name="conformite" value="conforme"
+                     :disabled="store.lectureSeule"
+                     v-model="store.dossier.conformite"> Conforme
+            </label>
+          </template>
+        </div>
+        <!-- Avancement du processus courant : sans lui, un processus « à venir »
+             reste en lecture seule et le parcours ne peut pas progresser. -->
+        <button v-if="!store.lectureSeule && store.processusCourant"
+                class="f-btn proc-etat" :disabled="store.processusCourant.etat === 'valide'"
+                :title="store.processusCourant.etat === 'a_venir'
+                  ? 'Ouvrir ce processus à la saisie'
+                  : store.processusCourant.etat === 'valide'
+                    ? 'Processus déjà validé'
+                    : 'Valider ce processus et ouvrir le suivant'"
+                @click="store.changerEtatProcessus(
+                  store.processusCourant.etat === 'a_venir' ? 'en_cours' : 'valide')">
+          {{ store.processusCourant.etat === 'a_venir' ? 'Ouvrir ce processus'
+             : store.processusCourant.etat === 'valide' ? '✓ Processus validé'
+             : 'Valider ce processus' }}
+        </button>
+        <!-- Le cadenas rouvre un processus déjà validé, pour y compléter ou
+             corriger des éléments. Il n'existe QUE pour un processus, jamais
+             pour le dossier : un dossier validé est définitif, et la base le
+             tient (`interdire_devalidation`). Un processus validé dans un
+             dossier encore en cours, lui, peut légitimement reprendre — d'où
+             ce bouton, et le fait qu'il disparaisse dès que le dossier est
+             validé ou clos (`store.lectureSeule`).
+             La réouverture efface la conformité constatée du processus : elle
+             n'a plus lieu d'être tant qu'il n'est pas revalidé. -->
+        <button v-if="!store.lectureSeule && store.processusCourant?.etat === 'valide'"
+                class="btn-cadenas"
+                title="Rouvrir ce processus pour compléter ou corriger des éléments"
+                @click="store.changerEtatProcessus('en_cours')">🔓</button>
+        <button class="f-btn" v-if="!store.lectureSeule"
+                :disabled="store.enregistrement"
+                @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">
+          Enregistrer
+        </button>
+        <span class="etat-enr">
+          <template v-if="store.enregistrement">enregistrement…</template>
+          <template v-else-if="store.clos">parcours clos — lecture seule</template>
+          <template v-else-if="store.lectureSeule">parcours validé — lecture seule</template>
+          <template v-else-if="store.dernierEnregistrement">
+            enregistré à {{ store.dernierEnregistrement.toLocaleTimeString('fr-FR',
+              { hour: '2-digit', minute: '2-digit' }) }}
+          </template>
+          <template v-else>non enregistré</template>
+        </span>
+      </div>
+
     </div>
 
-    <!-- Clôture : la confirmation dit ce que le geste engage, parce qu'il ne
-         se défait pas. -->
+    <!-- Bandeau d'état : hors-ligne et points bloquants -->
+    <!-- Un dossier clos ne dit rien de lui-même : les boutons disparaissent,
+         les champs se figent, et rien n'explique pourquoi. Le bandeau porte le
+         motif — c'est la seule information qui compte sur un parcours avorté. -->
+    <div v-if="store.clos" class="clo-bandeau">
+      <div class="clo-l1">Parcours clos — {{ store.dossier.motifCloture }}</div>
+      <span class="clo-note">
+        Aucune conclusion de conformité : le parcours s'est arrêté avant son terme.
+        <template v-if="reouvertures">
+          Déjà rouvert {{ reouvertures }} fois — chaque arrêt et chaque reprise
+          restent tracés.
+        </template>
+        <template v-else-if="!peutDeclore">
+          Le rouvrir demande un profil pharmacien ou administrateur.
+        </template>
+      </span>
+    </div>
+
+    <!-- Clôture : la confirmation dit ce que le geste engage. Cette fenêtre
+         avait disparu en réécrivant le pied de page — le bouton restait, la
+         fenêtre non, et c'est la suite navigateur qui l'a vu. -->
     <div class="cat-ov" :class="{ show: clotureOuverte }" @click.self="clotureOuverte = false">
       <div class="cat-dlg clo-dlg">
         <div class="cat-hd">
@@ -460,20 +541,19 @@ const blocages = computed(() => {
           <button title="Annuler" @click="clotureOuverte = false">✕</button>
         </div>
         <div class="clo-corps">
-        <p class="clo-p">
-          Le parcours <strong>{{ store.dossier.reference }}</strong> s'est arrêté sans
-          aboutir. La clôture le retire des dossiers en cours et le fige en lecture
-          seule.
-        </p>
-        <p class="clo-p clo-att">
-          <strong>Il n'y a pas de déclôture.</strong> Reprendre un traitement, c'est
-          ouvrir un nouveau dossier — celui-ci restera lisible pour dire ce qui s'est
-          passé. Personne ne conclut sur sa conformité : un parcours inachevé n'est ni
-          conforme ni non conforme.
-        </p>
-        <label class="clo-l" for="clo-motif">Motif — ce qui a interrompu le parcours</label>
-        <textarea id="clo-motif" class="clo-t" rows="3" v-model="motifCloture"
-                  placeholder="Décès du patient, aphérèse non exploitable, échec de fabrication, décision médicale…"></textarea>
+          <p class="clo-p">
+            Le parcours <strong>{{ store.dossier.reference }}</strong> s'est arrêté sans
+            aboutir. La clôture le retire des dossiers en cours et le fige en lecture
+            seule.
+          </p>
+          <p class="clo-p clo-att">
+            Personne ne conclut sur sa conformité : un parcours inachevé n'est ni
+            conforme ni non conforme. La clôture est tracée — motif, auteur, date —
+            et le restera même si un profil avancé rouvre le parcours plus tard.
+          </p>
+          <label class="clo-l" for="clo-motif">Motif — ce qui a interrompu le parcours</label>
+          <textarea id="clo-motif" class="clo-t" rows="3" v-model="motifCloture"
+                    placeholder="Décès du patient, aphérèse non exploitable, échec de fabrication, décision médicale…"></textarea>
         </div>
         <div class="clo-b">
           <button class="btn-ann" @click="clotureOuverte = false">Annuler</button>
@@ -483,20 +563,34 @@ const blocages = computed(() => {
       </div>
     </div>
 
-    <!-- Bandeau d'état : hors-ligne et points bloquants -->
-    <div v-if="session.avertissement" class="demo-bandeau">
-      ⚠ {{ session.avertissement }}
-    </div>
-
-    <!-- Un dossier clos ne dit rien de lui-même : les boutons disparaissent,
-         les champs se figent, et rien n'explique pourquoi. Le bandeau porte le
-         motif — c'est la seule information qui compte sur un parcours avorté. -->
-    <div v-if="store.clos" class="clo-bandeau">
-      Parcours clos — {{ store.dossier.motifCloture }}
-      <span class="clo-note">
-        Aucune conclusion de conformité : le parcours s'est arrêté avant son terme.
-        Il ne se déclôt pas ; reprendre le traitement demande un nouveau dossier.
-      </span>
+    <!-- Réouverture : le motif est obligatoire, comme pour la clôture. -->
+    <div class="cat-ov" :class="{ show: declotureOuverte }" @click.self="declotureOuverte = false">
+      <div class="cat-dlg clo-dlg">
+        <div class="cat-hd">
+          Rouvrir un parcours clos
+          <button title="Annuler" @click="declotureOuverte = false">✕</button>
+        </div>
+        <div class="clo-corps">
+          <p class="clo-p">
+            Le parcours <strong>{{ store.dossier.reference }}</strong> avait été clos :
+            <em>{{ store.dossier.motifCloture }}</em>. Le rouvrir le rend de nouveau
+            modifiable et le fait réapparaître parmi les dossiers en cours.
+          </p>
+          <p class="clo-p clo-att">
+            <strong>La clôture n'est pas effacée.</strong> Son motif, son auteur et sa
+            date restent tracés, et cette réouverture le sera aussi. Le dossier
+            pourra dire, plus tard, combien de fois il a été arrêté et repris.
+          </p>
+          <label class="clo-l" for="declo-motif">Motif — pourquoi le parcours reprend</label>
+          <textarea id="declo-motif" class="clo-t" rows="3" v-model="motifDecloture"
+                    placeholder="Clôture par erreur, reprise du traitement décidée en RCP…"></textarea>
+        </div>
+        <div class="clo-b">
+          <button class="btn-ann" @click="declotureOuverte = false">Annuler</button>
+          <button class="btn-declore-ok" :disabled="motifDecloture.trim().length < 5"
+                  @click="declore()">Rouvrir</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="store.horsLigne || blocages.length || store.erreurDossier"

@@ -48,9 +48,10 @@ Le second couvre §1 « clôture manuelle en cas d'avortement d'un parcours ». 
 premier couvre §10 « reprise éventuelle, par exemple au niveau de la
 prescription ».
 
-**Décision du 7 septembre 2026 : uniquement le clore.** Pas de reprise, donc
-pas de déclôture — la demande « possibilité de déclôturer une ligne » du §1 est
-retirée par cette décision, elle n'est pas oubliée.
+**Décision du 7 septembre 2026 : uniquement le clore.**
+**Révisée le 15 septembre 2026 : un profil avancé doit pouvoir déclôturer.**
+La demande « possibilité de déclôturer une ligne » du §1 est donc rétablie, et
+livrée — voir « Réouverture » plus bas.
 
 **Implémenté** (migration `013_cloture_dossier.sql`, route
 `POST /api/dossiers/:id/clore`) :
@@ -74,6 +75,30 @@ retirée par cette décision, elle n'est pas oubliée.
   sort des vues « en cours » et « en attente » ;
 - la clôture est tracée dans `mti.audit` avec son auteur et le statut avant /
   après.
+
+**Réouverture** (migration `016_decloture.sql`, route
+`POST /api/dossiers/:id/declore`) :
+
+- réservée aux profils **pharmacien** et **administrateur** — ni le préparateur
+  ni l'IDE : rouvrir un parcours arrêté est une décision sur la conduite du
+  traitement, pas un geste d'exécution. Le profil « qualité » en est écarté
+  aussi : il constate et documente les déviations, il ne décide pas de
+  reprendre un traitement. La liste se change à un seul endroit
+  (`PROFILS_DECLOTURE`), et c'est **le serveur** qui refuse (403) — le bouton
+  masqué à l'écran ne protège rien ;
+- le motif de réouverture est obligatoire, comme celui de la clôture ;
+- **la clôture n'est pas effacée.** Les colonnes de `dossier` ne portent que la
+  clôture en vigueur et sont vidées à la réouverture ; l'historique vit dans
+  `mti.cloture`, un épisode par arrêt, avec motif, auteur et date **des deux
+  gestes**. Un parcours peut être clos, rouvert, reclos : chaque épisode laisse
+  sa ligne. C'est ce qu'une inspection viendrait chercher — combien de fois,
+  par qui, pourquoi — et c'est exactement ce qu'un simple retour de statut
+  aurait perdu ;
+- les processus annulés par la clôture redeviennent « à venir » et le premier
+  reprend la main ; **ceux déjà validés ne bougent pas** — les rouvrir
+  effacerait leur validation et son auteur ;
+- un dossier **validé** ne se rouvre pas : il n'est pas clos, il est allé au
+  bout, et le rouvrir défairait la conclusion signée du pharmacien.
 
 ### 1.2 Validation automatique — **tranché : automatique si tout est vert** ✔ fait
 

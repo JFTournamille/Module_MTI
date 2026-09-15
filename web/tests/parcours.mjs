@@ -520,9 +520,12 @@ if (await selOp.count() === 0) {
   console.log('  · sélecteur absent — l\'API n\'est pas en AUTO_MODE=dev, groupe sans objet')
 } else {
   ok('sélecteur d\'opérateur présent dans l\'en-tête')
-  await page.locator('.demo-bandeau').count() === 1
-    ? ok('un bandeau signale le mode démonstration')
-    : ko('aucun bandeau de mode démonstration')
+  /* Le bandeau « mode démonstration » a été retiré à la demande : la
+     vérification devient son inverse, sinon elle réintroduirait par la porte
+     des tests ce qui a été retiré par la porte de l'interface. */
+  await page.locator('.demo-bandeau').count() === 0
+    ? ok('aucun bandeau de mode démonstration — retiré à la demande')
+    : ko('le bandeau de mode démonstration est réapparu')
 
   const noms = await page.locator('.op-sel option').allTextContents()
   noms.length >= 2 ? ok(`${noms.length} opérateurs proposés`)
@@ -1806,13 +1809,13 @@ console.log('\n30. Clore un parcours avorté depuis l\'écran')
 
   /* Un motif d'un caractère ne dit rien : le bouton doit rester désarmé, sans
      attendre le 400 du serveur pour le faire savoir. */
-  await page.locator('.clo-t').fill('x')
+  await page.locator('#clo-motif').fill('x')
   await page.waitForTimeout(200)
   await page.locator('.btn-clore-ok').isDisabled()
     ? ok('motif trop court : la clôture reste désarmée')
     : ko('la clôture s\'arme sur un motif d\'un caractère')
 
-  await page.locator('.clo-t').fill('Aphérèse non exploitable — viabilité cellulaire insuffisante')
+  await page.locator('#clo-motif').fill('Aphérèse non exploitable — viabilité cellulaire insuffisante')
   await page.waitForTimeout(200)
   !(await page.locator('.btn-clore-ok').isDisabled())
     ? ok('motif renseigné : la clôture s\'arme')
@@ -1855,13 +1858,23 @@ console.log('\n30. Clore un parcours avorté depuis l\'écran')
     ? ok('lecture seule : ni « Enregistrer » ni « Clore » sur un dossier clos')
     : ko('un dossier clos laisse encore des boutons d\'écriture')
 
-  /* Pas de déclôture, et l'écran ne doit pas en suggérer une : c'est la
-     décision prise, un dossier clos reste clos. */
-  const texteEcran = await page.locator('.clo-bandeau').innerText()
-  if (/ne se déclôt pas|nouveau dossier/.test(texteEcran)) {
-    ok('le bandeau dit qu\'il n\'y a pas de retour en arrière')
+  /* La réouverture est un droit de PROFIL : l'opérateur de développement n'en
+     a aucun, le bouton ne doit donc pas lui être proposé. Ce n'est pas lui qui
+     protège — le serveur refuse en 403 — mais proposer un geste qui sera
+     refusé est une promesse que l'écran ne tient pas. */
+  const profil = await page.evaluate(async () => {
+    const s = await (await fetch('/api/session')).json()
+    return s.operateur?.profil ?? null
+  })
+  const cadenasVisible = await page.locator('.btn-declore').count()
+  if (['pharmacien', 'administrateur'].includes(profil)) {
+    cadenasVisible === 1
+      ? ok(`profil ${profil} : « Rouvrir le parcours » est proposé`)
+      : ko(`profil ${profil} sans bouton de réouverture`)
   } else {
-    ko('rien n\'indique que la clôture est définitive')
+    cadenasVisible === 0
+      ? ok(`profil « ${profil ?? 'non attribué'} » : pas de bouton de réouverture`)
+      : ko('un profil sans droit se voit proposer la réouverture')
   }
 
   /* Remise en état : ce groupe laisse un parcours OUVERT, comme il l'a trouvé.
@@ -1879,21 +1892,108 @@ console.log('\n30. Clore un parcours avorté depuis l\'écran')
 }
 
 // ── 31. Conformité : ce qui est évalué, et où ──
-console.log('\n31. Conformité du processus en cours')
+console.log('\n31. Pied de page : parcours et processus séparés')
+{
+  await allerAuScenario()
+  await page.waitForTimeout(700)
+
+  /* Le pied mêlait deux portées : « Valider ce processus » et « ✓ Valider »
+     se touchaient, presque identiques, pour des effets très différents. */
+  const grpParcours = page.locator('.pied-parcours')
+  const grpProcessus = page.locator('.pied-processus')
+  await grpParcours.count() === 1 && await grpProcessus.count() === 1
+    ? ok('deux groupes distincts : parcours et processus')
+    : ko('les groupes du pied de page ne sont pas séparés')
+
+  /* Le parcours prend la PREMIÈRE LIGNE du pied, entière : mesuré, les deux
+     groupes ne tiennent pas côte à côte sur 1400 px, et la séparation ne doit
+     pas dépendre de la largeur de la fenêtre. Ce qu'on vérifie est donc
+     « au-dessus et à gauche », pas « à gauche de ». */
+  const bPar = await grpParcours.boundingBox()
+  const bProc = await grpProcessus.boundingBox()
+  bPar.y < bProc.y && bPar.x <= bProc.x
+    ? ok('les gestes du parcours occupent la première ligne du pied')
+    : ko(`parcours (${bPar.x}, ${bPar.y}), processus (${bProc.x}, ${bProc.y})`)
+
+  // Chaque groupe porte ce qui le concerne, et rien d'autre.
+  const tPar = await grpParcours.innerText()
+  const parComplet = /Valider le parcours/.test(tPar) && /Clore le parcours/.test(tPar)
+  parComplet
+    ? ok('le groupe « parcours » porte la validation et la clôture')
+    : ko(`groupe parcours : « ${tPar.replace(/\n/g, ' | ').slice(0, 90)} »`)
+  const tProc = await grpProcessus.innerText()
+  const procPropre = /Enregistrer/.test(tProc) && !/Clore le parcours/.test(tProc)
+  procPropre
+    ? ok('le groupe « processus » ne porte aucun geste de parcours')
+    : ko(`groupe processus : « ${tProc.replace(/\n/g, ' | ').slice(0, 90)} »`)
+
+  /* Les deux boutons d'export venaient de la maquette et n'ont jamais rien
+     fait. Désarmés plutôt que retirés : l'export est demandé (§8), il n'est
+     pas encore écrit — mais un bouton d'apparence active qui ne fait rien est
+     le défaut qu'on a déjà corrigé sur la croix de la barre de titre. */
+  const exports = page.locator('.pied-parcours .f-btn')
+  const nbExports = await exports.count()
+  let armes = 0
+  for (let i = 0; i < nbExports; i++) {
+    if (!(await exports.nth(i).isDisabled())) armes++
+  }
+  armes === 0
+    ? ok(`${nbExports} bouton(s) d'export désarmés tant que l'export n'existe pas`)
+    : ko(`${armes} bouton(s) d'export d'apparence active et sans effet`)
+
+  // ── Le cadenas : rouvrir un processus validé ──
+  const proc = page.locator('.proc')
+  const nProc = await proc.count()
+  let trouve = false
+  for (let i = 0; i < nProc && !trouve; i++) {
+    await proc.nth(i).click()
+    await page.waitForTimeout(700)
+    if (await page.locator('.btn-cadenas').count() === 1) trouve = true
+  }
+  if (!trouve) {
+    console.log('  · aucun processus validé sur ce dossier — cadenas sans objet')
+  } else {
+    ok('un processus validé porte le cadenas de réouverture')
+    const avant = (await page.locator('.proc-etat').innerText()).trim()
+    await page.locator('.btn-cadenas').click()
+    await page.waitForTimeout(1500)
+    const apres = (await page.locator('.proc-etat').innerText()).trim()
+    avant !== apres && /Valider ce processus/.test(apres)
+      ? ok(`le cadenas rouvre le processus (« ${avant} » → « ${apres} »)`)
+      : ko(`le processus n'a pas rouvert : « ${avant} » → « ${apres} »`)
+    await page.locator('.btn-cadenas').count() === 0
+      ? ok('le cadenas disparaît une fois le processus rouvert')
+      : ko('le cadenas subsiste sur un processus en cours')
+    // Remise en état : le processus est revalidé.
+    await page.locator('.proc-etat').click()
+    await page.waitForTimeout(1500)
+  }
+}
+
+console.log('\n32. Conformité du processus en cours')
 {
   await allerAuScenario()
   await page.waitForTimeout(600)
 
   /* La zone nomme le PROCESSUS évalué, et non plus « Conformité : » tout court
      sur un dossier dont l'opérateur ne voit qu'un onzième à l'écran. */
+  /* Le nom du processus évalué n'est plus répété dans la zone : il est porté
+     par le libellé du groupe, juste à côté. Le répéter donnait deux fois la
+     même information sur une rangée déjà chargée. C'est donc le libellé du
+     groupe qu'on vérifie. */
   const zone = page.locator('.conf-grp')
   const texteZone = await zone.innerText()
+  const libelleGroupe = (await page.locator('.pied-processus .pied-lbl').innerText()).trim()
   const nomProc = (await page.locator('.ph-name').innerText()).replace(/^\d+\.\s*/, '').trim()
-  if (/coche\(s\) non verte\(s\)/.test(texteZone) || texteZone.includes(nomProc)) {
-    ok(`la zone de conformité évalue le processus affiché (« ${texteZone.split('\n')[0].slice(0, 46)} »)`)
-  } else {
-    ko(`la zone ne nomme pas ce qu'elle évalue : « ${texteZone.replace(/\n/g, ' | ').slice(0, 90)} »`)
-  }
+  const nomme = libelleGroupe.length > 0 &&
+    nomProc.toUpperCase().startsWith(libelleGroupe.replace(/…$/, '').toUpperCase())
+  nomme
+    ? ok(`la zone de conformité est rattachée au processus affiché (« ${libelleGroupe} »)`)
+    : ko(`groupe « ${libelleGroupe} » pour le processus « ${nomProc} »`)
+  const litLesCoches = /Conforme/.test(texteZone) || /obligatoire/.test(texteZone)
+  litLesCoches
+    ? ok(`la zone dit l'état des coches (« ${texteZone.replace(/\n/g, ' | ').slice(0, 54)} »)`)
+    : ko(`la zone ne dit rien d'exploitable : « ${texteZone.replace(/\n/g, ' | ')} »`)
 
   /* Le verdict vient du serveur : l'écran l'affiche, il ne le calcule pas.
      Ce que la vérification éprouve, c'est que les deux disent la même chose —
@@ -1946,7 +2046,7 @@ console.log('\n31. Conformité du processus en cours')
   }
 }
 
-console.log('\n32. Console du navigateur et réseau')
+console.log('\n33. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
