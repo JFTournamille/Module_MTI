@@ -74,6 +74,26 @@ const reouvertures = computed(() =>
   store.clotures.filter((c) => c.reouvert_le).length)
 const declotureOuverte = ref(false)
 const motifDecloture = ref('')
+
+/* Quarantaine. Poser est ouvert à tous ; lever demande un profil avancé —
+   même liste que la réouverture d'un parcours clos, et c'est le SERVEUR qui
+   refuse. Ce calcul ne sert qu'à ne pas proposer un geste qui sera refusé. */
+const quarantaineOuverte = ref(false)
+const motifQuarantaine = ref('')
+const leveeOuverte = ref(false)
+const motifLevee = ref('')
+async function poserQuarantaine () {
+  if (await store.mettreEnQuarantaine(motifQuarantaine.value)) {
+    quarantaineOuverte.value = false
+    motifQuarantaine.value = ''
+  }
+}
+async function leverQuarantaine () {
+  if (await store.leverQuarantaine(motifLevee.value)) {
+    leveeOuverte.value = false
+    motifLevee.value = ''
+  }
+}
 async function declore () {
   if (await store.declore(motifDecloture.value)) {
     declotureOuverte.value = false
@@ -179,6 +199,30 @@ const blocages = computed(() => {
   <div class="dlg">
     <div class="titlebar">
       <span>{{ TITRES[onglet] }}</span>
+
+      <!-- L'opérateur connecté vivait dans l'en-tête du DOSSIER : il
+           disparaissait donc du tableau de bord, de la configuration et des
+           codifications — c'est-à-dire partout où l'on travaille sans dossier
+           ouvert. Or savoir SOUS QUEL NOM on agit vaut pour tous les écrans :
+           c'est ce nom qui signera la prochaine saisie, et c'est lui qu'il
+           faut changer avant de commencer, pas après. La barre de titre est
+           le seul bandeau présent sur tous les onglets. -->
+      <div class="op-barre">
+        <template v-if="session.selectionPossible">
+          <label for="op-sel">Opérateur</label>
+          <select id="op-sel" class="op-sel"
+                  :value="session.operateur?.id ?? ''"
+                  @change="session.choisir($event.target.value)">
+            <option v-for="o in session.operateurs" :key="o.id" :value="o.id">
+              {{ o.nom }}{{ o.profil ? ` — ${o.profil}` : '' }}
+            </option>
+          </select>
+        </template>
+        <template v-else>
+          <label>Opérateur</label>
+          <span class="op-nom">{{ store.operateurConnecte.nom }}</span>
+        </template>
+      </div>
       <!-- Ce bouton venait de la maquette et ne faisait RIEN : il avait
            l'apparence d'une fermeture de fenêtre, or il n'y a pas de fenêtre à
            fermer dans un navigateur. Il ferme donc ce qui est réellement
@@ -310,21 +354,6 @@ const blocages = computed(() => {
                  @change="store.enregistrerEntete()">
         </div>
       </div>
-      <div class="op-badge">
-        <template v-if="session.selectionPossible">
-          <label for="op-sel">Opérateur connecté</label>
-          <select id="op-sel" class="op-sel"
-                  :value="session.operateur?.id ?? ''"
-                  @change="session.choisir($event.target.value)">
-            <option v-for="o in session.operateurs" :key="o.id" :value="o.id">
-              {{ o.nom }}{{ o.profil ? ` — ${o.profil}` : '' }}
-            </option>
-          </select>
-        </template>
-        <template v-else>
-          Opérateur connecté<span>{{ store.operateurConnecte.nom }}</span>
-        </template>
-      </div>
     </div>
 
     <div class="body">
@@ -452,10 +481,15 @@ const blocages = computed(() => {
                 class="btn-cadenas"
                 title="Rouvrir ce processus pour compléter ou corriger des éléments"
                 @click="store.changerEtatProcessus('en_cours')">🔓</button>
+        <!-- « Enregistrer » laissait croire à un geste terminal, alors que le
+             processus reste ouvert et reprenable : c'est une mise en attente,
+             pas une conclusion. Le geste terminal, c'est « Valider ce
+             processus », juste à côté. -->
         <button class="f-btn" v-if="!store.lectureSeule"
                 :disabled="store.enregistrement"
+                title="Enregistrer les saisies et laisser le processus ouvert"
                 @click="store.enregistrerEntete().then(() => store.enregistrerProcessus())">
-          Enregistrer
+          Laisser en attente
         </button>
         <span class="etat-enr">
           <template v-if="store.enregistrement">enregistrement…</template>
@@ -483,6 +517,11 @@ const blocages = computed(() => {
           @click="store.validerDossier()"
         >{{ !store.dossier.conformite && store.conformiteAutomatiquePossible
           ? '✓ Valider le parcours — conforme (auto)' : '✓ Valider le parcours' }}</button>
+        <button
+          class="btn-quar" v-if="!store.lectureSeule && !store.dossier.quarantaine"
+          title="Signaler un doute sur ce traitement : filigrane et mention au tableau de bord"
+          @click="quarantaineOuverte = true"
+        >⚠ Quarantaine</button>
         <button
           class="btn-clore" v-if="!store.lectureSeule"
           title="Le parcours s'est arrêté sans aboutir : clore la ligne du tableau de bord"
@@ -528,6 +567,91 @@ const blocages = computed(() => {
           Le rouvrir demande un profil pharmacien ou administrateur.
         </template>
       </span>
+    </div>
+
+    <!-- FILIGRANE DE QUARANTAINE.
+         Il couvre tout l'écran et suit le défilement : un bandeau en haut de
+         page se perd dès qu'on descend dans un tableau de trente points, et
+         c'est précisément à ce moment-là qu'il faut se souvenir que le
+         traitement est douteux.
+         `pointer-events: none` : il signale, il ne gêne pas. À ce stade la
+         quarantaine N'INTERDIT rien — la saisie, la validation et
+         l'administration restent possibles. Rendre le filigrane cliquable
+         n'aurait fait qu'empêcher de travailler sans rien protéger. -->
+    <div v-if="store.dossier.quarantaine" class="quar-filigrane" aria-hidden="true">
+      <div class="quar-motif">QUARANTAINE</div>
+    </div>
+
+    <!-- Et une mention lisible, elle, qui porte le motif : un filigrane dit
+         qu'il y a un problème, il ne dit pas lequel. -->
+    <div v-if="store.dossier.quarantaine" class="quar-bandeau">
+      <strong>⚠ Traitement en quarantaine</strong> — {{ store.dossier.quarantaineMotif }}
+      <button v-if="peutDeclore" class="quar-b" @click="leveeOuverte = true">
+        Lever la quarantaine
+      </button>
+      <span v-else class="quar-note">
+        La levée demande un profil pharmacien ou administrateur.
+      </span>
+    </div>
+
+    <!-- Mise en quarantaine : ouverte à tous. Quiconque constate un doute doit
+         pouvoir le signaler dans la seconde ; attendre une autorisation serait
+         le mauvais réflexe. -->
+    <div class="cat-ov" :class="{ show: quarantaineOuverte }" @click.self="quarantaineOuverte = false">
+      <div class="cat-dlg clo-dlg">
+        <div class="cat-hd">
+          Mettre le traitement en quarantaine
+          <button title="Annuler" @click="quarantaineOuverte = false">✕</button>
+        </div>
+        <div class="clo-corps">
+          <p class="clo-p">
+            Le traitement du dossier <strong>{{ store.dossier.reference }}</strong> sera
+            signalé en quarantaine : filigrane sur tout l'écran, mention au tableau
+            de bord.
+          </p>
+          <p class="clo-p clo-att">
+            <strong>La quarantaine signale, elle n'interdit rien à ce stade.</strong>
+            La saisie, la validation et l'administration restent possibles — le
+            blocage sera écrit quand le circuit aura été arrêté. Traiter le
+            signalement reste un acte humain.
+          </p>
+          <label class="clo-l" for="quar-motif">Motif — ce qui fait douter</label>
+          <textarea id="quar-motif" class="clo-t" rows="3" v-model="motifQuarantaine"
+                    placeholder="Aspect de la poche, alarme de cuve, écart de température, doute sur l'identité du lot…"></textarea>
+        </div>
+        <div class="clo-b">
+          <button class="btn-ann" @click="quarantaineOuverte = false">Annuler</button>
+          <button class="btn-quar-ok" :disabled="motifQuarantaine.trim().length < 5"
+                  @click="poserQuarantaine()">Mettre en quarantaine</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Levée : réservée aux profils avancés, refusée par le serveur. -->
+    <div class="cat-ov" :class="{ show: leveeOuverte }" @click.self="leveeOuverte = false">
+      <div class="cat-dlg clo-dlg">
+        <div class="cat-hd">
+          Lever la quarantaine
+          <button title="Annuler" @click="leveeOuverte = false">✕</button>
+        </div>
+        <div class="clo-corps">
+          <p class="clo-p">
+            Motif de la mise en quarantaine : <em>{{ store.dossier.quarantaineMotif }}</em>
+          </p>
+          <p class="clo-p clo-att">
+            Lever la quarantaine, c'est <strong>déclarer que le doute est levé</strong>.
+            L'épisode reste tracé — motif, auteur et date des deux gestes.
+          </p>
+          <label class="clo-l" for="levee-motif">Motif — ce qui lève le doute</label>
+          <textarea id="levee-motif" class="clo-t" rows="3" v-model="motifLevee"
+                    placeholder="Contrôle refait conforme, certificat reçu, avis du fabricant…"></textarea>
+        </div>
+        <div class="clo-b">
+          <button class="btn-ann" @click="leveeOuverte = false">Annuler</button>
+          <button class="btn-declore-ok" :disabled="motifLevee.trim().length < 5"
+                  @click="leverQuarantaine()">Lever</button>
+        </div>
+      </div>
     </div>
 
     <!-- Clôture : la confirmation dit ce que le geste engage. Cette fenêtre

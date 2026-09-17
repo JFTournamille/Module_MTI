@@ -78,7 +78,14 @@ export const useParcours = defineStore('parcours', () => {
     /* Clôture d'un parcours avorté. Distincte de la conclusion : un parcours
        arrêté en chemin n'est ni conforme ni non conforme, il est inachevé. */
     motifCloture: '',
-    closLe: null
+    closLe: null,
+    /* Quarantaine : elle SIGNALE, elle ne change pas le statut. Un dossier en
+       quarantaine reste « en cours » et se saisit — c'est le périmètre voulu à
+       ce stade, et c'est ce que le filigrane doit rendre impossible à
+       oublier. */
+    quarantaine: false,
+    quarantaineMotif: '',
+    quarantaineLe: null
   })
 
   /* L'opérateur n'est plus en dur : il vient de la session. Le rendre calculé
@@ -272,6 +279,9 @@ export const useParcours = defineStore('parcours', () => {
         statut: d.dossier.statut,
         motifCloture: d.dossier.motif_cloture ?? '',
         closLe: d.dossier.clos_le ?? null,
+        quarantaine: d.dossier.quarantaine === true,
+        quarantaineMotif: d.dossier.quarantaine_motif ?? '',
+        quarantaineLe: d.dossier.quarantaine_le ?? null,
         /* Le patient vient du serveur, qui ne le joint que si le dossier en
            porte un. L'omettre ici faisait annoncer « en attente d'allocation »
            sur un dossier alloué. */
@@ -294,7 +304,12 @@ export const useParcours = defineStore('parcours', () => {
            Distincte de celle du dossier : le pied de page évalue le processus
            qu'on valide, pas un dossier dont on ne voit qu'un onzième. */
         conformite: p.conformite ?? null,
-        conformiteAutomatique: p.conformite_automatique === true
+        conformiteAutomatique: p.conformite_automatique === true,
+        /* Le compte d'exemplaires appartient au PROCESSUS : deux cuves à la
+           réception, une poche à la préparation. Un compte unique porté par le
+           dossier obligeait à prendre le maximum et à cocher « sans objet »
+           ailleurs — ce qu'une fiche de traçabilité ne doit pas contenir. */
+        nbExemplaires: Number(p.nb_exemplaires) || 1
       }))
       processusIds.value = d.processus.map((p) => p.id)
 
@@ -570,6 +585,54 @@ export const useParcours = defineStore('parcours', () => {
     return true
   }
 
+  /**
+   * Met le traitement en quarantaine, ou l'en sort.
+   *
+   * POSER est ouvert à tous : quiconque constate un doute — une poche
+   * suspecte, une alarme de cuve — doit pouvoir le signaler dans la seconde.
+   * LEVER est réservé aux profils avancés, et le serveur le refuse en 403 :
+   * lever une quarantaine, c'est déclarer que le doute est levé.
+   */
+  async function mettreEnQuarantaine (motif) {
+    if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
+    const m = String(motif ?? '').trim()
+    if (m.length < 5) {
+      erreurDossier.value = 'Indiquer ce qui fait douter (5 caractères au moins).'
+      return false
+    }
+    const r = await appel(`/api/dossiers/${dossierId.value}/quarantaine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ motif: m })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Mise en quarantaine refusée (${r.status}).`)
+      return false
+    }
+    await ouvrirDossier(dossierId.value)
+    return true
+  }
+
+  async function leverQuarantaine (motif) {
+    if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
+    const m = String(motif ?? '').trim()
+    if (m.length < 5) {
+      erreurDossier.value = 'Indiquer ce qui lève le doute (5 caractères au moins).'
+      return false
+    }
+    const r = await appel(`/api/dossiers/${dossierId.value}/quarantaine`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ motif: m })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Levée refusée (${r.status}).`)
+      return false
+    }
+    await ouvrirDossier(dossierId.value)
+    return true
+  }
+
   /** Historique des clôtures et réouvertures, pour le bandeau du dossier clos. */
   const clotures = ref([])
   async function chargerClotures () {
@@ -682,9 +745,49 @@ export const useParcours = defineStore('parcours', () => {
    * ensemble, et surtout pas avec le nombre d'exemplaires du produit.
    * `multi: 'photo' | 'cuve'` — compte porté par le dossier, comme avant.
    */
-  const nbCopies = (point) => {
+  const nbCopies = (point, idx = selection.value) => {
     if (point.exemplaires) return Math.max(1, Math.min(12, Number(point.exemplaires)))
-    return point.multi ? Math.max(1, Math.min(10, Number(dossier.nbExemplaires) || 1)) : 1
+    if (!point.multi) return 1
+    /* Le compte vient du PROCESSUS affiché, plus du dossier. Le repli sur
+       `dossier.nbExemplaires` couvre le cas d'un processus pas encore chargé —
+       jamais celui d'un processus qui aurait délibérément 1. */
+    const n = processus.value[idx]?.nbExemplaires ?? dossier.nbExemplaires
+    return Math.max(1, Math.min(20, Number(n) || 1))
+  }
+
+  /**
+   * Change le nombre d'exemplaires du processus affiché.
+   *
+   * Enregistré aussitôt : c'est un paramètre de la fiche, pas une saisie, et
+   * l'attendre au prochain « Laisser en attente » ferait perdre les lignes
+   * ajoutées à un changement d'onglet.
+   */
+  async function changerExemplaires (n, idx = selection.value) {
+    const pid = processusIds.value[idx]
+    if (!pid) { erreurDossier.value = 'Processus inconnu côté serveur.'; return false }
+    const v = Math.max(1, Math.min(20, Number(n) || 1))
+    const r = await appel(`/api/processus/${pid}/exemplaires`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nbExemplaires: v })
+    })
+    if (!r.ok) {
+      erreurDossier.value = await messageDe(r, `Changement refusé (${r.status}).`)
+      return false
+    }
+    const corps = await r.json().catch(() => null)
+    processus.value[idx].nbExemplaires = v
+    /* Réduire le compte efface en base les saisies des exemplaires retirés :
+       les garder en mémoire ferait réapparaître des valeurs fantômes si on
+       remonte le compte. */
+    if (corps?.saisiesEffacees) {
+      for (const cle of Object.keys(saisies)) {
+        const [iProc, , , ex] = cle.split('|')
+        if (Number(iProc) === idx && Number(ex) > v) delete saisies[cle]
+      }
+    }
+    await rafraichirCoches()
+    return true
   }
 
   /**
@@ -1254,12 +1357,12 @@ export const useParcours = defineStore('parcours', () => {
   return {
     modele, catalogue, chargement, horsLigne,
     processus, selection, processusCourant, dossier, operateurConnecte,
-    saisies, lignesReception, lignesStandard, nbCopies,
+    saisies, lignesReception, lignesStandard, nbCopies, changerExemplaires,
     charger, instancierProcessus, selectionner, ajouterProcessus,
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
     lectureSeule, clos, creerDossier, ouvrirDossier, enregistrerEntete,
     enregistrerProcessus, validerDossier, clore, declore, fermerDossier, dossierMemorise,
-    clotures, chargerClotures,
+    clotures, chargerClotures, mettreEnQuarantaine, leverQuarantaine,
     changerEtatProcessus,
     commentaireOuvert, basculerCommentaire,
     signatures, pointsDoubleValidation, contresignature, chargerSignatures, contresigner,

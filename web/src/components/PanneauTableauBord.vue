@@ -236,11 +236,18 @@ const dateCourte = (v) => v
         <tbody>
           <tr v-for="d in dossiersAffiches" :key="d.id" class="tb-ligne"
               :class="{ fini: d.statutAffiche === 'termine' || d.statutAffiche === 'non_conforme',
-                        'tb-clos': d.statutAffiche === 'clos' }"
+                        'tb-clos': d.statutAffiche === 'clos',
+                        enQuarantaine: !!d.quarantaine }"
               tabindex="0" @click="emit('ouvrir', d.id)">
             <td class="ident">
               {{ d.reference }}
               <span v-if="d.nbAlarmes" class="tb-alarme" :title="`${d.nbAlarmes} relevé(s) hors seuil`">⚠</span>
+              <!-- La quarantaine ne change pas le statut : elle se signale à
+                   côté. La confondre avec un statut ferait disparaître un
+                   traitement douteux des vues où il faut justement le voir. -->
+              <div v-if="d.quarantaine" class="tb-quar" :title="d.quarantaine.motif">
+                ⚠ QUARANTAINE
+              </div>
             </td>
             <td class="meta">{{ d.numeroOrdonnancier || '—' }}</td>
             <td>{{ d.produit || '—' }}</td>

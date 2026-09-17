@@ -482,3 +482,62 @@ input[type=radio].ron{accent-color:#cc2200;}
 /* Badge du type « fichier », distinct de celui de la photo : c'est la
    différence que la demande porte, elle doit se voir dans le tableau. */
 .b-fichier{background:#4a3880;color:#fff;}
+
+/* ── Opérateur connecté, dans la barre de titre ─────────────────────────────
+   Il vivait dans l'en-tête du dossier, donc absent de tous les écrans sans
+   dossier ouvert. Savoir sous quel nom on agit vaut partout : c'est ce nom
+   qui signera la prochaine saisie. */
+.op-barre{display:flex;align-items:center;gap:7px;margin-left:auto;margin-right:12px;
+  font-weight:normal;font-size:12px;color:#d0c8f8;}
+.op-barre label{white-space:nowrap;}
+.op-barre .op-nom{color:#fff;font-weight:bold;font-size:13px;}
+.op-barre .op-sel{font:inherit;font-size:12px;padding:2px 6px;border-radius:2px;
+  border:1px solid #7a68b8;background:#efeaff;color:#1e0e50;max-width:280px;}
+
+/* Nombre d'exemplaires du processus, dans son en-tête : c'est là qu'il agit,
+   et c'est là qu'on le cherche. */
+.ph-ex{margin-left:auto;margin-right:12px;font-size:11px;color:#d0c8f8;
+  display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.ph-ex input{width:48px;font:inherit;font-size:12px;padding:1px 4px;border-radius:2px;
+  border:1px solid #7a68b8;background:#fff;color:#1e0e50;}
+
+/* ── Quarantaine ────────────────────────────────────────────────────────────
+   Le filigrane couvre TOUT l'écran et suit le défilement : un bandeau en haut
+   de page se perd dès qu'on descend dans un tableau de trente points, et c'est
+   précisément là qu'il faut se souvenir que le traitement est douteux.
+
+   `pointer-events:none` : il signale, il ne gêne pas. À ce stade la
+   quarantaine n'interdit rien — le rendre cliquable aurait empêché de
+   travailler sans rien protéger. */
+.quar-filigrane{position:fixed;inset:0;z-index:9000;pointer-events:none;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.quar-filigrane .quar-motif{
+  font-size:min(13vw, 190px);font-weight:900;letter-spacing:.09em;
+  color:rgba(190,30,30,.13);
+  /* Contour en plus du remplissage : sur un tableau blanc le remplissage seul
+     disparaît, sur un en-tête violet il sature. Le contour tient les deux. */
+  -webkit-text-stroke:2px rgba(190,30,30,.17);
+  transform:rotate(-24deg);white-space:nowrap;user-select:none;}
+
+/* La mention, elle, porte le motif : un filigrane dit qu'il y a un problème,
+   il ne dit pas lequel. */
+.quar-bandeau{background:#fdeeee;border-top:2px solid #b52a1c;color:#8c1d1d;
+  padding:5px 14px;font-size:12px;display:flex;align-items:center;gap:10px;
+  flex-wrap:wrap;position:relative;z-index:9001;}
+.quar-bandeau .quar-note{font-style:italic;opacity:.85;}
+.quar-b,.btn-quar-ok{background:#b52a1c;color:#fff;border:none;border-radius:2px;
+  padding:3px 10px;font-size:11px;font-weight:bold;cursor:pointer;}
+.btn-quar-ok{padding:5px 12px;font-size:12px;}
+.quar-b:hover,.btn-quar-ok:hover{background:#c8331f;}
+.btn-quar-ok:disabled{opacity:.45;cursor:not-allowed;}
+
+/* Le bouton du pied : ocre plutôt que rouge — signaler un doute n'est pas une
+   faute, et un bouton alarmant se cliquerait moins vite qu'il ne le devrait. */
+.btn-quar{background:#a06000;color:#fff;border:none;padding:5px 12px;border-radius:2px;
+  font-size:12px;font-weight:bold;cursor:pointer;white-space:nowrap;}
+.btn-quar:hover{background:#b56c00;}
+
+/* Ligne en quarantaine au tableau de bord : c'est là qu'on voit dix dossiers
+   d'un coup, et qu'un traitement douteux doit sauter aux yeux. */
+.tb-quar{color:#b52a1c;font-weight:bold;white-space:nowrap;}
+.tb-ligne.enQuarantaine td{background:#fdf4f4;}

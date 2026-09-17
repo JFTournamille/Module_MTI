@@ -74,6 +74,26 @@ réglementaires, pas à des préférences techniques.
   **validé** ne se rouvre pas — il n'est pas clos, il est allé au bout.
   Les processus `annule` redeviennent `a_venir` ; ceux déjà `valide` ne bougent
   pas, les rouvrir effacerait leur validation.
+- **Le nombre d'exemplaires appartient au PROCESSUS**
+  (`dossier_processus.nb_exemplaires`), plus au dossier : ce qui se compte
+  change d'un processus à l'autre — deux cuves à la réception, une poche à la
+  préparation. Un compte unique obligeait à prendre le maximum et à cocher
+  « sans objet » ailleurs. **Réduire le compte efface les saisies des
+  exemplaires retirés** : les garder laisserait en base des relevés que plus
+  personne ne peut relire.
+- **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
+  stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
+  reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le
+  périmètre a changé. Ce qui fera la valeur de la fonction, c'est ce qui sera
+  interdit pendant — un MTI en quarantaine ne devrait pas pouvoir être
+  administré. **Poser** est ouvert à tous (signaler un doute ne doit pas
+  attendre une autorisation) ; **lever** est réservé aux profils avancés, comme
+  la réouverture d'un parcours clos. L'historique vit dans `mti.quarantaine`,
+  un épisode par mise en quarantaine.
+- **L'opérateur connecté vit dans la barre de titre**, pas dans l'en-tête du
+  dossier : c'est le nom qui signera la prochaine saisie, il doit être visible
+  et changeable sur tous les écrans. Ne pas le répéter ailleurs — deux sources
+  pour une même information, dont une qui ne se change pas.
 - **La conformité automatique est CONSTATÉE PAR LE SERVEUR, jamais affirmée
   par le client.** La route de validation reçoit `conformite: 'auto'` — une
   demande de constat — et interroge `mti.coches_non_vertes()`. Ne jamais

@@ -56,14 +56,21 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
         <input type="date" style="width:115px;"
                v-model="store.dossier.datePeremption" :disabled="lectureSeule">
       </div>
+      <!-- Le nombre d'exemplaires appartient au PROCESSUS, plus au dossier :
+           deux cuves à la réception, une poche à la préparation. Un compte
+           unique obligeait à prendre le maximum et à cocher « sans objet »
+           ailleurs — ce qu'une fiche de traçabilité ne doit pas contenir.
+           Plus de bouton « Appliquer » : la duplication est réactive. -->
       <div class="mi" style="border-left:2px solid #c0a8e8;padding-left:10px;">
-        <label>N exemplaires</label>
-        <!-- Plus de bouton « Appliquer » : la duplication est réactive. -->
-        <input type="number" min="1" max="10" style="width:40px;"
-               v-model.number="store.dossier.nbExemplaires" :disabled="lectureSeule">
-        <span class="nbadge">n = {{ store.dossier.nbExemplaires }}</span>
+        <label>N exemplaires (ce processus)</label>
+        <input type="number" min="1" max="20" style="width:40px;"
+               :value="store.processusCourant?.nbExemplaires ?? 1" :disabled="lectureSeule"
+               @change="store.changerExemplaires($event.target.value)">
+        <span class="nbadge">n = {{ store.processusCourant?.nbExemplaires ?? 1 }}</span>
       </div>
-      <div class="ubadge">👤 {{ store.operateurConnecte.nom }}</div>
+      <!-- L'opérateur est désormais dans la barre de titre, présent sur tous
+           les écrans : le répéter ici donnait deux sources pour une même
+           information, et celle-ci ne se changeait pas. -->
     </div>
 
     <!-- Préallocation : c'est elle qui fait apparaître l'identité patient -->

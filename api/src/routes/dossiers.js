@@ -373,6 +373,54 @@ export default async function dossiers (app) {
   // Valider un processus ouvre le suivant encore à venir. C'est l'enchaînement
   // chronologique du parcours ; les processus qu'on veut pouvoir réaliser sans
   // attendre s'ouvrent explicitement (etat « en_cours »).
+  /**
+   * Nombre d'exemplaires DU PROCESSUS.
+   *
+   * Il valait pour le dossier entier : un seul compte pour onze processus,
+   * alors que ce qui se compte change d'un processus à l'autre — deux cuves à
+   * la réception, une poche à la préparation. Il fallait donc prendre le
+   * maximum et cocher « sans objet » ailleurs, ce qu'une fiche de traçabilité
+   * ne doit pas contenir.
+   */
+  app.patch('/api/processus/:id/exemplaires', async (request, reply) => {
+    const n = Number(request.body?.nbExemplaires)
+    if (!Number.isInteger(n) || n < 1 || n > 20) {
+      return reply.code(400).send({ erreur: 'nbExemplaires doit être un entier de 1 à 20.' })
+    }
+
+    const { rows: ctx } = await requete(
+      `SELECT d.statut FROM mti.dossier_processus dp
+         JOIN mti.dossier d ON d.id = dp.dossier_id
+        WHERE dp.id = $1`, [request.params.id])
+    if (!ctx.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
+    if (estFige(ctx[0].statut)) {
+      return reply.code(409).send({
+        erreur: `${prefixeFige(ctx[0].statut)} : le nombre d'exemplaires est figé.`
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      /* RÉDUIRE le compte efface les saisies des exemplaires supprimés : sans
+         cela elles resteraient en base, invisibles à l'écran, et un dossier
+         validé porterait des relevés que personne ne peut plus relire. Le
+         retrait est tracé comme toute écriture. */
+      const { rows: [avant] } = await client.query(
+        'SELECT nb_exemplaires FROM mti.dossier_processus WHERE id = $1', [request.params.id])
+      let effacees = 0
+      if (n < avant.nb_exemplaires) {
+        const { rowCount } = await client.query(
+          'DELETE FROM mti.saisie WHERE dossier_processus_id = $1 AND exemplaire > $2',
+          [request.params.id, n])
+        effacees = rowCount
+      }
+      const { rows } = await client.query(
+        `UPDATE mti.dossier_processus SET nb_exemplaires = $2
+          WHERE id = $1 RETURNING id, nb_exemplaires`,
+        [request.params.id, n])
+      return { ...rows[0], saisiesEffacees: effacees }
+    })
+  })
+
   app.post('/api/processus/:id/etat', async (request, reply) => {
     const etat = (request.body ?? {}).etat
     if (!['a_venir', 'en_cours', 'valide'].includes(etat)) {
@@ -572,6 +620,7 @@ export default async function dossiers (app) {
       `SELECT d.id, d.reference, d.numero_lot, d.statut, d.conformite, d.preallocation,
               d.patient_id, d.prescription_faite, d.cree_le, d.valide_le,
               d.numero_ordonnancier, d.motif_cloture, d.clos_le,
+              d.quarantaine, d.quarantaine_motif, d.quarantaine_le,
               btrim(concat_ws(' ', clos.titre, clos.prenom, clos.nom)) AS clos_par_libelle,
               coalesce(d.designation_produit, pr.denomination) AS produit,
               pr.id AS produit_id, pat.reference AS patient_reference,
@@ -647,6 +696,12 @@ export default async function dossiers (app) {
           : r.statut === 'annule' ? 'Parcours clos'
             : (r.etape ?? 'Tous les processus validés'),
         numeroOrdonnancier: r.numero_ordonnancier,
+        /* La quarantaine SIGNALE : elle ne change pas le statut du dossier, qui
+           reste « en cours ». La confondre avec un statut ferait disparaître
+           un traitement en quarantaine des vues où on doit justement le voir. */
+        quarantaine: r.quarantaine === true
+          ? { motif: r.quarantaine_motif, le: r.quarantaine_le }
+          : null,
         /* Le motif remonte : le tableau de bord doit pouvoir dire POURQUOI un
            parcours s'est arrêté, sans rouvrir le dossier. */
         cloture: r.statut === 'annule'
@@ -685,7 +740,7 @@ export default async function dossiers (app) {
 
     const { rows: processus } = await requete(
       `SELECT id, ordre, code, nom, gabarit, externe, definition, etat,
-              conformite, conformite_automatique
+              conformite, conformite_automatique, nb_exemplaires
          FROM mti.dossier_processus WHERE dossier_id = $1 ORDER BY ordre`,
       [request.params.id]
     )
@@ -1140,6 +1195,111 @@ export default async function dossiers (app) {
 
       return { id: rows[0].id, statut: rows[0].statut, episode: episode[0] ?? null }
     })
+  })
+
+  // ── Quarantaine ──────────────────────────────────────────────────────────
+  //
+  // PÉRIMÈTRE : à ce stade la quarantaine SIGNALE, elle n'INTERDIT rien.
+  // L'écran porte un filigrane, le tableau de bord une mention ; la saisie, la
+  // validation et l'administration restent possibles. C'est un choix explicite
+  // — ce qui fera la valeur de la fonction, c'est ce qui sera interdit
+  // pendant, et cela demande que le circuit réel soit arrêté.
+  //
+  // ASYMÉTRIE VOLONTAIRE : METTRE en quarantaine est ouvert à tous. Quiconque
+  // constate un doute — une poche suspecte, une alarme de cuve — doit pouvoir
+  // le signaler dans la seconde ; exiger une autorisation serait exactement le
+  // mauvais réflexe. EN SORTIR est réservé aux profils avancés : lever une
+  // quarantaine, c'est déclarer que le doute est levé.
+  app.post('/api/dossiers/:id/quarantaine', async (request, reply) => {
+    const motif = String(request.body?.motif ?? '').trim()
+    if (motif.length < 5) {
+      return reply.code(400).send({
+        erreur: 'Le motif de quarantaine est obligatoire et doit dire ce qui fait ' +
+                'douter (aspect de la poche, alarme de cuve, écart de température…).'
+      })
+    }
+    if (motif.length > 500) {
+      return reply.code(400).send({ erreur: 'Motif de quarantaine trop long (500 caractères).' })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      const { rows } = await client.query(
+        `UPDATE mti.dossier
+            SET quarantaine = true, quarantaine_motif = $2,
+                quarantaine_par = $3, quarantaine_le = now()
+          WHERE id = $1 AND NOT quarantaine
+          RETURNING id, quarantaine, quarantaine_motif, quarantaine_le`,
+        [request.params.id, motif, request.utilisateur.id])
+
+      if (!rows.length) {
+        const { rows: etat } = await client.query(
+          'SELECT quarantaine FROM mti.dossier WHERE id = $1', [request.params.id])
+        if (!etat.length) { reply.code(404); return { erreur: 'Dossier introuvable.' } }
+        reply.code(409)
+        return { erreur: 'Ce traitement est déjà en quarantaine.' }
+      }
+
+      await client.query(
+        'INSERT INTO mti.quarantaine (dossier_id, motif, pose_par) VALUES ($1, $2, $3)',
+        [request.params.id, motif, request.utilisateur.id])
+      return rows[0]
+    })
+  })
+
+  app.delete('/api/dossiers/:id/quarantaine', async (request, reply) => {
+    const profil = request.utilisateur?.profil ?? null
+    if (!PROFILS_DECLOTURE.has(profil)) {
+      return reply.code(403).send({
+        erreur: 'Lever une quarantaine demande un profil pharmacien ou ' +
+                `administrateur : c'est déclarer que le doute est levé. Profil courant : ${profil ?? 'non attribué'}.`,
+        code: 'profil_insuffisant'
+      })
+    }
+    const motif = String(request.body?.motif ?? '').trim()
+    if (motif.length < 5) {
+      return reply.code(400).send({
+        erreur: 'Le motif de levée est obligatoire : dire ce qui lève le doute.'
+      })
+    }
+
+    return transaction(request.utilisateur.id, request.ip, async (client) => {
+      const { rows } = await client.query(
+        `UPDATE mti.dossier
+            SET quarantaine = false, quarantaine_motif = NULL,
+                quarantaine_par = NULL, quarantaine_le = NULL
+          WHERE id = $1 AND quarantaine
+          RETURNING id, quarantaine`,
+        [request.params.id])
+      if (!rows.length) {
+        const { rows: etat } = await client.query(
+          'SELECT id FROM mti.dossier WHERE id = $1', [request.params.id])
+        if (!etat.length) { reply.code(404); return { erreur: 'Dossier introuvable.' } }
+        reply.code(409)
+        return { erreur: "Ce traitement n'est pas en quarantaine." }
+      }
+      /* L'épisode se referme dans l'historique au lieu de disparaître : un
+         traitement qui a été en quarantaine doit pouvoir le dire après coup. */
+      await client.query(
+        `UPDATE mti.quarantaine
+            SET motif_levee = $2, leve_par = $3, leve_le = now()
+          WHERE dossier_id = $1 AND leve_le IS NULL`,
+        [request.params.id, motif, request.utilisateur.id])
+      return rows[0]
+    })
+  })
+
+  app.get('/api/dossiers/:id/quarantaines', async (request) => {
+    const { rows } = await requete(
+      `SELECT q.id, q.motif, q.pose_le, q.motif_levee, q.leve_le,
+              btrim(concat_ws(' ', pu.titre, pu.prenom, pu.nom)) AS pose_par,
+              btrim(concat_ws(' ', lu.titre, lu.prenom, lu.nom)) AS leve_par
+         FROM mti.quarantaine q
+         LEFT JOIN mti.utilisateur pu ON pu.id = q.pose_par
+         LEFT JOIN mti.utilisateur lu ON lu.id = q.leve_par
+        WHERE q.dossier_id = $1
+        ORDER BY q.pose_le DESC`,
+      [request.params.id])
+    return rows
   })
 
   // ── Historique des clôtures d'un dossier ─────────────────────────────────

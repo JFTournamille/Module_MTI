@@ -1120,5 +1120,152 @@ console.log('\n23. Fichiers joints — dissociés des photos')
   }
 }
 
+// ── 24. Le nombre d'exemplaires appartient au processus ──
+console.log('\n24. Exemplaires par processus')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E exemplaires' })
+  const dos = r.corps?.id
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const recep = r.corps.processus.find((p) => p.code === 'RECEPTION')
+  const autre = r.corps.processus.find((p) => p.code !== 'RECEPTION' && !p.externe)
+
+  recep?.nb_exemplaires === 1 && autre?.nb_exemplaires === 1
+    ? ok('chaque processus démarre à 1 exemplaire')
+    : ko(`réception ${recep?.nb_exemplaires}, autre ${autre?.nb_exemplaires}`)
+
+  r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`, { nbExemplaires: 3 })
+  r.statut === 200 && r.corps?.nb_exemplaires === 3
+    ? ok('réception portée à 3 exemplaires')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  /* LE POINT QUI COMPTE : le compte est PROPRE au processus. Un compte unique
+     porté par le dossier obligeait à prendre le maximum et à cocher « sans
+     objet » ailleurs. */
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const apres = r.corps.processus
+  apres.find((p) => p.code === 'RECEPTION').nb_exemplaires === 3 &&
+  apres.find((p) => p.id === autre.id).nb_exemplaires === 1
+    ? ok('les autres processus gardent leur propre compte')
+    : ko('le changement a débordé sur les autres processus')
+
+  for (const n of [0, 21, 'trois']) {
+    r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`, { nbExemplaires: n })
+    r.statut === 400 ? ok(`nbExemplaires = ${JSON.stringify(n)} refusé (400)`)
+      : ko(`${JSON.stringify(n)} accepté (${r.statut})`)
+  }
+
+  /* RÉDUIRE le compte efface les saisies des exemplaires retirés : les garder
+     laisserait en base des relevés que plus personne ne peut relire, et un
+     dossier validé en porterait la trace sans les montrer. */
+  const pt = recep.definition.sections
+    .flatMap((sec, iS) => (sec.points ?? []).map((p, iP) => ({ p, iS, iP })))
+    .find((x) => x.p.multi)
+  if (!pt) {
+    console.log('  · aucun point « multi » à la réception — effacement non éprouvé')
+  } else {
+    await j('PUT', `/api/processus/${recep.id}/saisies`, { saisies: [3, 2, 1].map((ex) => ({
+      sectionIndex: pt.iS, pointIndex: pt.iP, pointNum: pt.p.num ?? null,
+      pointType: pt.p.type, exemplaire: ex, operateurRole: 'op1',
+      obligatoire: false, valeurNum: pt.p.type === 'valeur' ? -170 : null,
+      reponse: pt.p.type === 'ouinon' ? 'oui' : null,
+      valeurTexte: ['texte', 'date', 'liste'].includes(pt.p.type) ? 'x' : null
+    })) })
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const avant = r.corps.saisies.filter((x) => x.dossier_processus_id === recep.id).length
+    r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`, { nbExemplaires: 1 })
+    r.corps?.saisiesEffacees >= 1
+      ? ok(`réduction à 1 : ${r.corps.saisiesEffacees} saisie(s) d'exemplaires retirés effacée(s)`)
+      : ko(`aucune saisie effacée alors que ${avant} existaient`)
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const restantes = r.corps.saisies
+      .filter((x) => x.dossier_processus_id === recep.id && x.exemplaire > 1).length
+    restantes === 0
+      ? ok('aucune saisie ne subsiste au-delà du compte')
+      : ko(`${restantes} saisie(s) fantômes au-delà de l'exemplaire 1`)
+  }
+}
+
+// ── 25. Quarantaine ──
+console.log('\n25. Quarantaine')
+{
+  const enTete = (id) => ({ 'x-mti-operateur': id })
+  let r = await j('GET', '/api/session')
+  const pharmacien = (r.corps.operateurs ?? []).find((o) => o.profil === 'pharmacien')
+
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E quarantaine' })
+  const dos = r.corps?.id
+
+  r = await j('POST', `/api/dossiers/${dos}/quarantaine`, { motif: 'x' })
+  r.statut === 400 ? ok('motif de quarantaine trop court refusé (400)') : ko(`statut ${r.statut}`)
+
+  /* POSER est ouvert à tous, délibérément : quiconque constate un doute doit
+     pouvoir le signaler dans la seconde. Exiger une autorisation serait le
+     mauvais réflexe. */
+  r = await j('POST', `/api/dossiers/${dos}/quarantaine`,
+    { motif: 'Aspect trouble de la poche au déchargement' })
+  r.statut === 200 && r.corps?.quarantaine === true
+    ? ok('mise en quarantaine, sans exiger de profil')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  r = await j('POST', `/api/dossiers/${dos}/quarantaine`, { motif: 'Encore un doute' })
+  r.statut === 409 ? ok('seconde mise en quarantaine refusée (409)') : ko(`statut ${r.statut}`)
+
+  /* LA QUARANTAINE SIGNALE, elle n'interdit rien à ce stade. C'est le
+     périmètre voulu : la saisie et la validation restent possibles, et le
+     blocage de l'administration reste à écrire. Si un jour ce test échoue,
+     c'est que le périmètre a changé — vérifier que c'était voulu. */
+  r = await j('PATCH', `/api/dossiers/${dos}`, { numeroLot: 'EN-QUARANTAINE' })
+  r.statut === 200
+    ? ok('la saisie reste possible : la quarantaine signale, elle n\'interdit pas')
+    : ko(`la quarantaine bloque la saisie (${r.statut}) — périmètre non voulu`)
+
+  // Le tableau de bord doit le dire : c'est là qu'on voit dix dossiers d'un coup.
+  r = await j('GET', '/api/dossiers?statut=en_cours')
+  const ligne = r.corps.find((d) => d.id === dos)
+  ligne?.quarantaine?.motif && ligne?.statutAffiche !== 'clos'
+    ? ok('signalée au tableau de bord, sans changer le statut du dossier')
+    : ko(`ligne : ${JSON.stringify(ligne && { q: ligne.quarantaine, s: ligne.statutAffiche })}`)
+
+  /* LEVER est réservé : c'est déclarer que le doute est levé. */
+  r = await j('DELETE', `/api/dossiers/${dos}/quarantaine`, { motif: 'Je tente la levée' })
+  r.statut === 403 && r.corps?.code === 'profil_insuffisant'
+    ? ok('levée refusée sans profil (403)')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  if (!pharmacien) {
+    console.log('  · aucun compte pharmacien — levée non éprouvée')
+  } else {
+    r = await j('DELETE', `/api/dossiers/${dos}/quarantaine`,
+      { motif: 'Contrôle refait, aspect conforme' }, enTete(pharmacien.id))
+    r.statut === 200 && r.corps?.quarantaine === false
+      ? ok('levée par un pharmacien')
+      : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+    /* L'épisode reste lisible : un traitement qui a été en quarantaine doit
+       pouvoir le dire après coup, avec les deux motifs et les deux auteurs. */
+    r = await j('GET', `/api/dossiers/${dos}/quarantaines`)
+    const ep = r.corps?.[0]
+    ep?.motif && ep?.motif_levee && ep?.pose_par && ep?.leve_par
+      ? ok(`l'épisode garde tout : posé par ${ep.pose_par}, levé par ${ep.leve_par}`)
+      : ko(`épisode incomplet : ${JSON.stringify(ep)}`)
+
+    r = await j('DELETE', `/api/dossiers/${dos}/quarantaine`,
+      { motif: 'Seconde tentative de levée' }, enTete(pharmacien.id))
+    r.statut === 409 ? ok('levée d\'un dossier qui n\'y est pas refusée (409)')
+      : ko(`statut ${r.statut}`)
+
+    // Deux épisodes, pas un écrasé.
+    await j('POST', `/api/dossiers/${dos}/quarantaine`, { motif: 'Second doute, autre cause' })
+    await j('DELETE', `/api/dossiers/${dos}/quarantaine`,
+      { motif: 'Second doute levé' }, enTete(pharmacien.id))
+    r = await j('GET', `/api/dossiers/${dos}/quarantaines`)
+    r.corps?.length === 2
+      ? ok('deux mises en quarantaine, deux épisodes : rien n\'est écrasé')
+      : ko(`${r.corps?.length} épisode(s)`)
+  }
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

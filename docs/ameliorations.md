@@ -341,6 +341,128 @@ Deux points de sécurité traités avec :
 > listes (`liste` avait eu le même sort). Une vérification part désormais de
 > l'enum de la base et éprouve chaque valeur contre la route de création.
 
+---
+
+# Demandes du 17 septembre 2026
+
+## A. Livré et vérifié
+
+| Demande | État |
+|---|---|
+| L'opérateur connecté remonte dans le bandeau général | ✔ il vivait dans l'en-tête du DOSSIER, donc absent du tableau de bord, de la configuration et des codifications — partout où l'on travaille sans dossier ouvert. Or c'est ce nom qui signera la prochaine saisie. Il est maintenant dans la barre de titre, présente sur tous les onglets. |
+| « Enregistrer » → « Laisser en attente » | ✔ le mot laissait croire à un geste terminal, alors que le processus reste ouvert et reprenable. Le geste terminal est « Valider ce processus », juste à côté. |
+| Duplication d'un point par n exemplaires | ✔ **migration 020** — le compte appartient désormais au PROCESSUS, pas au dossier |
+
+**Sur les exemplaires**, ce qui manquait n'était pas la duplication — elle
+fonctionnait déjà — mais l'endroit où le compte se règle. `dossier.nb_exemplaires`
+valait pour les onze processus à la fois, alors que ce qui se compte change
+d'un processus à l'autre : deux cuves à la réception, une poche à la
+préparation. Il fallait donc prendre le maximum et cocher « sans objet »
+ailleurs, ce qu'une fiche de traçabilité ne doit pas contenir.
+
+Le compte est porté par `dossier_processus.nb_exemplaires`, réglé dans
+l'en-tête du processus. **Réduire le compte efface les saisies des exemplaires
+retirés** : les garder laisserait en base des relevés que plus personne ne peut
+relire, et un dossier validé en porterait la trace sans les montrer.
+
+## B. Les quatre chantiers, et ce qu'ils demandent
+
+### B.1 Exports tolérants aux informations partielles
+
+Les deux boutons d'export **n'ont jamais rien fait** — aucun gestionnaire. Ils
+sont désarmés depuis le 15 septembre, précisément pour ne pas promettre ce qui
+n'existe pas. La demande est donc : **les écrire**, et qu'ils produisent un
+document même sur un dossier incomplet.
+
+« Tolérant aux informations partielles » est la contrainte structurante : un
+export n'est pas une validation. Il ne doit rien exiger, rien bloquer, et
+**dire ce qui manque plutôt que de le taire** — un PDF qui laisse une case vide
+sans le signaler ferait croire à un contrôle non fait plutôt qu'à un contrôle
+non exporté.
+
+À cadrer avec vous : le PDF est-il un **document réglementaire** (en-tête
+établissement, pagination, signatures, mention « document non validé » en
+filigrane tant que le dossier ne l'est pas) ou un **état de travail** ? Les
+deux ne demandent pas le même effort, et le premier engage.
+
+> Réserve déjà notée : un PDF et un XLS portent des métadonnées (auteur,
+> producteur, application) qu'il faudra contrôler à la génération — sinon
+> l'export dit ce que le masquage du domaine cherche à taire. Et ces documents
+> seront **nominatifs** : leur sortie doit être tracée dans l'audit, pas
+> seulement permise.
+
+### B.2 Emplacements de stockage configurables
+
+Votre exemple : une cuve, des étages A à J, des emplacements 1 à 20 — soit
+200 emplacements par cuve.
+
+Ce qui décide de la qualité du module ici est **une contrainte d'unicité en
+base sur les emplacements occupés**, pas une vérification côté navigateur :
+deux réceptions simultanées prendraient la même cassette. Le reste — le
+référentiel, l'occupation, la libération, la colonne au tableau de bord — en
+découle.
+
+Le lien avec un point de contrôle est la vraie nouveauté par rapport au §7
+initial : un point de type `emplacement` qui propose les emplacements libres et
+**réserve** celui qu'on choisit. À cadrer : la réservation vaut-elle dès la
+saisie du point, ou à la validation du processus ?
+
+### B.3 Cohérence entre deux dates
+
+Exemple à porter : « la date de ce point ne peut pas être antérieure à la date
+de ce point-là ». L'alerte doit se déclencher **à la saisie de l'une comme de
+l'autre**, et dire la cause.
+
+C'est la forme la plus simple et la plus utile du moteur de règles du §6, et
+c'est par là qu'il faut le commencer : une règle qui compare deux points
+nommés par leur `code` (jamais par leur rang — retirer l'aphérèse a déjà décalé
+douze processus). Le résultat alimente ensuite la colonne d'alertes du tableau
+de bord demandée au §1.
+
+Point de vigilance : la règle vit dans la **définition figée** du parcours,
+donc un dossier ouvert garde les règles de sa version. C'est voulu, mais il
+faut le savoir — corriger une règle ne corrigera pas les dossiers en cours.
+
+### B.4 Quarantaine et statistiques
+
+**Quarantaine** — ✔ **fait dans le périmètre arrêté le 17 septembre : « une
+grosse mention suffit ».** Migration 021. Filigrane sur tout l'écran (position
+fixe, il suit le défilement ; `pointer-events: none`, il ne gêne pas), mention
+portant le motif, signalement au tableau de bord **sans changer le statut** du
+dossier — le confondre avec un statut ferait disparaître un traitement douteux
+des vues où il faut justement le voir.
+
+**Elle SIGNALE, elle n'INTERDIT rien**, et un test le vérifie explicitement :
+s'il échoue un jour, c'est que le périmètre a changé, et ce sera visible plutôt
+que subi. Ce qui fera la valeur de la fonction reste à écrire — un MTI en
+quarantaine ne devrait pas pouvoir être administré — quand le circuit réel
+sera arrêté. La colonne est posée pour que ce blocage n'ait plus qu'à s'y
+accrocher.
+
+Asymétrie volontaire : **poser** est ouvert à tous — quiconque constate un
+doute doit pouvoir le signaler dans la seconde, exiger une autorisation serait
+le mauvais réflexe. **Lever** demande un profil pharmacien ou administrateur :
+c'est déclarer que le doute est levé. Chaque épisode reste tracé dans
+`mti.quarantaine` avec les deux motifs et les deux auteurs.
+
+**Statistiques** : à cadrer aussi — quels indicateurs, sur quelle période, pour
+qui. Sans réponse, ce serait un onglet de graphiques que personne ne lit. Ma
+suggestion pour amorcer : délais entre processus (commande → réception →
+administration), taux de non-conformité, alarmes hors seuil par cuve.
+
+## C. Ordre que je propose
+
+1. **B.3 cohérence de dates** — bien cerné, sans dépendance, et il amorce le
+   moteur de règles dont dépend la colonne d'alertes.
+2. **B.2 emplacements de stockage** — le plus structurant, et le plus coûteux à
+   retarder.
+3. **B.1 exports** — après un cadrage d'une ligne : document réglementaire ou
+   état de travail.
+4. **B.4 quarantaine puis statistiques** — quand le circuit et les indicateurs
+   seront arrêtés.
+
+---
+
 ## 4. Ordre proposé
 
 1. **Les trois décisions du §1** — sans elles, la moitié du reste est à refaire.

@@ -2,6 +2,7 @@
 /** Gabarit « standard » — processus 2 à 12 et processus ajoutés au catalogue. */
 import BlocContresignature from './BlocContresignature.vue'
 import CelluleControle from './CelluleControle.vue'
+import { computed } from 'vue'
 import { useParcours } from '../stores/parcours.js'
 
 const props = defineProps({ processus: { type: Object, required: true } })
@@ -21,6 +22,10 @@ const classeEtat = { valide: 's-done', en_cours: 's-active', a_venir: 's-prev', 
 
 /** Un processus à venir ou réalisé par un tiers se consulte, il ne se saisit pas. */
 const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus.etat === 'valide'
+
+/** Le réglage d'exemplaires n'a de sens que si le processus porte un point `multi`. */
+const aDesMulti = computed(() => (props.processus.sections ?? [])
+  .some((s) => (s.points ?? []).some((p) => p.multi)))
 </script>
 
 <template>
@@ -34,6 +39,17 @@ const lectureSeule = () => props.processus.etat === 'a_venir' || props.processus
       <div class="ph-name">{{ store.selection + 1 }}. {{ processus.nom }}</div>
       <div class="ph-sub">{{ processus.operateur ?? '' }}</div>
     </div>
+    <!-- Le nombre d'exemplaires est un paramètre DE CE PROCESSUS : deux cuves
+         à la réception, une poche à la préparation. Il n'apparaît que si le
+         processus porte au moins un point marqué `multi` — ailleurs, c'est un
+         réglage sans effet, et un réglage sans effet finit par être renseigné
+         au hasard. -->
+    <label v-if="aDesMulti" class="ph-ex" title="Nombre d'exemplaires des points dupliqués de ce processus">
+      Exemplaires
+      <input type="number" min="1" max="20" :value="processus.nbExemplaires ?? 1"
+             :disabled="lectureSeule()"
+             @change="store.changerExemplaires($event.target.value)">
+    </label>
     <div class="status-badge" :class="classeEtat[processus.etat]">
       {{ libelleEtat[processus.etat] }}
     </div>

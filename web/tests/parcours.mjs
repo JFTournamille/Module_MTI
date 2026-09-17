@@ -208,11 +208,17 @@ nbObl === NB_OBLIGATOIRES
 
 // ── 4. Duplication réactive par n exemplaires ──
 console.log('\n4. Duplication n exemplaires (sans bouton « Appliquer »)')
-await page.locator('.ch-meta input[type=number]').fill('3')
-await page.waitForTimeout(200)
+/* Le compte n'est plus porté par le dossier mais par LE PROCESSUS, et il
+   passe par le serveur : plus de `v-model` réactif, donc un événement
+   `change` explicite et le temps de l'aller-retour. La duplication reste
+   immédiate à l'écran une fois la réponse reçue — c'est ce qu'on vérifie. */
+const champEx = () => page.locator('.ch-meta input[type=number]')
+await champEx().fill('3')
+await champEx().dispatchEvent('change')
+await page.waitForTimeout(1800)
 nbLignes = await page.locator('.chk .crow').count()
-// Les points « multi » suivent le nombre d'exemplaires du dossier ; ceux qui
-// portent leur propre compte (les tubes du kit) n'en dépendent pas.
+// Les points « multi » suivent le compte du PROCESSUS ; ceux qui portent leur
+// propre compte (les tubes du kit) n'en dépendent pas.
 nbLignes === nbLignesAttendues(3) ? ok(`${nbLignes} lignes avec n=3`)
   : ko(`${nbLignes} lignes au lieu de ${nbLignesAttendues(3)}`)
 /* Le rang de l'exemplaire est passé sous le NUMÉRO du point (« 2/3 »), là où
@@ -221,8 +227,9 @@ nbLignes === nbLignesAttendues(3) ? ok(`${nbLignes} lignes avec n=3`)
 const badgesEx = await page.locator('.chk .cnc-ex').filter({ hasText: '2/3' }).count()
 badgesEx > 0 ? ok(`rang d'exemplaire « 2/3 » affiché (${badgesEx})`)
   : ko('rang d\'exemplaire absent')
-await page.locator('.ch-meta input[type=number]').fill('1')
-await page.waitForTimeout(200)
+await champEx().fill('1')
+await champEx().dispatchEvent('change')
+await page.waitForTimeout(1800)
 nbLignes = await page.locator('.chk .crow').count()
 nbLignes === nbLignesAttendues(1)
   ? ok(`retour à ${nbLignes} lignes (aucune copie orpheline)`)
@@ -594,7 +601,7 @@ if (await ligneIntegrite.locator('.ctl-b.on', { hasText: 'Oui' }).count() === 0)
 }
 await ligneTemp.locator('input[type=number]').fill('-140')
 await page.waitForTimeout(300)
-await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.locator('.f-btn', { hasText: 'Laisser en attente' }).click()
 await page.waitForTimeout(1500)
 
 const etat = (await page.locator('.etat-enr').innerText()).trim()
@@ -842,7 +849,7 @@ await page.locator('.std-ir input[type=date], .chk input[type=date]').first().is
 
 await champsDate.first().fill('2026-09-15')
 await page.waitForTimeout(300)
-await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.locator('.f-btn', { hasText: 'Laisser en attente' }).click()
 await page.waitForTimeout(1500)
 
 await page.reload({ waitUntil: 'networkidle' })
@@ -894,7 +901,7 @@ await page.waitForTimeout(300)
 await page.locator('.ccmt-b.plein').count() >= 1
   ? ok('la bulle signale un commentaire présent') : ko('la bulle reste vide')
 
-await page.locator('.f-btn', { hasText: 'Enregistrer' }).click()
+await page.locator('.f-btn', { hasText: 'Laisser en attente' }).click()
 await page.waitForTimeout(1600)
 
 // ── Contresignature du processus par une 2e personne ──
@@ -1011,7 +1018,14 @@ if (nbDemo === 0) {
   await page.locator('.proc').filter({ hasText: 'Réception (+/-' }).first().click()
   await page.waitForTimeout(700)
   const opSaisie = await page.locator('.copi').first().inputValue()
-  const opConnecte = (await page.locator('.ubadge').first().innerText()).replace('👤', '').trim()
+  /* L'opérateur connecté n'est plus répété dans l'en-tête de réception : il
+     vit dans la barre de titre, présente sur tous les écrans. Le répéter
+     donnait deux sources pour une même information, dont une qui ne se
+     changeait pas. */
+  const selOpBarre = page.locator('.titlebar .op-sel')
+  const opConnecte = await selOpBarre.count()
+    ? (await selOpBarre.locator('option:checked').innerText()).split('—')[0].trim()
+    : (await page.locator('.titlebar .op-nom').innerText()).trim()
   if (opSaisie && opSaisie !== opConnecte) {
     ok(`opérateur de la saisie « ${opSaisie} », distinct du connecté « ${opConnecte} »`)
   } else {
@@ -1927,7 +1941,7 @@ console.log('\n31. Clore un parcours avorté depuis l\'écran')
     ? ok('le dossier rouvert affiche le bandeau et son motif')
     : ko('aucun bandeau sur un dossier clos rouvert')
   await page.locator('.btn-clore').count() === 0 &&
-  await page.locator('.f-btn', { hasText: 'Enregistrer' }).count() === 0
+  await page.locator('.f-btn', { hasText: 'Laisser en attente' }).count() === 0
     ? ok('lecture seule : ni « Enregistrer » ni « Clore » sur un dossier clos')
     : ko('un dossier clos laisse encore des boutons d\'écriture')
 
@@ -2006,7 +2020,7 @@ console.log('\n32. Pied de page : parcours et processus séparés')
     ? ok('le groupe « parcours » porte la validation et la clôture')
     : ko(`groupe parcours : « ${tPar.replace(/\n/g, ' | ').slice(0, 90)} »`)
   const tProc = await grpProcessus.innerText()
-  const procPropre = /Enregistrer/.test(tProc) && !/Clore le parcours/.test(tProc)
+  const procPropre = /Laisser en attente/.test(tProc) && !/Clore le parcours/.test(tProc)
   procPropre
     ? ok('le groupe « processus » ne porte aucun geste de parcours')
     : ko(`groupe processus : « ${tProc.replace(/\n/g, ' | ').slice(0, 90)} »`)
@@ -2130,7 +2144,63 @@ console.log('\n33. Conformité du processus en cours')
   }
 }
 
-console.log('\n34. Console du navigateur et réseau')
+// ── 34. Opérateur en barre de titre, exemplaires par processus ──
+console.log('\n34. Barre de titre et exemplaires du processus')
+{
+  /* L'opérateur vivait dans l'en-tête du DOSSIER : absent du tableau de bord,
+     de la configuration et des codifications — partout où l'on travaille sans
+     dossier ouvert. Or c'est ce nom qui signera la prochaine saisie. */
+  for (const tab of ['Tableau de bord', 'Configuration', 'Codifications']) {
+    await page.locator('.onglet', { hasText: tab }).click()
+    await page.waitForTimeout(900)
+    const vu = await page.locator('.titlebar .op-barre').count()
+    vu === 1 ? ok(`opérateur visible sur « ${tab} »`)
+      : ko(`opérateur absent de « ${tab} »`)
+  }
+
+  await allerAuScenario()
+  await allerAuProcessus('Réception (+/-')
+  const ligne = (t) => page.locator('.crow, .std-ir').filter({ hasText: t }).count()
+  const avant = await ligne('Niveau azote')
+
+  await champEx().fill('3')
+  await champEx().dispatchEvent('change')
+  await page.waitForTimeout(2000)
+  const apres = await ligne('Niveau azote')
+  apres === 3 && avant !== 3
+    ? ok(`le point « cuve » se duplique : ${avant} → ${apres} lignes`)
+    : ko(`${avant} → ${apres} lignes pour 3 exemplaires`)
+
+  /* Un point qui porte SON PROPRE compte ne suit pas celui du processus : les
+     trois tubes CD4 restent trois, quoi qu'il arrive aux cuves. */
+  await ligne('Tube CD4') === 3
+    ? ok('un point à compte propre (3 tubes CD4) ne suit pas le processus')
+    : ko(`${await ligne('Tube CD4')} ligne(s) pour les tubes CD4`)
+
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(2200)
+  await allerAuScenario()
+  await allerAuProcessus('Réception (+/-')
+  await champEx().inputValue() === '3'
+    ? ok('le compte est relu depuis la base après rechargement')
+    : ko(`compte relu : ${await champEx().inputValue()}`)
+
+  // Remise en état : la suite se rejoue sur la même base.
+  await champEx().fill(String(avant))
+  await champEx().dispatchEvent('change')
+  await page.waitForTimeout(1800)
+  await ligne('Niveau azote') === avant
+    ? ok('compte rendu à son état de départ')
+    : ko(`${await ligne('Niveau azote')} ligne(s) au lieu de ${avant}`)
+
+  // Le libellé du bouton d'enregistrement.
+  const libelle = (await page.locator('.pied-processus .f-btn').last().innerText()).trim()
+  libelle === 'Laisser en attente'
+    ? ok('« Enregistrer » est devenu « Laisser en attente »')
+    : ko(`libellé du bouton : « ${libelle} »`)
+}
+
+console.log('\n35. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres
