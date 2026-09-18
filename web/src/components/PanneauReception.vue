@@ -62,11 +62,25 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
            ailleurs — ce qu'une fiche de traçabilité ne doit pas contenir.
            Plus de bouton « Appliquer » : la duplication est réactive. -->
       <div class="mi" style="border-left:2px solid #c0a8e8;padding-left:10px;">
-        <label>N exemplaires (ce processus)</label>
-        <input type="number" min="1" max="20" style="width:40px;"
+        <label for="ch-exemplaires">N exemplaires (ce processus)</label>
+        <input id="ch-exemplaires" type="number" min="1" max="20" style="width:40px;"
                :value="store.processusCourant?.nbExemplaires ?? 1" :disabled="lectureSeule"
                @change="store.changerExemplaires($event.target.value)">
         <span class="nbadge">n = {{ store.processusCourant?.nbExemplaires ?? 1 }}</span>
+      </div>
+      <!-- Unités de SECOURS : une réserve, en plus des exemplaires nominaux.
+           Elles se contrôlent comme les autres mais restent identifiées comme
+           telles, pour qu'on puisse dire après coup si le traitement
+           administré venait d'une unité nominale ou d'un secours. -->
+      <div class="mi">
+        <label for="ch-secours">dont secours</label>
+        <input id="ch-secours" type="number" min="0" max="20" style="width:40px;"
+               :value="store.processusCourant?.nbSecours ?? 0" :disabled="lectureSeule"
+               @change="store.changerExemplaires(
+                 store.processusCourant?.nbExemplaires ?? 1,
+                 store.selection, $event.target.value)">
+        <span v-if="(store.processusCourant?.nbSecours ?? 0) > 0" class="nbadge nbadge-sec"
+          >+{{ store.processusCourant.nbSecours }} secours</span>
       </div>
       <!-- L'opérateur est désormais dans la barre de titre, présent sur tous
            les écrans : le répéter ici donnait deux sources pour une même
@@ -187,7 +201,15 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                 </td>
                 <td class="cnc">
                   {{ ligne.point.num }}
-                  <template v-if="ligne.copies > 1">
+                  <!-- Une unité de SECOURS ne se distingue pas par son rang
+                       mais par sa nature : « S1/2 » et non « 4/5 ». Le rang
+                       seul aurait laissé croire à un exemplaire de plus. -->
+                  <template v-if="ligne.secours">
+                    <br><span class="cnc-ex cnc-sec"
+                              :title="`Unité de secours ${ligne.exemplaire} sur ${ligne.copies}`"
+                      >S{{ ligne.exemplaire }}/{{ ligne.copies }}</span>
+                  </template>
+                  <template v-else-if="ligne.copies > 1">
                     <br><span class="cnc-ex">{{ ligne.exemplaire }}/{{ ligne.copies }}</span>
                   </template>
                 </td>

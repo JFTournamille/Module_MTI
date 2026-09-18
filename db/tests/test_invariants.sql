@@ -652,6 +652,91 @@ BEGIN
   RAISE NOTICE '  ✓ réponse « non » : coche non verte';
 END $$;
 
+\echo ''
+\echo 'TEST 22 — Un relevé de secours n''est jamais un relevé d''exemplaire'
+DO $$
+DECLARE
+  v_auteur   uuid;
+  v_modele   uuid;
+  v_dossier  uuid;
+  v_proc     uuid;
+  v_rouges   integer;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-SECOURS-1', v_modele, v_auteur) RETURNING id INTO v_dossier;
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, nb_exemplaires,
+                                     nb_secours, definition)
+  VALUES (v_dossier, 1, 'TEST', 'Processus de test', 2, 1, jsonb_build_object(
+    'sections', jsonb_build_array(jsonb_build_object(
+      'titre', 'Section', 'points', jsonb_build_array(
+        jsonb_build_object('num', '1.1', 'libelle', 'Point obligatoire',
+                           'type', 'ouinon', 'obligatoire', true))))))
+  RETURNING id INTO v_proc;
+
+  /* LE POINT QUI COMPTE : l'exemplaire n°1 et le secours n°1 sont deux relevés
+     distincts. Sans `secours` dans la clé d'unicité, le second écraserait le
+     premier — et un contrôle disparaîtrait de la fiche sans que personne
+     ne le voie. */
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index, point_num,
+                          point_type, exemplaire, secours, obligatoire, reponse, operateur_id)
+  VALUES (v_proc, 0, 0, '1.1', 'ouinon', 1, false, true, 'oui', v_auteur),
+         (v_proc, 0, 0, '1.1', 'ouinon', 1, true,  true, 'oui', v_auteur);
+  RAISE NOTICE '  ✓ exemplaire n°1 et secours n°1 cohabitent';
+
+  -- Mais deux fois le MÊME relevé reste refusé : la clé garde son rôle.
+  BEGIN
+    INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index, point_num,
+                            point_type, exemplaire, secours, obligatoire, reponse, operateur_id)
+    VALUES (v_proc, 0, 0, '1.1', 'ouinon', 1, true, true, 'non', v_auteur);
+    RAISE EXCEPTION 'ÉCHEC : doublon de secours n°1 accepté';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE '  ✓ doublon sur la même unité toujours refusé';
+  END;
+
+  /* La réserve ne pèse pas sur la conformité : elle n'est pas un contrôle de
+     plus à faire, c'est une unité tenue de côté. Ce qui conclut, c'est la série
+     nominale. Les deux exemplaires sont verts, le dossier doit l'être aussi. */
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index, point_num,
+                          point_type, exemplaire, secours, obligatoire, reponse, operateur_id)
+  VALUES (v_proc, 0, 0, '1.1', 'ouinon', 2, false, true, 'oui', v_auteur);
+  SELECT count(*) INTO v_rouges FROM mti.coches_non_vertes(v_dossier);
+  IF v_rouges <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : % coche(s) non verte(s) alors que la série nominale est verte', v_rouges;
+  END IF;
+  RAISE NOTICE '  ✓ les unités de secours ne bloquent pas le constat de conformité';
+
+  /* L'ASYMÉTRIE, et c'est elle qui fait la valeur de la fonction : ne PAS
+     avoir contrôlé une unité de secours est normal, mais l'avoir contrôlée et
+     trouvée « non » est un fait sur une unité bien présente au dossier. La
+     machine cesse alors de constater le vert — elle ne prononce rien, elle
+     rend la main au pharmacien, qui dira si la réserve compte ici. */
+  UPDATE mti.saisie SET reponse = 'non'
+   WHERE dossier_processus_id = v_proc AND secours;
+  SELECT count(*) INTO v_rouges FROM mti.coches_non_vertes(v_dossier);
+  IF v_rouges <> 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : un secours contrôlé « non » ignoré par le constat (%)', v_rouges;
+  END IF;
+  RAISE NOTICE '  ✓ un secours contrôlé « non » compte, et se dit comme tel';
+
+  -- Et il se NOMME : sans la mention, la ligne serait illisible au rapport.
+  PERFORM 1 FROM mti.coches_non_vertes(v_dossier)
+   WHERE libelle LIKE '%(unité de secours)';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ÉCHEC : la coche rouge ne dit pas qu''elle porte sur un secours';
+  END IF;
+  RAISE NOTICE '  ✓ la coche rouge nomme l''unité de secours';
+
+  -- Les bornes du compte sont tenues en base.
+  BEGIN
+    UPDATE mti.dossier_processus SET nb_secours = 21 WHERE id = v_proc;
+    RAISE EXCEPTION 'ÉCHEC : 21 unités de secours acceptées';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ nb_secours borné à 20';
+  END;
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

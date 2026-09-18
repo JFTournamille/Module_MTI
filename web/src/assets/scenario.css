@@ -541,3 +541,11 @@ input[type=radio].ron{accent-color:#cc2200;}
    d'un coup, et qu'un traitement douteux doit sauter aux yeux. */
 .tb-quar{color:#b52a1c;font-weight:bold;white-space:nowrap;}
 .tb-ligne.enQuarantaine td{background:#fdf4f4;}
+
+/* Unités de secours : distinguées par leur NATURE, pas par leur rang. « S1/2 »
+   et non « 4/5 » — un rang seul laisserait croire à un exemplaire de plus,
+   alors qu'une réserve ne se compte pas avec les unités nominales. */
+.cnc-sec{display:inline-block;background:#fff0dd;border:1px solid #d8a850;color:#7a4000;
+  border-radius:2px;padding:0 4px;font-size:10px;font-weight:bold;white-space:nowrap;}
+.std-lbl .cnc-sec,.std-lbl .cnc-ex{margin-left:6px;vertical-align:middle;}
+.nbadge-sec{background:#fff0dd;color:#7a4000;}

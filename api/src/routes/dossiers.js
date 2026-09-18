@@ -387,6 +387,12 @@ export default async function dossiers (app) {
     if (!Number.isInteger(n) || n < 1 || n > 20) {
       return reply.code(400).send({ erreur: 'nbExemplaires doit être un entier de 1 à 20.' })
     }
+    /* Les unités de SECOURS sont facultatives et comptent à partir de zéro :
+       un processus sans réserve est le cas courant. */
+    const sec = request.body?.nbSecours === undefined ? null : Number(request.body.nbSecours)
+    if (sec !== null && (!Number.isInteger(sec) || sec < 0 || sec > 20)) {
+      return reply.code(400).send({ erreur: 'nbSecours doit être un entier de 0 à 20.' })
+    }
 
     const { rows: ctx } = await requete(
       `SELECT d.statut FROM mti.dossier_processus dp
@@ -405,18 +411,33 @@ export default async function dossiers (app) {
          validé porterait des relevés que personne ne peut plus relire. Le
          retrait est tracé comme toute écriture. */
       const { rows: [avant] } = await client.query(
-        'SELECT nb_exemplaires FROM mti.dossier_processus WHERE id = $1', [request.params.id])
+        'SELECT nb_exemplaires, nb_secours FROM mti.dossier_processus WHERE id = $1',
+        [request.params.id])
+      const s = sec === null ? avant.nb_secours : sec
+
+      /* Les deux comptes se réduisent indépendamment, et chacun n'efface QUE
+         ses propres lignes : les secours ont leur propre numérotation, réduire
+         les exemplaires ne doit pas toucher à la réserve. C'est toute la
+         raison de la colonne `secours`. */
       let effacees = 0
       if (n < avant.nb_exemplaires) {
         const { rowCount } = await client.query(
-          'DELETE FROM mti.saisie WHERE dossier_processus_id = $1 AND exemplaire > $2',
+          `DELETE FROM mti.saisie
+            WHERE dossier_processus_id = $1 AND NOT secours AND exemplaire > $2`,
           [request.params.id, n])
-        effacees = rowCount
+        effacees += rowCount
+      }
+      if (s < avant.nb_secours) {
+        const { rowCount } = await client.query(
+          `DELETE FROM mti.saisie
+            WHERE dossier_processus_id = $1 AND secours AND exemplaire > $2`,
+          [request.params.id, s])
+        effacees += rowCount
       }
       const { rows } = await client.query(
-        `UPDATE mti.dossier_processus SET nb_exemplaires = $2
-          WHERE id = $1 RETURNING id, nb_exemplaires`,
-        [request.params.id, n])
+        `UPDATE mti.dossier_processus SET nb_exemplaires = $2, nb_secours = $3
+          WHERE id = $1 RETURNING id, nb_exemplaires, nb_secours`,
+        [request.params.id, n, s])
       return { ...rows[0], saisiesEffacees: effacees }
     })
   })
@@ -740,7 +761,7 @@ export default async function dossiers (app) {
 
     const { rows: processus } = await requete(
       `SELECT id, ordre, code, nom, gabarit, externe, definition, etat,
-              conformite, conformite_automatique, nb_exemplaires
+              conformite, conformite_automatique, nb_exemplaires, nb_secours
          FROM mti.dossier_processus WHERE dossier_id = $1 ORDER BY ordre`,
       [request.params.id]
     )
@@ -917,14 +938,15 @@ export default async function dossiers (app) {
       const { rows: [saisie] } = await client.query(
         `INSERT INTO mti.saisie
            (dossier_processus_id, section_index, point_index, point_num, point_type,
-            exemplaire, operateur_role, obligatoire, operateur_id)
-         VALUES ($1,$2,$3,$4,$9::mti.type_point,$5,$6,$7,$8)
-         ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire, operateur_role)
+            exemplaire, operateur_role, obligatoire, operateur_id, secours)
+         VALUES ($1,$2,$3,$4,$9::mti.type_point,$5,$6,$7,$8,$10)
+         ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire,
+                      secours, operateur_role)
          DO UPDATE SET saisi_le = now()
          RETURNING id`,
         [request.params.pid, c.sectionIndex, c.pointIndex, c.pointNum ?? null,
           c.exemplaire ?? 1, c.operateurRole ?? 'op1', c.obligatoire === true,
-          request.utilisateur.id, genre])
+          request.utilisateur.id, genre, c.secours === true])
 
       const sha = createHash('sha256').update(octets).digest('hex')
       const { rows: [piece] } = await client.query(
@@ -1017,9 +1039,10 @@ export default async function dossiers (app) {
                (dossier_processus_id, section_index, point_index, point_num, point_type,
                 exemplaire, operateur_role, obligatoire, reponse, valeur_num, valeur_texte,
                 seuil_applique, hors_seuil, horodatage, timer_debut, timer_fin, operateur_id,
-                commentaire, numero_serie)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-             ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire, operateur_role)
+                commentaire, numero_serie, secours)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+             ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire,
+                          secours, operateur_role)
              DO UPDATE SET
                obligatoire = EXCLUDED.obligatoire,
                reponse = EXCLUDED.reponse,
@@ -1043,7 +1066,11 @@ export default async function dossiers (app) {
               /* Chaînes vides ramenées à NULL : « pas de commentaire » et
                  « commentaire vide » ne sont pas deux états à distinguer. */
               (s.commentaire ?? '').trim() || null,
-              (s.numeroSerie ?? '').trim() || null]
+              (s.numeroSerie ?? '').trim() || null,
+              /* Figé À LA SAISIE, jamais recalculé : les secours ont leur
+                 propre numérotation, pour qu'un changement du nombre
+                 d'exemplaires ne puisse pas reclasser un relevé après coup. */
+              s.secours === true]
           )
           enregistrees.push(rows[0].id)
         }

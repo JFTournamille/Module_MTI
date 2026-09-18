@@ -212,7 +212,11 @@ console.log('\n4. Duplication n exemplaires (sans bouton « Appliquer »)')
    passe par le serveur : plus de `v-model` réactif, donc un événement
    `change` explicite et le temps de l'aller-retour. La duplication reste
    immédiate à l'écran une fois la réponse reçue — c'est ce qu'on vérifie. */
-const champEx = () => page.locator('.ch-meta input[type=number]')
+/* Deux champs cohabitent désormais dans l'en-tête : les exemplaires nominaux
+   et les unités de secours. Un sélecteur qui les prend tous les deux met
+   Playwright en défaut — le piège s'est déjà refermé deux fois ici. */
+const champEx = () => page.locator('#ch-exemplaires')
+const champSec = () => page.locator('#ch-secours')
 await champEx().fill('3')
 await champEx().dispatchEvent('change')
 await page.waitForTimeout(1800)
@@ -2200,7 +2204,76 @@ console.log('\n34. Barre de titre et exemplaires du processus')
     : ko(`libellé du bouton : « ${libelle} »`)
 }
 
-console.log('\n35. Console du navigateur et réseau')
+// ── 35. Unités de secours : une seconde série, identifiée comme telle ──
+console.log('\n35. Unités de secours')
+{
+  await allerAuScenario()
+  await allerAuProcessus('Réception (+/-')
+  const ligne = (t) => page.locator('.crow, .std-ir').filter({ hasText: t })
+  const nominalAvant = Number(await champEx().inputValue())
+
+  await champEx().fill('2')
+  await champEx().dispatchEvent('change')
+  await page.waitForTimeout(1600)
+  await champSec().fill('2')
+  await champSec().dispatchEvent('change')
+  await page.waitForTimeout(1800)
+
+  /* Deux exemplaires PLUS deux secours : quatre lignes, pas quatre
+     exemplaires. C'est toute la différence — et elle doit se voir. */
+  await ligne('Niveau azote').count() === 4
+    ? ok('2 exemplaires + 2 secours : quatre lignes pour le point « cuve »')
+    : ko(`${await ligne('Niveau azote').count()} ligne(s) au lieu de 4`)
+
+  const marques = await ligne('Niveau azote').locator('.cnc-ex').allInnerTexts()
+  JSON.stringify(marques) === JSON.stringify(['1/2', '2/2', 'S1/2', 'S2/2'])
+    ? ok('chaque série a SA numérotation : 1/2, 2/2, puis S1/2, S2/2')
+    : ko(`numérotation : ${JSON.stringify(marques)}`)
+
+  /* LE POINT QUI COMPTE, et la raison d'être de la colonne `secours` en base.
+     Passer de 2 à 1 exemplaire ne doit PAS faire du « secours n°1 » un
+     « exemplaire n°2 ». Sur une fiche de traçabilité, une ligne qui change de
+     sens après coup n'est pas un défaut d'affichage, c'est une preuve
+     falsifiée. */
+  await champEx().fill('1')
+  await champEx().dispatchEvent('change')
+  await page.waitForTimeout(1800)
+  /* Trois lignes restent : l'exemplaire unique — qui ne porte pas de marque,
+     « 1/1 » n'apprenant rien — et les deux secours, INCHANGÉS. */
+  const apres = await ligne('Niveau azote').locator('.cnc-ex').allInnerTexts()
+  await ligne('Niveau azote').count() === 3 &&
+  JSON.stringify(apres) === JSON.stringify(['S1/2', 'S2/2'])
+    ? ok('réduire les exemplaires ne reclasse aucun secours')
+    : ko(`après réduction : ${await ligne('Niveau azote').count()} ligne(s), ${JSON.stringify(apres)}`)
+
+  /* Un point à compte propre n'a pas de réserve : les trois tubes d'un kit
+     décrivent un contenu figé, pas des unités dont on prévoirait un secours. */
+  await ligne('Tube CD4').locator('.cnc-sec').count() === 0
+    ? ok('un point à compte propre (tubes CD4) ne porte pas de secours')
+    : ko('des unités de secours sont apparues sur un point à compte propre')
+
+  // Le compte survit au rechargement : c'est un paramètre, pas un affichage.
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForTimeout(2200)
+  await allerAuScenario()
+  await allerAuProcessus('Réception (+/-')
+  await champSec().inputValue() === '2'
+    ? ok('le nombre de secours est relu depuis la base')
+    : ko(`secours relus : ${await champSec().inputValue()}`)
+
+  // Remise en état : la suite se rejoue sur la même base.
+  await champSec().fill('0')
+  await champSec().dispatchEvent('change')
+  await page.waitForTimeout(1600)
+  await champEx().fill(String(nominalAvant))
+  await champEx().dispatchEvent('change')
+  await page.waitForTimeout(1600)
+  await ligne('Niveau azote').locator('.cnc-sec').count() === 0
+    ? ok('réserve ramenée à zéro')
+    : ko('des lignes de secours subsistent')
+}
+
+console.log('\n36. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

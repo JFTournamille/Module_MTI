@@ -352,6 +352,7 @@ Deux points de sécurité traités avec :
 | L'opérateur connecté remonte dans le bandeau général | ✔ il vivait dans l'en-tête du DOSSIER, donc absent du tableau de bord, de la configuration et des codifications — partout où l'on travaille sans dossier ouvert. Or c'est ce nom qui signera la prochaine saisie. Il est maintenant dans la barre de titre, présente sur tous les onglets. |
 | « Enregistrer » → « Laisser en attente » | ✔ le mot laissait croire à un geste terminal, alors que le processus reste ouvert et reprenable. Le geste terminal est « Valider ce processus », juste à côté. |
 | Duplication d'un point par n exemplaires | ✔ **migration 020** — le compte appartient désormais au PROCESSUS, pas au dossier |
+| Unités de **secours**, gérées comme les exemplaires mais identifiées comme telles | ✔ **migration 022** — `dossier_processus.nb_secours` et `saisie.secours` |
 
 **Sur les exemplaires**, ce qui manquait n'était pas la duplication — elle
 fonctionnait déjà — mais l'endroit où le compte se règle. `dossier.nb_exemplaires`
@@ -364,6 +365,28 @@ Le compte est porté par `dossier_processus.nb_exemplaires`, réglé dans
 l'en-tête du processus. **Réduire le compte efface les saisies des exemplaires
 retirés** : les garder laisserait en base des relevés que plus personne ne peut
 relire, et un dossier validé en porterait la trace sans les montrer.
+
+**Sur les unités de secours**, la solution facile aurait été de les numéroter
+à la suite : trois exemplaires, deux secours → exemplaires 1 à 5, les deux
+derniers « étant » les secours. Elle était piégée. Le compte d'exemplaires se
+règle à la main et change ; passer de 3 à 2 aurait fait du relevé
+« secours n°1 » un relevé « exemplaire n°3 ». Sur une fiche de traçabilité, une
+ligne qui change de sens après coup n'est pas un défaut d'affichage, c'est une
+preuve falsifiée.
+
+Les secours ont donc **leur propre numérotation** (S1/2, S2/2 à l'écran) et un
+marqueur figé en base à la saisie. Un relevé sait pour toujours s'il porte sur
+une unité de secours, quoi qu'on fasse ensuite aux comptes — et chaque série
+n'efface que ses propres lignes. Seuls les points `multi` en portent : les trois
+tubes d'un kit décrivent un contenu figé, pas des unités dont on prévoirait une
+réserve.
+
+Côté conformité, une asymétrie voulue. Ne **pas** avoir contrôlé une unité de
+secours est le cas normal — l'exiger rendrait tout dossier rouge dès qu'on
+prévoit une réserve. Mais un secours **contrôlé** hors seuil ou répondu « non »
+compte : il porte sur une unité bien présente au dossier. La machine cesse alors
+de constater le vert et rend la main au pharmacien, qui dira si la réserve pèse
+ici. Elle ne prononce toujours rien elle-même.
 
 ## B. Les quatre chantiers, et ce qu'ils demandent
 
@@ -390,6 +413,11 @@ deux ne demandent pas le même effort, et le premier engage.
 > l'export dit ce que le masquage du domaine cherche à taire. Et ces documents
 > seront **nominatifs** : leur sortie doit être tracée dans l'audit, pas
 > seulement permise.
+
+> À ne pas oublier à l'écriture : **les unités de secours doivent se lire comme
+> telles dans l'export**, comme elles se lisent à l'écran (S1/2). Un tableau qui
+> les ramènerait à des exemplaires de plus reproduirait exactement la confusion
+> que la colonne `saisie.secours` a été créée pour empêcher.
 
 ### B.2 Emplacements de stockage configurables
 

@@ -1267,5 +1267,88 @@ console.log('\n25. Quarantaine')
   }
 }
 
+// ── 26. Unités de secours : une seconde série, avec sa propre numérotation ──
+console.log('\n26. Unités de secours')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E secours' })
+  const dos = r.corps?.id
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const recep = r.corps.processus.find((p) => p.code === 'RECEPTION')
+
+  recep?.nb_secours === 0
+    ? ok('aucune unité de secours par défaut')
+    : ko(`nb_secours = ${recep?.nb_secours}`)
+
+  r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`,
+    { nbExemplaires: 3, nbSecours: 2 })
+  r.statut === 200 && r.corps?.nb_exemplaires === 3 && r.corps?.nb_secours === 2
+    ? ok('3 exemplaires et 2 unités de secours')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  for (const n of [-1, 21, 'deux']) {
+    r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`,
+      { nbExemplaires: 3, nbSecours: n })
+    r.statut === 400 ? ok(`nbSecours = ${JSON.stringify(n)} refusé (400)`)
+      : ko(`${JSON.stringify(n)} accepté (${r.statut})`)
+  }
+
+  const pt = recep.definition.sections
+    .flatMap((sec, iS) => (sec.points ?? []).map((p, iP) => ({ p, iS, iP })))
+    .find((x) => x.p.multi)
+  if (!pt) {
+    console.log('  · aucun point « multi » à la réception — séries non éprouvées')
+  } else {
+    const releve = (exemplaire, secours) => ({
+      sectionIndex: pt.iS, pointIndex: pt.iP, pointNum: pt.p.num ?? null,
+      pointType: pt.p.type, exemplaire, secours, operateurRole: 'op1',
+      obligatoire: false, valeurNum: pt.p.type === 'valeur' ? -170 : null,
+      reponse: pt.p.type === 'ouinon' ? 'oui' : null,
+      valeurTexte: ['texte', 'date', 'liste'].includes(pt.p.type) ? 'x' : null
+    })
+    await j('PUT', `/api/processus/${recep.id}/saisies`, {
+      saisies: [releve(1, false), releve(2, false), releve(3, false),
+        releve(1, true), releve(2, true)]
+    })
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const lignes = r.corps.saisies.filter((x) => x.dossier_processus_id === recep.id)
+
+    /* LE POINT QUI COMPTE : l'exemplaire n°1 et le secours n°1 sont DEUX
+       relevés distincts. Sans la colonne `secours` dans la clé d'unicité, le
+       second aurait écrasé le premier. */
+    lignes.length === 5
+      ? ok('cinq relevés : les deux séries cohabitent sur le même point')
+      : ko(`${lignes.length} relevé(s) au lieu de 5 — les séries se marchent dessus`)
+
+    /* Et SURTOUT : réduire une série ne touche pas l'autre. Passer de 3 à 2
+       exemplaires ne doit pas faire du « secours n°1 » un « exemplaire n°3 » :
+       sur une fiche de traçabilité, une ligne qui change de sens après coup
+       n'est pas un défaut d'affichage, c'est une preuve falsifiée. */
+    r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`,
+      { nbExemplaires: 2, nbSecours: 2 })
+    r.corps?.saisiesEffacees === 1
+      ? ok('réduire les exemplaires n\'efface que l\'exemplaire retiré')
+      : ko(`${r.corps?.saisiesEffacees} saisie(s) effacée(s) au lieu d'une`)
+
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const apres = r.corps.saisies.filter((x) => x.dossier_processus_id === recep.id)
+    apres.filter((x) => x.secours).length === 2
+      ? ok('les deux unités de secours gardent leurs relevés')
+      : ko(`${apres.filter((x) => x.secours).length} relevé(s) de secours subsistent`)
+
+    r = await j('PATCH', `/api/processus/${recep.id}/exemplaires`,
+      { nbExemplaires: 2, nbSecours: 1 })
+    r.corps?.saisiesEffacees === 1
+      ? ok('réduire les secours n\'efface que le secours retiré')
+      : ko(`${r.corps?.saisiesEffacees} saisie(s) effacée(s) au lieu d'une`)
+
+    r = await j('GET', `/api/dossiers/${dos}`)
+    const fin = r.corps.saisies.filter((x) => x.dossier_processus_id === recep.id)
+    fin.filter((x) => !x.secours).length === 2 && fin.filter((x) => x.secours).length === 1
+      ? ok('deux exemplaires et un secours : chaque série a sa numérotation')
+      : ko(`${JSON.stringify(fin.map((x) => `${x.exemplaire}/${x.secours}`))}`)
+  }
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

@@ -580,6 +580,10 @@ try {
               const operateur = equipe.length
                 ? equipe[(dp.ordre + ex) % equipe.length]
                 : auteur
+              /* `secours` fait partie de la clé d'unicité depuis la migration 022 :
+                 le jeu de démonstration ne pose que des relevés nominaux, mais
+                 l'omettre du ON CONFLICT ne désigne plus aucune contrainte —
+                 et le seed échouait alors sur la toute première saisie. */
               const saisieCreee = await client.query(
                 `INSERT INTO mti.saisie
                    (dossier_processus_id, section_index, point_index, point_num, point_type,
@@ -589,7 +593,7 @@ try {
                  VALUES ($1,$2,$3,$4,$5::mti.type_point,$6,'op1',$7,$8::mti.reponse_ouinon,
                          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
                  ON CONFLICT (dossier_processus_id, section_index, point_index, exemplaire,
-                              operateur_role) DO NOTHING
+                              secours, operateur_role) DO NOTHING
                  RETURNING id`,
                 [dp.id, iS, iP, point.num ?? null, point.type, ex,
                   point.obligatoire === true, v.reponse ?? null,

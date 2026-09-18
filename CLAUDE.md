@@ -81,6 +81,19 @@ réglementaires, pas à des préférences techniques.
   « sans objet » ailleurs. **Réduire le compte efface les saisies des
   exemplaires retirés** : les garder laisserait en base des relevés que plus
   personne ne peut relire.
+- **Une unité de SECOURS a sa propre numérotation.** `dossier_processus.nb_secours`
+  compte une réserve, en plus des `nb_exemplaires` nominaux ; `saisie.secours`
+  fige à l'écriture le fait qu'un relevé porte sur elle. Ne **jamais** numéroter
+  les secours à la suite des exemplaires : le compte se règle à la main, et
+  passer de 3 à 2 aurait fait du relevé « secours n°1 » un relevé
+  « exemplaire n°3 ». Sur une fiche de traçabilité, une ligne qui change de sens
+  après coup n'est pas un défaut d'affichage, c'est une preuve falsifiée. Chaque
+  compte n'efface donc que **ses propres** lignes. Seuls les points `multi` en
+  portent : un point à compte propre (les trois tubes d'un kit) décrit un
+  contenu figé, pas des unités dont on prévoirait une réserve. Côté conformité,
+  l'asymétrie est voulue — un secours **non renseigné** est le cas normal et ne
+  compte pas, un secours **contrôlé** hors seuil ou répondu « non » compte,
+  parce qu'il porte sur une unité bien présente au dossier.
 - **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
   stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
   reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le
@@ -177,7 +190,9 @@ Un point de contrôle :
   (bouton ★), la valeur retenue est celle de la saisie
 
 Une saisie est localisée par
-`${idxProcessus}|${idxSection}|${idxPoint}|${exemplaire}|${role}`.
+`${idxProcessus}|${idxSection}|${idxPoint}|${exemplaire}|${'s'|'n'}|${role}`,
+le marqueur de secours venant **avant** le rôle pour que `cleOp2()` puisse
+continuer à basculer le seul suffixe de rôle.
 Il n'y a plus de suffixe d'attribut `name` : c'est une donnée, pas une
 convention de DOM.
 

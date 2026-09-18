@@ -8,8 +8,15 @@ import { useSession } from './session.js'
  * (`_ex{i}`, `_cuve{i}`, `_op2_{uid}`) des maquettes HTML : la localisation
  * d'une saisie est une donnée, plus une convention de nommage dans le DOM.
  */
-export const cleSaisie = (idxProcessus, idxSection, idxPoint, exemplaire, role) =>
-  `${idxProcessus}|${idxSection}|${idxPoint}|${exemplaire}|${role}`
+export const cleSaisie = (idxProcessus, idxSection, idxPoint, exemplaire, role,
+  secours = false) =>
+  /* Le marqueur de secours est AVANT le rôle, et pas après : `cleOp2()` bascule
+     la clé en remplaçant le `|op1` FINAL, et une clé qui ne finirait plus par
+     le rôle aurait cassé le double contrôle en silence.
+     Il fait bien partie de la clé : sans lui, le secours n°1 et l'exemplaire
+     n°1 d'un même point partageraient la même entrée, et l'un écraserait
+     l'autre — en mémoire comme en base. */
+  `${idxProcessus}|${idxSection}|${idxPoint}|${exemplaire}|${secours ? 's' : 'n'}|${role}`
 
 /** Format attendu par <input type="datetime-local">. */
 export function versDatetimeLocal (d) {
@@ -309,7 +316,10 @@ export const useParcours = defineStore('parcours', () => {
            réception, une poche à la préparation. Un compte unique porté par le
            dossier obligeait à prendre le maximum et à cocher « sans objet »
            ailleurs — ce qu'une fiche de traçabilité ne doit pas contenir. */
-        nbExemplaires: Number(p.nb_exemplaires) || 1
+        nbExemplaires: Number(p.nb_exemplaires) || 1,
+        /* Unités de secours : une réserve, en plus des exemplaires nominaux.
+           Elles ont leur PROPRE numérotation — voir migration 022. */
+        nbSecours: Number(p.nb_secours) || 0
       }))
       processusIds.value = d.processus.map((p) => p.id)
 
@@ -320,7 +330,8 @@ export const useParcours = defineStore('parcours', () => {
       for (const s of d.saisies ?? []) {
         const idx = parId.get(s.dossier_processus_id)
         if (idx === undefined) continue
-        const cle = cleSaisie(idx, s.section_index, s.point_index, s.exemplaire, s.operateur_role)
+        const cle = cleSaisie(idx, s.section_index, s.point_index, s.exemplaire,
+          s.operateur_role, s.secours === true)
         saisies[cle] = {
           reponse: s.reponse,
           valeurNum: s.valeur_num === null ? null : Number(s.valeur_num),
@@ -337,7 +348,8 @@ export const useParcours = defineStore('parcours', () => {
           numeroSerie: s.numero_serie ?? ''
         }
         if (s.operateur_role === 'op2') {
-          op2Ouverts.add(cleSaisie(idx, s.section_index, s.point_index, s.exemplaire, 'op1'))
+          op2Ouverts.add(cleSaisie(idx, s.section_index, s.point_index, s.exemplaire,
+            'op1', s.secours === true))
         }
         cleParSaisieId.set(s.id, cle)
       }
@@ -430,9 +442,17 @@ export const useParcours = defineStore('parcours', () => {
     const lot = []
     for (const [iS, section] of (p.sections ?? []).entries()) {
       for (const [iP, point] of (section.points ?? []).entries()) {
-        const copies = nbCopies(point)
+        /* Les deux séries se parcourent séparément — exemplaires puis unités
+           de secours — parce qu'elles ont leur propre numérotation. Les
+           concaténer aurait reproduit exactement le piège que la colonne
+           `secours` évite : un secours n°1 indiscernable d'un exemplaire n°4. */
+        const series = [
+          { secours: false, copies: nbCopies(point, idx) },
+          { secours: true, copies: nbSecours(point, idx) }
+        ]
+        for (const { secours, copies } of series) {
         for (let ex = 1; ex <= copies; ex++) {
-          const cleOp1 = cleSaisie(idx, iS, iP, ex, 'op1')
+          const cleOp1 = cleSaisie(idx, iS, iP, ex, 'op1', secours)
           for (const role of ['op1', 'op2']) {
             const cle = role === 'op1' ? cleOp1 : cleOp2(cleOp1)
             const s = saisies[cle]
@@ -457,9 +477,11 @@ export const useParcours = defineStore('parcours', () => {
               timerDebut: s.timerDebut ? new Date(s.timerDebut).toISOString() : null,
               timerFin: s.timerFin ? new Date(s.timerFin).toISOString() : null,
               commentaire: s.commentaire || null,
-              numeroSerie: s.numeroSerie || null
+              numeroSerie: s.numeroSerie || null,
+              secours
             })
           }
+        }
         }
       }
     }
@@ -756,20 +778,36 @@ export const useParcours = defineStore('parcours', () => {
   }
 
   /**
+   * Unités de SECOURS d'un point, pour le processus affiché.
+   *
+   * Seuls les points marqués `multi` en portent : un point à compte propre
+   * (les trois tubes d'un kit) décrit un contenu figé, pas des unités dont on
+   * prévoirait une réserve.
+   */
+  const nbSecours = (point, idx = selection.value) => {
+    if (!point.multi || point.exemplaires) return 0
+    const n = processus.value[idx]?.nbSecours ?? 0
+    return Math.max(0, Math.min(20, Number(n) || 0))
+  }
+
+  /**
    * Change le nombre d'exemplaires du processus affiché.
    *
    * Enregistré aussitôt : c'est un paramètre de la fiche, pas une saisie, et
    * l'attendre au prochain « Laisser en attente » ferait perdre les lignes
    * ajoutées à un changement d'onglet.
    */
-  async function changerExemplaires (n, idx = selection.value) {
+  async function changerExemplaires (n, idx = selection.value, secours) {
     const pid = processusIds.value[idx]
     if (!pid) { erreurDossier.value = 'Processus inconnu côté serveur.'; return false }
     const v = Math.max(1, Math.min(20, Number(n) || 1))
+    const sRetenu = secours === undefined
+      ? (processus.value[idx]?.nbSecours ?? 0)
+      : Math.max(0, Math.min(20, Number(secours) || 0))
     const r = await appel(`/api/processus/${pid}/exemplaires`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nbExemplaires: v })
+      body: JSON.stringify({ nbExemplaires: v, nbSecours: sRetenu })
     })
     if (!r.ok) {
       erreurDossier.value = await messageDe(r, `Changement refusé (${r.status}).`)
@@ -777,13 +815,19 @@ export const useParcours = defineStore('parcours', () => {
     }
     const corps = await r.json().catch(() => null)
     processus.value[idx].nbExemplaires = v
+    processus.value[idx].nbSecours = sRetenu
     /* Réduire le compte efface en base les saisies des exemplaires retirés :
        les garder en mémoire ferait réapparaître des valeurs fantômes si on
        remonte le compte. */
     if (corps?.saisiesEffacees) {
       for (const cle of Object.keys(saisies)) {
-        const [iProc, , , ex] = cle.split('|')
-        if (Number(iProc) === idx && Number(ex) > v) delete saisies[cle]
+        const [iProc, , , ex, marque] = cle.split('|')
+        if (Number(iProc) !== idx) continue
+        /* Chaque compte n'efface QUE ses propres lignes : les secours ont leur
+           propre numérotation, réduire les exemplaires ne touche pas à la
+           réserve. */
+        const plafond = marque === 's' ? sRetenu : v
+        if (Number(ex) > plafond) delete saisies[cle]
       }
     }
     await rafraichirCoches()
@@ -821,6 +865,10 @@ export const useParcours = defineStore('parcours', () => {
         } else if (!point.kit) {
           kitCourant = null
         }
+        /* Deux séries, chacune avec SA numérotation : les exemplaires
+           nominaux, puis les unités de secours. Les concaténer aurait rendu un
+           secours indiscernable d'un exemplaire de plus — et un changement du
+           nombre d'exemplaires aurait reclassé les relevés après coup. */
         const copies = nbCopies(point)
         for (let ex = 1; ex <= copies; ex++) {
           lignes.push({
@@ -830,7 +878,21 @@ export const useParcours = defineStore('parcours', () => {
             idxPoint,
             exemplaire: ex,
             copies,
+            secours: false,
             cle: cleSaisie(selection.value, idxSection, idxPoint, ex, 'op1')
+          })
+        }
+        const reserve = nbSecours(point)
+        for (let ex = 1; ex <= reserve; ex++) {
+          lignes.push({
+            genre: 'point',
+            point,
+            idxSection,
+            idxPoint,
+            exemplaire: ex,
+            copies: reserve,
+            secours: true,
+            cle: cleSaisie(selection.value, idxSection, idxPoint, ex, 'op1', true)
           })
         }
       })
@@ -866,7 +928,11 @@ export const useParcours = defineStore('parcours', () => {
           kitCourant = null
         }
         /* Les processus standard portent eux aussi des exemplaires : la poche
-           d'aphérèse en a deux, chacune avec son n° de série. */
+           d'aphérèse en a deux, chacune avec son n° de série. Deux séries,
+           chacune avec SA numérotation : les exemplaires nominaux, puis les
+           unités de secours. Les concaténer aurait rendu un secours
+           indiscernable d'un exemplaire de plus — et un changement du nombre
+           d'exemplaires aurait reclassé les relevés après coup. */
         const copies = nbCopies(point)
         for (let ex = 1; ex <= copies; ex++) {
           lignes.push({
@@ -876,7 +942,21 @@ export const useParcours = defineStore('parcours', () => {
             idxPoint,
             exemplaire: ex,
             copies,
+            secours: false,
             cle: cleSaisie(selection.value, idxSection, idxPoint, ex, 'op1')
+          })
+        }
+        const reserve = nbSecours(point)
+        for (let ex = 1; ex <= reserve; ex++) {
+          lignes.push({
+            genre: 'point',
+            point,
+            idxSection,
+            idxPoint,
+            exemplaire: ex,
+            copies: reserve,
+            secours: true,
+            cle: cleSaisie(selection.value, idxSection, idxPoint, ex, 'op1', true)
           })
         }
       })
@@ -982,7 +1062,7 @@ export const useParcours = defineStore('parcours', () => {
   async function deposerPiece (cle, { octets, mime, nomFichier, libelle = '', pointType }) {
     if (!dossierId.value) { erreurDossier.value = 'Aucun dossier ouvert.'; return false }
     if (lectureSeule.value) return false
-    const [iProc, iSec, iPt, ex, role] = cle.split('|')
+    const [iProc, iSec, iPt, ex, marque, role] = cle.split('|')
     const pid = processusIds.value[Number(iProc)]
     if (!pid) {
       erreurDossier.value = "Ce processus n'existe pas côté serveur : la pièce ne " +
@@ -1357,7 +1437,7 @@ export const useParcours = defineStore('parcours', () => {
   return {
     modele, catalogue, chargement, horsLigne,
     processus, selection, processusCourant, dossier, operateurConnecte,
-    saisies, lignesReception, lignesStandard, nbCopies, changerExemplaires,
+    saisies, lignesReception, lignesStandard, nbCopies, nbSecours, changerExemplaires,
     charger, instancierProcessus, selectionner, ajouterProcessus,
     dossierId, processusIds, enregistrement, dernierEnregistrement, erreurDossier,
     lectureSeule, clos, creerDossier, ouvrirDossier, enregistrerEntete,

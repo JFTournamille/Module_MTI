@@ -46,9 +46,16 @@ const aDesMulti = computed(() => (props.processus.sections ?? [])
          au hasard. -->
     <label v-if="aDesMulti" class="ph-ex" title="Nombre d'exemplaires des points dupliqués de ce processus">
       Exemplaires
-      <input type="number" min="1" max="20" :value="processus.nbExemplaires ?? 1"
+      <input id="std-exemplaires" type="number" min="1" max="20" :value="processus.nbExemplaires ?? 1"
              :disabled="lectureSeule()"
-             @change="store.changerExemplaires($event.target.value)">
+             @change="store.changerExemplaires($event.target.value, store.selection)">
+    </label>
+    <label v-if="aDesMulti" class="ph-ex" title="Unités de secours, contrôlées comme les autres mais identifiées comme telles">
+      dont secours
+      <input id="std-secours" type="number" min="0" max="20" :value="processus.nbSecours ?? 0"
+             :disabled="lectureSeule()"
+             @change="store.changerExemplaires(
+               processus.nbExemplaires ?? 1, store.selection, $event.target.value)">
     </label>
     <div class="status-badge" :class="classeEtat[processus.etat]">
       {{ libelleEtat[processus.etat] }}
@@ -86,7 +93,17 @@ const aDesMulti = computed(() => (props.processus.sections ?? [])
           </tr>
           <tr v-else class="std-ir">
             <td>
-              <div class="std-lbl">{{ ligne.point.libelle }}</div>
+              <div class="std-lbl">
+                {{ ligne.point.libelle }}
+                <!-- Une unité de secours se signale dans le libellé : le
+                     panneau standard n'a pas de colonne de rang, et sans
+                     marqueur un secours passerait pour un doublon. -->
+                <span v-if="ligne.secours" class="cnc-sec"
+                      :title="`Unité de secours ${ligne.exemplaire} sur ${ligne.copies}`"
+                  >secours {{ ligne.exemplaire }}/{{ ligne.copies }}</span>
+                <span v-else-if="ligne.copies > 1" class="cnc-ex"
+                  >{{ ligne.exemplaire }}/{{ ligne.copies }}</span>
+              </div>
               <div v-if="ligne.point.sousLibelle" class="std-sublbl">{{ ligne.point.sousLibelle }}</div>
             </td>
             <td style="text-align:center">
