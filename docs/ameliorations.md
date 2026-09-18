@@ -403,10 +403,25 @@ export n'est pas une validation. Il ne doit rien exiger, rien bloquer, et
 sans le signaler ferait croire à un contrôle non fait plutôt qu'à un contrôle
 non exporté.
 
-À cadrer avec vous : le PDF est-il un **document réglementaire** (en-tête
-établissement, pagination, signatures, mention « document non validé » en
-filigrane tant que le dossier ne l'est pas) ou un **état de travail** ? Les
-deux ne demandent pas le même effort, et le premier engage.
+**Tranché le 18 septembre : document réglementaire, avec filigrane
+provisoire.** En-tête établissement, pagination, signatures, et mention
+« document non validé » en filigrane tant que le dossier ne l'est pas.
+
+Ce choix couvre les deux usages d'un seul gabarit : on peut éditer à tout
+moment, et le document dit lui-même s'il fait foi. C'est aussi celui qui
+engage — une fois produit, il peut être présenté à un inspecteur. Ce que cela
+impose, et qu'il ne faudra pas rogner :
+
+- le **filigrane est porté par le serveur**, jamais par le navigateur. C'est le
+  même raisonnement que la conformité automatique : une page périmée pourrait
+  produire un document sans filigrane sur un dossier qui n'est plus validé ;
+- les **signatures** sont celles que la base connaît (auteur et date de chaque
+  saisie, auteur et date de la validation), pas un champ libre. Un PDF qui
+  laisserait saisir un signataire ne prouverait rien ;
+- un dossier **clos** ou **en quarantaine** doit le dire sur le document, au
+  même titre que « non validé » — sortir un PDF d'apparence ordinaire d'un
+  parcours arrêté en chemin serait exactement l'erreur que la distinction
+  « validé / clos » a servi à corriger.
 
 > Réserve déjà notée : un PDF et un XLS portent des métadonnées (auteur,
 > producteur, application) qu'il faudra contrôler à la génération — sinon
@@ -432,8 +447,31 @@ découle.
 
 Le lien avec un point de contrôle est la vraie nouveauté par rapport au §7
 initial : un point de type `emplacement` qui propose les emplacements libres et
-**réserve** celui qu'on choisit. À cadrer : la réservation vaut-elle dès la
-saisie du point, ou à la validation du processus ?
+**réserve** celui qu'on choisit.
+
+**Tranché le 18 septembre : réservation dès la saisie, avec expiration.**
+
+La réservation prend effet à l'instant où l'opérateur choisit la place, parce
+que c'est au moment du geste physique que deux réceptions simultanées risquent
+de prendre la même cassette — attendre la validation laisserait la fenêtre de
+collision ouverte pendant tout le processus. Et elle se relâche
+automatiquement si le processus reste ouvert trop longtemps, pour qu'un dossier
+abandonné ne gèle pas une place dans une cuve qui n'en a que 200.
+
+Les deux points à régler quand on l'écrira, parce qu'ils décident de la
+qualité du résultat :
+
+- **le délai d'expiration**, à arrêter avec vous. Ma proposition : le laisser
+  en référentiel plutôt qu'en dur, et l'amorcer haut (24 h) — une place reprise
+  sous les pieds d'un opérateur est plus grave qu'une place gelée une journée,
+  et on ne saura qu'à l'usage ;
+- **ce que voit l'opérateur dont la réservation a expiré**. Le silence est le
+  mauvais réflexe : il choisirait une place, partirait la remplir, et
+  découvrirait le conflit à la validation. Il faut que l'écran le dise au
+  moment où la place lui échappe.
+
+La contrainte d'unicité reste **en base** : c'est elle qui arbitre, pas
+l'affichage des places libres, qui ne peut être qu'un instantané.
 
 ### B.3 Cohérence entre deux dates
 
@@ -446,6 +484,16 @@ c'est par là qu'il faut le commencer : une règle qui compare deux points
 nommés par leur `code` (jamais par leur rang — retirer l'aphérèse a déjà décalé
 douze processus). Le résultat alimente ensuite la colonne d'alertes du tableau
 de bord demandée au §1.
+
+**Tranché le 18 septembre : la règle ALERTE, elle n'interdit pas.** La ligne
+se signale, la cause est dite, la saisie passe quand même, et l'incohérence
+remonte à la colonne d'alertes du tableau de bord.
+
+C'est cohérent avec tout le reste du module — la quarantaine signale sans
+interdire, la machine ne prononce jamais une non-conformité — et c'est le choix
+le plus sûr pour la donnée elle-même : une date peut être légitimement étrange,
+et un opérateur empêché d'enregistrer un fait réel saisira une fausse date
+plausible. Une date fausse et muette est pire qu'une date vraie et signalée.
 
 Point de vigilance : la règle vit dans la **définition figée** du parcours,
 donc un dossier ouvert garde les règles de sa version. C'est voulu, mais il
@@ -473,21 +521,38 @@ le mauvais réflexe. **Lever** demande un profil pharmacien ou administrateur :
 c'est déclarer que le doute est levé. Chaque épisode reste tracé dans
 `mti.quarantaine` avec les deux motifs et les deux auteurs.
 
-**Statistiques** : à cadrer aussi — quels indicateurs, sur quelle période, pour
-qui. Sans réponse, ce serait un onglet de graphiques que personne ne lit. Ma
-suggestion pour amorcer : délais entre processus (commande → réception →
-administration), taux de non-conformité, alarmes hors seuil par cuve.
+**Statistiques** — **tranché le 18 septembre : des statistiques d'ACTIVITÉ,
+quantitatives.** Nombre de dossiers ouverts, validés, clos, par mois et par
+parcours ; volumes par produit et par service.
+
+Ce que ce choix écarte, et c'est une bonne chose à ce stade : le taux de
+non-conformité et les alarmes hors seuil par cuve. Le premier était piégé — la
+conformité automatique ne prononce jamais une non-conformité, donc l'indicateur
+aurait compté des jugements pharmaceutiques en les présentant comme des
+constats. Mieux vaut ne pas le tracer que le tracer mal.
+
+Reste à préciser quand on l'écrira : **pour qui**. Un décompte qui justifie des
+moyens ne se découpe pas comme un décompte qui pilote une activité au
+quotidien, et c'est le découpage — par mois, par parcours, par service — qui
+fera qu'on le lit ou non.
 
 ## C. Ordre que je propose
 
+Les quatre cadrages sont tranchés (18 septembre) : plus rien n'attend une
+décision, l'ordre ne dépend donc plus que du coût et des dépendances.
+
 1. **B.3 cohérence de dates** — bien cerné, sans dépendance, et il amorce le
-   moteur de règles dont dépend la colonne d'alertes.
+   moteur de règles dont dépend la colonne d'alertes. La règle alerte sans
+   interdire : c'est aussi le moins risqué à mettre en service.
 2. **B.2 emplacements de stockage** — le plus structurant, et le plus coûteux à
-   retarder.
-3. **B.1 exports** — après un cadrage d'une ligne : document réglementaire ou
-   état de travail.
-4. **B.4 quarantaine puis statistiques** — quand le circuit et les indicateurs
-   seront arrêtés.
+   retarder. La réservation à la saisie impose la contrainte d'unicité en base
+   dès la première version ; le délai d'expiration reste à arrêter avec vous,
+   mais il ne bloque pas le début du travail.
+3. **B.1 exports** — le plus lourd des quatre maintenant qu'il s'agit d'un
+   document réglementaire, et celui qui engage le plus. À faire après B.2 :
+   l'emplacement de stockage a sa place sur le document.
+4. **B.4 statistiques d'activité** — en dernier, parce qu'un décompte se lit
+   d'autant mieux que les données qu'il compte sont complètes.
 
 ---
 
