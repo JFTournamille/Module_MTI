@@ -11,6 +11,7 @@ import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
 import { useStockage } from './stores/stockage.js'
 import { useSession } from './stores/session.js'
+import { appel } from './api.js'
 
 const session = useSession()
 const store = useParcours()
@@ -26,7 +27,7 @@ const onglet = ref('bord')
 const TITRES = {
   bord: 'Tableau de bord MTI',
   parcours: 'Parcours MTI — Processus chronologique',
-  codifications: 'Codifications — Utilisateurs, services, produits, stockage, patients',
+  codifications: 'Codifications — Utilisateurs, services, produits, stockage, paramètres, patients',
   configuration: 'Configuration — Processus et points de contrôle'
 }
 
@@ -149,6 +150,47 @@ async function patientChoisi (patient) {
   await store.enregistrerEntete()
 }
 const modaleCatalogue = ref(false)
+
+/**
+ * Édite le dossier et le remet au navigateur.
+ *
+ * Le fichier est récupéré puis offert au téléchargement plutôt qu'ouvert par
+ * un simple lien : l'appel passe par `appel()`, donc avec l'opérateur courant
+ * dans ses en-têtes — c'est lui qui signe l'édition dans la trace, et un lien
+ * nu l'aurait perdu.
+ */
+const exportEnCours = ref(false)
+async function exporter (format) {
+  if (!store.dossierId) return
+  exportEnCours.value = true
+  try {
+    const r = await appel(`/api/dossiers/${store.dossierId}/export.${format}`)
+    if (!r.ok) {
+      store.erreurDossier = `Export refusé (${r.status}).`
+      return
+    }
+    const blob = await r.blob()
+    /* Le nom vient du serveur : c'est lui qui date le document, et deux
+       éditions du même dossier ne doivent pas porter le même nom. */
+    const entete = r.headers.get('content-disposition') ?? ''
+    const nom = entete.match(/filename="([^"]+)"/)?.[1] ??
+      `${store.dossier.reference ?? 'dossier'}.${format}`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nom
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    /* L'URL d'objet est relâchée : sans cela, un document nominatif resterait
+       en mémoire du navigateur jusqu'au rechargement de la page. */
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    store.erreurDossier = e.message || 'Export impossible — API injoignable.'
+  } finally {
+    exportEnCours.value = false
+  }
+}
 
 onMounted(async () => {
   await session.charger()
@@ -560,16 +602,22 @@ const blocages = computed(() => {
           @click="declotureOuverte = true"
         >Rouvrir le parcours</button>
 
-        <!-- Ces deux boutons venaient de la maquette et n'ont JAMAIS rien
-             fait : aucun gestionnaire, aucun export. Les laisser d'apparence
-             active laissait croire à un export qui n'existe pas — le même
-             défaut que la croix de la barre de titre. Désarmés en attendant
-             l'export réel (§8 : PDF et XLS, l'impression se faisant depuis le
-             document exporté).
-             Ils sont sur la ligne du PARCOURS parce qu'on exporte un dossier,
-             pas l'écran qu'on regarde. -->
-        <button class="f-btn" disabled title="Export non encore implémenté">Exporter PDF</button>
-        <button class="f-btn" disabled title="Export non encore implémenté">Exporter XLS</button>
+        <!-- Ils sont sur la ligne du PARCOURS parce qu'on exporte un dossier,
+             pas l'écran qu'on regarde.
+
+             TOLÉRANTS AUX INFORMATIONS PARTIELLES : aucune condition sur
+             l'état du dossier, aucun bouton désarmé. Un export n'est pas une
+             validation — il produit un document même sur un dossier
+             incomplet, et c'est le document qui dit ce qui manque. Le
+             filigrane « document non validé » est posé PAR LE SERVEUR : le
+             demander d'ici laisserait une page périmée produire un document
+             sans mention sur un dossier qui ne l'est plus. -->
+        <button class="f-btn" :disabled="!store.dossierId || exportEnCours"
+                title="Document de traçabilité — éditable à tout moment, il dit ce qui manque"
+                @click="exporter('pdf')">Exporter PDF</button>
+        <button class="f-btn" :disabled="!store.dossierId || exportEnCours"
+                title="Le même contenu en tableur, pour retraitement"
+                @click="exporter('xls')">Exporter XLS</button>
         <button class="btn-ann" @click="fermerParcours()">Fermer</button>
       </div>
 

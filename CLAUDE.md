@@ -123,6 +123,20 @@ réglementaires, pas à des préférences techniques.
   date et son motif — `now()` ne peut pas figurer dans le prédicat d'un index,
   et surtout une place « libre parce que le temps a passé » serait
   invérifiable après coup. Le délai vit dans `mti.parametre`, pas en dur.
+- **Un export N'EST PAS une validation.** Il n'exige rien, ne bloque rien, et
+  **dit ce qui manque plutôt que de le taire** — une case vide sans mention
+  ferait croire à un contrôle non fait alors qu'il s'agit d'un contrôle non
+  exporté. Le **filigrane est posé par le serveur** (`export-dossier.js:
+  mentionsDuDossier`), jamais demandé par le client : une page périmée
+  produirait sinon un document sans mention sur un dossier qui ne l'est plus.
+  Une ligne sans relevé ne porte **ni date ni opérateur**, même si la base en a
+  : les afficher à côté de « non renseigné » ferait lire un blanc comme un
+  faux. Les PDF sont écrits sans bibliothèque (`api/src/pdf.js`) pour que
+  **rien ne se glisse dans les métadonnées** d'un document nominatif ; le
+  tableur sort en SpreadsheetML, lisible et sans archive à assembler. Toute
+  édition est **tracée** dans `mti.export_dossier` avec son empreinte, l'état
+  du dossier au moment de l'édition et son auteur — un fait daté, qui ne se
+  réécrit pas quand le dossier change ensuite.
 - **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
   stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
   reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le

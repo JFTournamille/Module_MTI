@@ -8,6 +8,7 @@ import utilisateurs from './routes/utilisateurs.js'
 import session from './routes/session.js'
 import services from './routes/services.js'
 import stockage from './routes/stockage.js'
+import exportsDossier from './routes/exports.js'
 
 const mode = verifierConfigurationAuth()
 
@@ -267,6 +268,7 @@ await app.register(dossiers)
 await app.register(utilisateurs)
 await app.register(services)
 await app.register(stockage)
+await app.register(exportsDossier)
 await app.register(session)
 
 const port = Number(process.env.PORT ?? 3000)

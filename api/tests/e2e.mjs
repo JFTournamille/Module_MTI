@@ -1657,5 +1657,110 @@ console.log('\n28. Emplacements de stockage')
     : ko(`statut ${r.statut}`)
 }
 
+// ── 29. Exports du dossier : un document réglementaire, tolérant au partiel ──
+console.log('\n29. Exports PDF et tableur')
+{
+  /* Un fichier n'est pas du JSON : les exports se lisent en binaire, avec
+     leurs en-têtes — qui font partie de ce qui est éprouvé ici. */
+  const fichier = async (url) => {
+    const rep = await fetch(base + url)
+    return {
+      statut: rep.status,
+      entetes: Object.fromEntries(rep.headers.entries()),
+      octets: Buffer.from(await rep.arrayBuffer())
+    }
+  }
+
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E export' })
+  const dos = r.corps?.id
+
+  /* TOLÉRANT AUX INFORMATIONS PARTIELLES : le dossier vient d'être créé, rien
+     n'est rempli, et l'export doit néanmoins produire un document. Un export
+     n'est pas une validation. */
+  let f = await fichier(`/api/dossiers/${dos}/export.pdf`)
+  f.statut === 200 && f.octets.subarray(0, 5).toString() === '%PDF-'
+    ? ok('un dossier vierge s\'exporte : un export n\'est pas une validation')
+    : ko(`statut ${f.statut}, début « ${f.octets.subarray(0, 8).toString()} »`)
+
+  f.octets.subarray(-6).toString().includes('%%EOF')
+    ? ok('le fichier est complet, marqueur de fin compris')
+    : ko(`fin du fichier : « ${f.octets.subarray(-12).toString()} »`)
+
+  /* IL DIT CE QUI MANQUE plutôt que de le taire : une case vide sans mention
+     ferait croire à un contrôle non fait, alors qu'il s'agit d'un contrôle non
+     exporté. */
+  const texte = f.octets.toString('latin1')
+  texte.includes('non renseign')
+    ? ok('les points non renseignés sont MENTIONNÉS, pas laissés en blanc')
+    : ko('aucune mention des points manquants')
+
+  /* LE FILIGRANE EST POSÉ PAR LE SERVEUR. Le client ne le demande pas et ne
+     peut pas l'écarter : une page périmée produirait sinon un document sans
+     mention sur un dossier qui n'est plus validé. */
+  texte.includes('DOCUMENT NON VALID')
+    ? ok('« document non validé » est posé par le serveur, pas demandé')
+    : ko('aucun filigrane sur un dossier non validé')
+
+  f.entetes['content-type'] === 'application/pdf' &&
+  /attachment; filename="MTI-[0-9]+-[0-9]{8}-[0-9]{4}\.pdf"/.test(f.entetes['content-disposition'] ?? '')
+    ? ok(`servi en pièce jointe, nom daté : ${f.entetes['content-disposition']}`)
+    : ko(`en-têtes : ${JSON.stringify({ t: f.entetes['content-type'], d: f.entetes['content-disposition'] })}`)
+
+  f.entetes['x-content-type-options'] === 'nosniff' && f.entetes['cache-control'] === 'no-store'
+    ? ok('nosniff et no-store : un document nominatif ne s\'ouvre pas dans la page et ne se met pas en cache')
+    : ko(`en-têtes de sécurité : ${JSON.stringify({ n: f.entetes['x-content-type-options'], c: f.entetes['cache-control'] })}`)
+
+  // Le tableur dit la même chose, dans un format que Excel ouvre.
+  const x = await fichier(`/api/dossiers/${dos}/export.xls`)
+  const xml = x.octets.toString('utf8')
+  x.statut === 200 && xml.startsWith('<?xml') && xml.includes('urn:schemas-microsoft-com:office:spreadsheet')
+    ? ok('le tableur sort en SpreadsheetML, lisible par Excel et LibreOffice')
+    : ko(`statut ${x.statut}, début « ${xml.slice(0, 40)} »`)
+  xml.includes('DOCUMENT NON VALID')
+    ? ok('le tableur porte la même mention que le PDF')
+    : ko('le tableur ne dit pas que le dossier n\'est pas validé')
+
+  /* LA SORTIE EST TRACÉE, pas seulement permise : un export nominatif fait
+     sortir de l'application une identité, un lot et des noms d'opérateurs. */
+  r = await j('GET', `/api/dossiers/${dos}/exports`)
+  const traces = r.corps ?? []
+  traces.length === 2 && traces.every((t) => t.sha256 && t.genere_par && t.genere_le)
+    ? ok('les deux éditions sont tracées, avec leur empreinte et leur auteur')
+    : ko(`${traces.length} trace(s) : ${JSON.stringify(traces.map((t) => t.format))}`)
+
+  traces.every((t) => t.statut === 'brouillon' && t.nominatif === false)
+    ? ok('la trace garde l\'état du dossier AU MOMENT de l\'édition')
+    : ko(`états tracés : ${JSON.stringify(traces.map((t) => [t.statut, t.nominatif]))}`)
+
+  /* Deux éditions du même dossier ne donnent pas le même fichier — ne
+     serait-ce que par l'horodatage — et c'est ce qui permet de rapprocher un
+     document présenté après coup de l'édition qui l'a produit. */
+  const empreintes = new Set(traces.map((t) => t.sha256))
+  empreintes.size === traces.length
+    ? ok('chaque édition a sa propre empreinte')
+    : ko('deux éditions partagent une empreinte')
+
+  // Un dossier clos le dit sur le document, au même titre que « non validé ».
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E export clos' })
+  const dosClos = r.corps?.id
+  await j('POST', `/api/dossiers/${dosClos}/clore`, { motif: 'Recette export' })
+  f = await fichier(`/api/dossiers/${dosClos}/export.pdf`)
+  const texteClos = f.octets.toString('latin1')
+  texteClos.includes('PARCOURS CLOS') && texteClos.includes('Recette export')
+    ? ok('un parcours clos le dit sur le document, avec son motif')
+    : ko('le document d\'un parcours clos ne se distingue pas')
+
+  /* Clore n'est pas valider : le document ne doit pas laisser croire à une
+     conclusion de conformité qui n'a pas été prononcée. */
+  texteClos.includes("n'est pas all") || texteClos.includes('Aucune conclusion')
+    ? ok('le document dit qu\'un parcours clos n\'emporte aucune conclusion')
+    : ko('rien ne distingue la conformité d\'un parcours clos')
+
+  f = await fichier('/api/dossiers/00000000-0000-0000-0000-000000000000/export.pdf')
+  f.statut === 404 ? ok('dossier inconnu : 404') : ko(`statut ${f.statut}`)
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

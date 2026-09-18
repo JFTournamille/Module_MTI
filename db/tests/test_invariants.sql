@@ -1014,6 +1014,59 @@ BEGIN
   RAISE NOTICE '  ✓ une table dont la clé n''est pas « id » reste auditable, et modifiable';
 END $$;
 
+\echo ''
+\echo 'TEST 26 — Une édition de dossier est un fait daté : elle ne se réécrit pas'
+DO $$
+DECLARE
+  v_auteur  uuid;
+  v_modele  uuid;
+  v_dossier uuid;
+  v_export  uuid;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-EXPORT-1', v_modele, v_auteur) RETURNING id INTO v_dossier;
+
+  INSERT INTO mti.export_dossier
+    (dossier_id, format, statut, nominatif, taille, sha256, genere_par)
+  VALUES (v_dossier, 'pdf', 'brouillon', false, 1234, repeat('a', 64), v_auteur)
+  RETURNING id INTO v_export;
+  RAISE NOTICE '  ✓ une édition se consigne, avec son empreinte et son auteur';
+
+  -- Un format inventé n'entre pas : la colonne dit ce qui existe.
+  BEGIN
+    INSERT INTO mti.export_dossier
+      (dossier_id, format, statut, nominatif, taille, sha256, genere_par)
+    VALUES (v_dossier, 'docx', 'brouillon', false, 1, 'x', v_auteur);
+    RAISE EXCEPTION 'ÉCHEC : format d''export inconnu accepté';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ un format d''export inconnu est refusé';
+  END;
+
+  /* L'ÉTAT EST FIGÉ À L'ÉDITION. Valider le dossier plus tard ne doit pas
+     réécrire ce qu'était le document sorti avant : un PDF édité sur un
+     brouillon reste le PDF d'un brouillon, quoi qu'il advienne du dossier. */
+  UPDATE mti.dossier
+     SET statut = 'valide', conformite = 'conforme',
+         valide_par = v_auteur, valide_le = now()
+   WHERE id = v_dossier;
+  PERFORM 1 FROM mti.export_dossier
+   WHERE id = v_export AND statut = 'brouillon';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ÉCHEC : la trace d''édition a suivi le dossier';
+  END IF;
+  RAISE NOTICE '  ✓ valider le dossier ne réécrit pas ce qu''était un document déjà sorti';
+
+  -- Et la trace est elle-même auditée.
+  PERFORM 1 FROM mti.audit
+   WHERE table_cible = 'export_dossier' AND cle_cible = v_export::text;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ÉCHEC : l''édition n''est pas passée par l''audit';
+  END IF;
+  RAISE NOTICE '  ✓ l''édition est tracée dans l''audit, comme toute écriture';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

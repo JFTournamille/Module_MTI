@@ -21,7 +21,13 @@ const nav = await chromium.launch({
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
 })
-const page = await nav.newPage({ viewport: { width: 1280, height: 900 } })
+/* `acceptDownloads` : sans lui, Playwright annule les téléchargements et
+   l'export ne se vérifie pas — le bouton paraîtrait fonctionner sans que rien
+   n'arrive. */
+const page = await nav.newPage({
+  viewport: { width: 1280, height: 900 },
+  acceptDownloads: true
+})
 const erreurs = []
 page.on('pageerror', (e) => erreurs.push(`pageerror: ${e.message}`))
 page.on('console', (m) => {
@@ -2036,19 +2042,21 @@ console.log('\n32. Pied de page : parcours et processus séparés')
     ? ok('le groupe « processus » ne porte aucun geste de parcours')
     : ko(`groupe processus : « ${tProc.replace(/\n/g, ' | ').slice(0, 90)} »`)
 
-  /* Les deux boutons d'export venaient de la maquette et n'ont jamais rien
-     fait. Désarmés plutôt que retirés : l'export est demandé (§8), il n'est
-     pas encore écrit — mais un bouton d'apparence active qui ne fait rien est
-     le défaut qu'on a déjà corrigé sur la croix de la barre de titre. */
+  /* Les deux boutons d'export sont restés DÉSARMÉS tant que l'export n'était
+     pas écrit — un bouton d'apparence active qui ne fait rien est le défaut
+     déjà corrigé sur la croix de la barre de titre. Ils sont armés depuis
+     que l'export existe, et ils le restent quel que soit l'état du dossier :
+     un export n'est pas une validation, c'est le document qui dit ce qui
+     manque. Le groupe 38 éprouve qu'ils produisent réellement un fichier. */
   const exports = page.locator('.pied-parcours .f-btn')
   const nbExports = await exports.count()
   let armes = 0
   for (let i = 0; i < nbExports; i++) {
     if (!(await exports.nth(i).isDisabled())) armes++
   }
-  armes === 0
-    ? ok(`${nbExports} bouton(s) d'export désarmés tant que l'export n'existe pas`)
-    : ko(`${armes} bouton(s) d'export d'apparence active et sans effet`)
+  armes === nbExports && nbExports >= 2
+    ? ok(`${nbExports} bouton(s) d'export armés — l'export ne dépend pas de l'état du dossier`)
+    : ko(`${armes} bouton(s) armé(s) sur ${nbExports} : un export ne se refuse pas`)
 
   // ── Le cadenas : rouvrir un processus validé ──
   const proc = page.locator('.proc')
@@ -2453,7 +2461,72 @@ console.log('\n37. Emplacements de stockage')
   }
 }
 
-console.log('\n38. Console du navigateur et réseau')
+// ── 38. Exports depuis l'écran ──
+console.log('\n38. Exports depuis l\'écran')
+{
+  /* Le nom d'établissement se règle sans redéploiement : le même module sert
+     plusieurs établissements, et un nom en dur en obligerait un par site. */
+  await page.locator('.onglet', { hasText: 'Codifications' }).click()
+  await page.waitForTimeout(900)
+  await page.locator('.cfg-sst-b', { hasText: 'Paramètres' }).click()
+  await page.waitForTimeout(1100)
+  const ligneParam = page.locator('.adm-t tbody tr').filter({ hasText: 'etablissement.nom' })
+  await ligneParam.count()
+    ? ok('le nom d\'établissement se règle depuis l\'écran')
+    : ko('aucun paramètre d\'établissement')
+
+  if (await ligneParam.count()) {
+    await ligneParam.locator('input').fill('CHU de recette — PUI')
+    await ligneParam.locator('.adm-b').click()
+    await page.waitForTimeout(1500)
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForTimeout(1800)
+    await page.locator('.onglet', { hasText: 'Codifications' }).click()
+    await page.waitForTimeout(900)
+    await page.locator('.cfg-sst-b', { hasText: 'Paramètres' }).click()
+    await page.waitForTimeout(1100)
+    const relu = await page.locator('.adm-t tbody tr').filter({ hasText: 'etablissement.nom' })
+      .locator('input').inputValue()
+    relu === 'CHU de recette — PUI'
+      ? ok('le réglage survit au rechargement : il vit en base, pas dans la page')
+      : ko(`valeur relue : « ${relu} »`)
+  }
+
+  await allerAuScenario()
+  await page.waitForTimeout(600)
+
+  /* LES BOUTONS NE SONT PAS DÉSARMÉS par l'état du dossier : un export n'est
+     pas une validation, et le document dit lui-même ce qui manque. */
+  const boutonPdf = page.locator('.f-btn', { hasText: 'Exporter PDF' })
+  await boutonPdf.isEnabled()
+    ? ok('l\'export reste offert sur un dossier incomplet')
+    : ko('le bouton d\'export est désarmé — un export n\'est pourtant pas une validation')
+
+  const attente = page.waitForEvent('download', { timeout: 25000 })
+  await boutonPdf.click()
+  const recu = await attente.catch(() => null)
+  recu
+    ? ok(`document téléchargé : ${recu.suggestedFilename()}`)
+    : ko('aucun téléchargement déclenché')
+
+  if (recu) {
+    /* Le nom vient du SERVEUR et porte la date : deux éditions du même dossier
+       ne doivent pas se recouvrir dans un dossier de téléchargement. */
+    const nomDate = /MTI-\d+-\d{8}-\d{4}\.pdf/.test(recu.suggestedFilename())
+    nomDate
+      ? ok('le nom du fichier est daté par le serveur')
+      : ko(`nom : « ${recu.suggestedFilename()} »`)
+  }
+
+  const attenteXls = page.waitForEvent('download', { timeout: 25000 })
+  await page.locator('.f-btn', { hasText: 'Exporter XLS' }).click()
+  const recuXls = await attenteXls.catch(() => null)
+  recuXls && recuXls.suggestedFilename().endsWith('.xls')
+    ? ok(`tableur téléchargé : ${recuXls.suggestedFilename()}`)
+    : ko('aucun tableur téléchargé')
+}
+
+console.log('\n39. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

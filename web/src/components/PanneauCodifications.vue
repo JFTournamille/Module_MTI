@@ -33,6 +33,10 @@ const SOUS_ONGLETS = [
      ÉTAT plutôt qu'une simple liste : une place est libre ou occupée, et c'est
      la base qui en décide. L'écran la montre, il ne l'arbitre pas. */
   ['stockage', 'Stockage'],
+  /* Paramètres — la liste est GÉNÉRIQUE : elle affiche ce que porte
+     `mti.parametre`, pour qu'un réglage ajouté plus tard y apparaisse sans
+     qu'on ait à retoucher cet écran. */
+  ['parametres', 'Paramètres'],
   ['patients', 'Patients']
 ]
 const sousOnglet = ref('utilisateurs')
@@ -121,6 +125,16 @@ async function ouvrirCuve (c) {
   cuveOuverte.value = c.id
   const r = await appel(`/api/contenants/${c.id}/emplacements`)
   placesVues.value = r.ok ? await r.json() : []
+}
+
+/** Valeurs en cours d'édition, par clé — la saisie ne part qu'au clic. */
+const valeursSaisies = ref({})
+async function enregistrerParametre (cle) {
+  erreur.value = ''
+  const v = valeursSaisies.value[cle]
+  if (v === undefined || v === '') return
+  if (!(await stockage.reglerParametre(cle, v))) erreur.value = stockage.erreur
+  else delete valeursSaisies.value[cle]
 }
 
 async function reglerDelai () {
@@ -419,6 +433,40 @@ async function enregistrerService (s, champ, valeur) {
             <td colspan="7" class="meta">
               Aucun contenant. Sans référentiel, un point « emplacement » n'a rien à
               proposer.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </template>
+
+    <!-- ══ Paramètres ══ -->
+    <template v-else-if="sousOnglet === 'parametres'">
+      <div class="adm-aide">
+        Réglages qui doivent pouvoir changer <strong>sans redéploiement</strong> : le
+        même module sert plusieurs établissements, et un nom porté en dur obligerait à
+        redéployer pour chacun. Chaque modification est tracée.
+      </div>
+      <table class="adm-t">
+        <thead>
+          <tr>
+            <th style="width:280px;">Clé</th>
+            <th>Ce qu'elle règle</th>
+            <th style="width:280px;">Valeur</th>
+            <th style="width:110px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in stockage.parametres" :key="p.cle">
+            <td class="ident">{{ p.cle }}</td>
+            <td>{{ p.libelle }}</td>
+            <td>
+              <input type="text" style="width:100%;"
+                     :value="valeursSaisies[p.cle] ?? p.valeur"
+                     @input="valeursSaisies[p.cle] = $event.target.value">
+            </td>
+            <td>
+              <button class="adm-b" :disabled="valeursSaisies[p.cle] === undefined"
+                      @click="enregistrerParametre(p.cle)">Enregistrer</button>
             </td>
           </tr>
         </tbody>
