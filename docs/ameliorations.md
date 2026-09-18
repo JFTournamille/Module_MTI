@@ -388,7 +388,19 @@ compte : il porte sur une unité bien présente au dossier. La machine cesse alo
 de constater le vert et rend la main au pharmacien, qui dira si la réserve pèse
 ici. Elle ne prononce toujours rien elle-même.
 
-## B. Les quatre chantiers, et ce qu'ils demandent
+## B. Les quatre chantiers — **tous livrés le 18 septembre**
+
+| Chantier | État |
+|---|---|
+| B.1 exports PDF et XLS | ✔ **migrations 027** — document réglementaire, filigrane serveur, édition tracée |
+| B.2 emplacements de stockage | ✔ **migrations 024–026** — unicité tenue en base, réservation à la saisie, expiration |
+| B.3 cohérence de dates | ✔ **migration 023** — la règle alerte, elle n'interdit pas |
+| B.4 statistiques d'activité | ✔ **migration 028** — quantitatives, agrégées en base |
+
+Ce qui suit décrit ce que chacun demandait, et ce qui a été retenu. Les
+réserves qui restent ouvertes sont signalées comme telles.
+
+
 
 ### B.1 Exports tolérants aux informations partielles
 
@@ -536,10 +548,29 @@ moyens ne se découpe pas comme un décompte qui pilote une activité au
 quotidien, et c'est le découpage — par mois, par parcours, par service — qui
 fera qu'on le lit ou non.
 
-## C. Ordre que je propose
+### B.5 Ce qui reste ouvert après ces quatre chantiers
 
-Les quatre cadrages sont tranchés (18 septembre) : plus rien n'attend une
-décision, l'ordre ne dépend donc plus que du coût et des dépendances.
+Trois points, tous identifiés en écrivant, aucun bloquant :
+
+- **Le délai d'expiration d'une réservation d'emplacement** est amorcé à 24 h
+  et se règle depuis l'écran. Il n'a pas encore été confronté à l'usage : une
+  place gelée par un dossier abandonné et une place reprise sous les pieds d'un
+  opérateur sont deux gênes opposées, et c'est la pratique qui dira laquelle
+  pèse.
+- **La ventilation des statistiques par service** n'existe pas, parce que le
+  dossier ne porte aucun service. Elle demande d'abord une décision : quel
+  service compte, celui qui prescrit ou celui qui administre ? Puis une colonne
+  et un rattachement à la création du dossier.
+- **Le tableur sort en SpreadsheetML** et non en `.xlsx` : du XML lisible,
+  qu'Excel et LibreOffice ouvrent, mais qui déclenche un avertissement de
+  format sur certaines configurations d'Excel. Si cet avertissement gêne les
+  utilisateurs, il faudra assembler une vraie archive — c'est faisable sans
+  dépendance, avec le module `zlib` de Node, mais ce n'est pas gratuit.
+
+## C. Ordre suivi
+
+Les quatre cadrages ont été tranchés le 18 septembre, et les quatre chantiers
+écrits dans la foulée, dans cet ordre :
 
 1. **B.3 cohérence de dates** — bien cerné, sans dépendance, et il amorce le
    moteur de règles dont dépend la colonne d'alertes. La règle alerte sans
