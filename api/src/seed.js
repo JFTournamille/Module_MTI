@@ -234,6 +234,49 @@ try {
   }
   console.log(`✓ ${services.length} services (unités fonctionnelles)`)
 
+  /* ── Contenants de stockage ──
+     Des EXEMPLES, au même titre que les produits et les services : sans un
+     contenant au moins, un point de contrôle « emplacement » n'a rien à
+     proposer et l'écran paraît cassé alors qu'il est seulement vide. Ce sont
+     des données plausibles et fictives, que l'établissement remplacera par les
+     siennes — elles se désactivent depuis Codifications, elles ne se
+     suppriment pas, comme tout ce qu'un dossier peut citer.
+
+     `ON CONFLICT DO NOTHING` sur le code : un contenant déjà là n'est pas
+     réécrit, et surtout ses places ne sont pas régénérées — ce serait effacer
+     une mise hors service décidée par l'établissement. */
+  const contenants = [
+    ['CUVE-1', 'Cuve d\'azote n°1 — PUI', 'cuve', 'A-J', 20],
+    ['CUVE-2', 'Cuve d\'azote n°2 — PUI (secours)', 'cuve', 'A-E', 20],
+    ['CONG-80', 'Congélateur −80 °C — UPC', 'congelateur', '1-4', 12]
+  ]
+  let contenantsCrees = 0
+  for (const [code, libelle, genre, etages, parEtage] of contenants) {
+    const { rows } = await client.query(
+      `INSERT INTO mti.contenant (code, libelle, genre)
+       VALUES ($1, $2, $3) ON CONFLICT (code) DO NOTHING RETURNING id`,
+      [code, libelle, genre])
+    if (!rows.length) continue
+    /* « A-J » ou « 1-4 » : une plage se déplie ici, le référentiel ne portant
+       que des étiquettes. Un étage peut s'appeler « haut » ou « 1 bis », d'où
+       du texte et non un rang. */
+    const [debut, fin] = etages.split('-')
+    const etiquettes = []
+    if (/^[0-9]+$/.test(debut)) {
+      for (let i = Number(debut); i <= Number(fin); i++) etiquettes.push(String(i))
+    } else {
+      for (let c = debut.charCodeAt(0); c <= fin.charCodeAt(0); c++) {
+        etiquettes.push(String.fromCharCode(c))
+      }
+    }
+    await client.query('SELECT mti.creer_emplacements($1, $2::text[], $3)',
+      [rows[0].id, etiquettes, parEtage])
+    contenantsCrees++
+  }
+  console.log(
+    `✓ ${contenants.length} contenant(s) de stockage` +
+    (contenantsCrees ? ` — ${contenantsCrees} créé(s) avec leurs places` : ' (déjà présents)'))
+
   // ── Utilisateur de développement ──
   if ((process.env.AUTH_MODE ?? 'dev') === 'dev' && process.env.NODE_ENV !== 'production') {
     const { rows } = await client.query(

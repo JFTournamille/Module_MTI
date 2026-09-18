@@ -83,7 +83,6 @@ const nouvelleCuve = ref({
 const formulaireCuve = ref(false)
 const placesVues = ref([])
 const cuveOuverte = ref(null)
-const delaiSaisi = ref('')
 
 /** « A-J » ou « A,B,C » : les deux s'écrivent, la première est plus rapide. */
 function etagesDepuis (texte) {
@@ -135,13 +134,6 @@ async function enregistrerParametre (cle) {
   if (v === undefined || v === '') return
   if (!(await stockage.reglerParametre(cle, v))) erreur.value = stockage.erreur
   else delete valeursSaisies.value[cle]
-}
-
-async function reglerDelai () {
-  erreur.value = ''
-  if (!(await stockage.reglerParametre('emplacement.expiration_heures', delaiSaisi.value))) {
-    erreur.value = stockage.erreur
-  }
 }
 
 const servicesFiltres = computed(() => {
@@ -321,23 +313,11 @@ async function enregistrerService (s, champ, valeur) {
     <template v-else-if="sousOnglet === 'stockage'">
       <div class="adm-aide">
         Les places d'une cuve sont <strong>énumérées une à une</strong> : c'est ce qui
-        permet de mettre une cassette hors service sans toucher aux autres, et c'est en
-        base qu'une place ne peut être prise qu'une fois. La liste affichée à l'opérateur
-        n'est qu'un instantané — entre son affichage et le clic, une autre réception peut
-        avoir pris la même place. C'est la base qui arbitre, et elle le dit.
-      </div>
-
-      <div class="adm-r stk-delai">
-        <label for="stk-delai">Réservation non confirmée libérée après</label>
-        <input id="stk-delai" type="number" min="1" max="8760" style="width:80px;"
-               :value="delaiSaisi || stockage.delaiExpiration"
-               @input="delaiSaisi = $event.target.value">
-        <span>heures</span>
-        <button class="adm-b" @click="reglerDelai()">Régler</button>
-        <span class="meta">
-          Une place gelée par un dossier abandonné finirait par remplir la cuve.
-          Réglé haut : une place reprise sous les pieds d'un opérateur est plus grave.
-        </span>
+        permet de sortir une cassette du service sans toucher aux autres. Ce référentiel
+        <strong>décrit</strong> des places — il n'en réserve aucune et ne suit pas leur
+        disponibilité. C'est le <strong>relevé</strong> du point « emplacement » qui dit
+        où un MTI a été posé, par qui et à quelle heure, et lui seul est figé par la
+        validation du dossier.
       </div>
 
       <div class="adm-bar">
@@ -388,8 +368,7 @@ async function enregistrerService (s, champ, valeur) {
             <th>Libellé</th>
             <th style="width:110px;">Genre</th>
             <th style="width:90px;">Places</th>
-            <th style="width:90px;">Occupées</th>
-            <th style="width:90px;">Libres</th>
+            <th style="width:110px;">En service</th>
             <th style="width:150px;"></th>
           </tr>
         </thead>
@@ -400,29 +379,26 @@ async function enregistrerService (s, champ, valeur) {
               <td>{{ c.libelle }}</td>
               <td>{{ c.genre }}</td>
               <td>{{ c.nbPlaces }}</td>
-              <td>{{ c.nbOccupees }}</td>
-              <td :class="{ 'stk-plein': c.nbLibres === 0 }">{{ c.nbLibres }}</td>
+              <td :class="{ 'stk-plein': c.nbActives === 0 }">{{ c.nbActives }}</td>
               <td>
                 <button class="adm-b" @click="ouvrirCuve(c)">
                   {{ cuveOuverte === c.id ? 'Replier' : 'Voir les places' }}
                 </button>
-                <!-- Un contenant ne se supprime pas : les occupations passées
-                     disent où était un MTI à une date donnée. -->
+                <!-- Un contenant ne se supprime pas : les dossiers qui citent
+                     ses places doivent rester lisibles. Il se désactive. -->
                 <button class="adm-b" @click="stockage.basculerContenant(c.id, !c.actif)">
                   {{ c.actif ? 'Désactiver' : 'Réactiver' }}
                 </button>
               </td>
             </tr>
             <tr v-if="cuveOuverte === c.id">
-              <td colspan="7">
+              <td colspan="6">
                 <div class="stk-grille">
                   <span v-for="e in placesVues" :key="e.id"
-                        class="stk-case"
-                        :class="{ occ: e.occupation, hs: !e.actif }"
-                        :title="e.occupation
-                          ? `${e.libelle} — dossier ${e.occupation.dossier}`
-                          : (!e.actif ? `${e.libelle} — hors service : ${e.horsServiceMotif}`
-                                      : `${e.libelle} — libre`)">
+                        class="stk-case" :class="{ hs: !e.actif }"
+                        :title="e.actif
+                          ? e.libelle
+                          : `${e.libelle} — hors service : ${e.horsServiceMotif}`">
                     {{ e.etage }}{{ String(e.numero).padStart(2, '0') }}
                   </span>
                 </div>
@@ -430,7 +406,7 @@ async function enregistrerService (s, champ, valeur) {
             </tr>
           </template>
           <tr v-if="!stockage.contenants.length">
-            <td colspan="7" class="meta">
+            <td colspan="6" class="meta">
               Aucun contenant. Sans référentiel, un point « emplacement » n'a rien à
               proposer.
             </td>

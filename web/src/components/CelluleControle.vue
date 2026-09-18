@@ -24,28 +24,20 @@ const saisie = computed(() => store.saisie(props.cle, props.point))
 const alarme = computed(() => store.alarme(props.cle, props.point))
 
 // ── Emplacement de stockage ──
+//
+// Le point CONSTATE où le MTI a été posé : il ne réserve rien, et une place
+// n'est ni libre ni occupée. Ce qui fait foi est ce relevé, figé par la
+// validation du dossier.
 const contenantChoisi = ref('')
 const places = ref([])
-const refusPlace = computed(() => store.refusEmplacement[props.cle] ?? '')
 
-/** Libellé de la place tenue, pour que la ligne dise où est le MTI. */
+/** Libellé de la place choisie, pour que la ligne dise où est le MTI. */
 const placeTenue = computed(() =>
   places.value.find((e) => e.id === saisie.value.valeurTexte)?.libelle ?? null)
 
-const detailOccupation = computed(() => {
-  const e = places.value.find((x) => x.id === saisie.value.valeurTexte)
-  if (!e?.occupation) return 'Place réservée à l\'enregistrement'
-  const jusque = e.occupation.expireLe
-    ? new Date(e.occupation.expireLe).toLocaleString('fr-FR')
-    : null
-  return jusque
-    ? `Réservée jusqu'au ${jusque} si le processus reste ouvert`
-    : 'Réservée'
-})
-
 async function chargerPlaces (force = false) {
   places.value = contenantChoisi.value
-    ? await stockage.chargerPlaces(contenantChoisi.value, store.dossierId, force)
+    ? await stockage.chargerPlaces(contenantChoisi.value, force)
     : []
 }
 
@@ -60,15 +52,14 @@ async function changerContenant () {
   }
 }
 
-/* Vrai quand la fiche porte une place que ce dossier NE TIENT PLUS : la
-   réservation a expiré, ou elle a été libérée ailleurs. Le cas est réel — c'est
-   tout l'objet du délai d'expiration — et il ne doit pas se traduire par un
-   menu vide sans explication : l'opérateur croirait à une panne, alors que la
-   seule chose à faire est d'en choisir une autre.
+/* Vrai quand la fiche porte une place que le référentiel ne propose plus :
+   elle a été sortie du service depuis la saisie. Ce n'est pas une panne, et il
+   ne faut pas que ça ressemble à un menu vide — le relevé reste valable, c'est
+   la place qui a changé d'état.
 
    CALCULÉ et non mémorisé : un drapeau posé une fois restait allumé après que
-   l'opérateur avait choisi une autre place, et l'écran continuait d'annoncer un
-   problème résolu. Ce qui fait foi est la liste des places du moment. */
+   l'opérateur avait choisi une autre place. Ce qui fait foi est la liste du
+   moment. */
 const placePerdue = computed(() =>
   Boolean(saisie.value.valeurTexte) && places.value.length > 0 &&
   !places.value.some((e) => e.id === saisie.value.valeurTexte))
@@ -81,7 +72,7 @@ if (props.point.type === 'emplacement') {
     const actifs = stockage.contenantsActifs
     if (!actifs.length) return
     for (const c of actifs) {
-      const liste = await stockage.chargerPlaces(c.id, store.dossierId)
+      const liste = await stockage.chargerPlaces(c.id)
       if (!saisie.value.valeurTexte || liste.some((e) => e.id === saisie.value.valeurTexte)) {
         contenantChoisi.value = c.id
         places.value = liste
@@ -91,14 +82,8 @@ if (props.point.type === 'emplacement') {
     /* Aucune cuve ne propose la place enregistrée : on ouvre quand même la
        première, pour que le menu soit utilisable. `placePerdue` le dira. */
     contenantChoisi.value = actifs[0].id
-    places.value = await stockage.chargerPlaces(actifs[0].id, store.dossierId)
+    places.value = await stockage.chargerPlaces(actifs[0].id)
   }, { immediate: true })
-
-  /* Après chaque enregistrement, les places sont relues : une réservation
-     vient d'être posée ou déplacée, et la liste en mémoire ne porte plus la
-     bonne date d'expiration. `force` court-circuite le cache, que
-     l'enregistrement a de toute façon vidé. */
-  watch(() => store.dernierEnregistrement, () => { chargerPlaces(true) })
 }
 
 // ── Pièces jointes : photos d'un côté, documents de l'autre ──
@@ -424,7 +409,7 @@ function heure (epoch) {
             @change="changerContenant()">
       <option value="">— cuve —</option>
       <option v-for="c in stockage.contenantsActifs" :key="c.id" :value="c.id">
-        {{ c.libelle }} ({{ c.nbLibres }} libre{{ c.nbLibres > 1 ? 's' : '' }})
+        {{ c.libelle }}
       </option>
     </select>
     <select class="cfi cse" v-model="saisie.valeurTexte"
@@ -432,15 +417,11 @@ function heure (epoch) {
       <option value="">— place —</option>
       <option v-for="e in places" :key="e.id" :value="e.id">{{ e.libelle }}</option>
     </select>
-    <!-- Le refus de la base, dit comme il doit l'être. -->
-    <div v-if="refusPlace" class="cemp-refus">{{ refusPlace }}</div>
-    <div v-else-if="placePerdue" class="cemp-refus">
-      La place enregistrée n'est plus tenue par ce dossier — réservation expirée
-      ou libérée. En choisir une autre.
+    <div v-if="placePerdue" class="cemp-refus">
+      La place enregistrée a été sortie du service depuis cette saisie. Le relevé
+      reste valable ; en choisir une autre si le MTI a été déplacé.
     </div>
-    <div v-else-if="placeTenue" class="cemp-ok" :title="detailOccupation">
-      ⬛ {{ placeTenue }}
-    </div>
+    <div v-else-if="placeTenue" class="cemp-ok">⬛ {{ placeTenue }}</div>
   </div>
 
   <!-- Automatique : renseigné par le système à la validation -->

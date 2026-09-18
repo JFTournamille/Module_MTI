@@ -108,21 +108,19 @@ réglementaires, pas à des préférences techniques.
   tout le parcours. Les deux extrémités sont rendues, pour que l'écran marque
   les deux cellules — l'opérateur ne sait pas encore laquelle des deux dates
   est fausse.
-- **Une place de stockage n'est prise qu'une fois, et c'est LA BASE qui
-  l'arbitre.** L'index partiel `emplacement_occupe_unique` est le seul juge :
-  la liste des places libres affichée à l'écran n'est qu'un instantané, et
-  entre son affichage et le clic une autre réception peut avoir pris la même
-  cassette. Ne jamais remettre cette décision dans le navigateur. Le refus se
-  dit « déjà prise », avec le code `emplacement_pris` — la réaction attendue
-  est d'en choisir une autre. **La réservation se fait DANS LA TRANSACTION DE
-  LA SAISIE** (`api/src/stockage.js:reserverEmplacement`, appelée depuis la
-  route de saisie) : un appel séparé laisserait un relevé désigner une place
-  prise entre-temps, et un refus annule tout le lot plutôt que de laisser une
-  fiche à moitié écrite. **L'expiration est un ÉVÉNEMENT**, jamais une
-  condition implicite : une réservation périmée est réellement libérée, avec sa
-  date et son motif — `now()` ne peut pas figurer dans le prédicat d'un index,
-  et surtout une place « libre parce que le temps a passé » serait
-  invérifiable après coup. Le délai vit dans `mti.parametre`, pas en dur.
+- **Un emplacement se CONSTATE, il ne se réserve pas.** Le référentiel
+  (`contenant`, `emplacement`) décrit des places : où elles sont, comment elles
+  se nomment (`CUVE-1-A-03`), et si elles sont en service. **Il n'y a ni
+  disponibilité ni délai de réservation** — retirés le 18 septembre. Ce qui dit
+  où un MTI a été posé, par qui et à quelle heure, c'est la **saisie** du point
+  `emplacement`, et elle seule est figée par la validation du dossier ; une
+  table d'occupation aurait donné deux sources dont une seule fait foi. Le coût
+  est assumé et il faut le savoir : **rien n'empêche deux dossiers de désigner
+  la même cassette**. Si cela devient un problème à l'usage, ce qu'il faudra
+  rétablir est une contrainte d'unicité, pas une réservation à durée limitée.
+  Une place se sort du service **avec un motif** ; un contenant ne se supprime
+  pas, il se désactive. Le seed livre des contenants d'**exemple** — sans eux,
+  un point `emplacement` n'a rien à proposer et l'écran se lit comme une panne.
 - **Un export N'EST PAS une validation.** Il n'exige rien, ne bloque rien, et
   **dit ce qui manque plutôt que de le taire** — une case vide sans mention
   ferait croire à un contrôle non fait alors qu'il s'agit d'un contrôle non

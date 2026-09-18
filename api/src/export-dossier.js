@@ -130,7 +130,7 @@ export function mentionsDuDossier (dossier) {
  * Construit le PDF du dossier.
  *
  * @param {object} d Ce que la route a rassemblé : dossier, patient, processus,
- *   saisies, pièces, alertes, occupations, et le contexte d'édition.
+ *   saisies, pièces, alertes, et le contexte d'édition.
  */
 export function pdfDuDossier (d) {
   const {

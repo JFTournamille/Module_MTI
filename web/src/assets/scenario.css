@@ -591,10 +591,8 @@ input[type=radio].ron{accent-color:#cc2200;}
 .stk-case{display:inline-block;min-width:34px;text-align:center;font-size:10px;
   font-family:ui-monospace,Menlo,Consolas,monospace;padding:2px 3px;border-radius:2px;
   border:1px solid #c9d4e4;background:#f2f7fd;color:#33507a;cursor:help;}
-.stk-case.occ{background:#e8ddf6;border-color:#a98fd0;color:#4a2d7a;font-weight:bold;}
 .stk-case.hs{background:#eee;border-color:#bbb;color:#888;text-decoration:line-through;}
 .stk-plein{color:#b52a1c;font-weight:bold;}
-.stk-delai{align-items:center;gap:8px;padding:6px 0;}
 
 /* La cellule de saisie : deux menus, la cuve puis la place. Le refus de la
    base s'affiche SUR la cellule — la seule réaction utile est d'en choisir une

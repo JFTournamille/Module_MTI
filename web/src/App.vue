@@ -16,11 +16,7 @@ import { appel } from './api.js'
 
 const session = useSession()
 const store = useParcours()
-/* Les deux stores se connaissent par une seule fonction, et dans un seul sens :
-   enregistrer une saisie d'emplacement rend le cache des places libres faux, et
-   `parcours` doit pouvoir le vider sans rien savoir du reste de `stockage`. */
 const stockage = useStockage()
-store.brancherStockage(stockage.oublierPlaces)
 
 /** Onglet affiché. Le tableau de bord est le point d'entrée : on part de la
  *  liste des dossiers, pas d'un formulaire vide. */

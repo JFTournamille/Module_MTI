@@ -2357,27 +2357,30 @@ console.log('\n36. Cohérence de dates')
 // ── 37. Emplacements de stockage ──
 console.log('\n37. Emplacements de stockage')
 {
-  // Le référentiel d'abord : sans cuve, un point « emplacement » n'a rien à
-  // proposer, et la cellule doit le dire plutôt que d'afficher un menu vide.
+  // Le référentiel d'abord : sans contenant, un point « emplacement » n'a rien
+  // à proposer, et l'écran paraît cassé alors qu'il est seulement vide.
   await page.locator('.onglet', { hasText: 'Codifications' }).click()
   await page.waitForTimeout(900)
   await page.locator('.cfg-sst-b', { hasText: 'Stockage' }).click()
   await page.waitForTimeout(1200)
+
+  /* DES EXEMPLES SONT LIVRÉS avec le seed, au même titre que les produits et
+     les services : un écran vide au premier lancement se lit comme une panne. */
+  await page.locator('.adm-t tbody tr').filter({ hasText: 'CUVE-1' }).count()
+    ? ok('des contenants d\'exemple sont livrés avec le référentiel')
+    : ko('aucun contenant d\'exemple — le point « emplacement » n\'a rien à proposer')
 
   const codeCuve = `NAV-${Date.now().toString(36).toUpperCase()}`
   await page.locator('.adm-b-p', { hasText: 'Nouveau contenant' }).click()
   await page.waitForTimeout(300)
   await page.locator('#cv-code').fill(codeCuve)
   /* Le libellé porte le code : deux passes du banc laissaient deux cuves
-     homonymes, et le sélecteur devenait ambigu — un piège qui s'est déjà
-     refermé plusieurs fois sur ce banc. */
+     homonymes, et le sélecteur devenait ambigu. */
   await page.locator('#cv-lib').fill(`Cuve du banc ${codeCuve}`)
   await page.locator('#cv-etages').fill('A-C')
   await page.locator('#cv-par').fill('4')
   await page.waitForTimeout(200)
 
-  /* L'aperçu compte les places AVANT de les créer : « A-C » doit se lire comme
-     trois étages, pas comme une chaîne de trois caractères. */
   const apercu = (await page.locator('.adm-form .meta').last().innerText())
     .replace(/\s+/g, ' ')
   const apercuJuste = apercu.includes('3 étage(s)') && apercu.includes('= 12')
@@ -2392,34 +2395,52 @@ console.log('\n37. Emplacements de stockage')
     ? ok(`cuve « ${codeCuve} » créée et listée`)
     : ko('la cuve créée n\'apparaît pas')
 
+  /* PLUS DE DISPONIBILITÉ NI DE DÉLAI — décision du 18 septembre. Ce périmètre
+     est vérifié ici plutôt que supposé : si l'un des deux revenait sans que le
+     sujet ait été rediscuté, c'est ce test qui le dirait. */
+  const enTetes = await page.locator('.adm-t thead th').allInnerTexts()
+  !enTetes.some((t) => /libre|occup/i.test(t))
+    ? ok('le tableau ne parle ni de places libres ni de places occupées')
+    : ko(`colonnes : ${JSON.stringify(enTetes)}`)
+  await page.locator('#stk-delai').count() === 0
+    ? ok('plus aucun réglage de délai de réservation')
+    : ko('le délai de réservation est toujours à l\'écran')
+
   await ligne.locator('.adm-b', { hasText: 'Voir les places' }).click()
   await page.waitForTimeout(900)
   const cases = await page.locator('.stk-case').count()
   cases === 12
     ? ok('douze cases dans la grille : une place, une case')
     : ko(`${cases} case(s) au lieu de 12`)
+  await page.locator('.stk-case.occ').count() === 0
+    ? ok('aucune case marquée occupée : la grille décrit, elle ne suit rien')
+    : ko('des cases sont encore marquées occupées')
 
-  // ── La saisie : choisir une place la réserve ──
+  // ── La saisie : le relevé CONSTATE la place, il ne la réserve pas ──
   await allerAuScenario()
   await allerAuProcessus('Réception (+/-')
   await page.waitForTimeout(1000)
   const cellule = page.locator('.cemp').first()
   await cellule.count()
-    ? ok('le point d\'emplacement se rend en deux menus, cuve puis place')
+    ? ok('le point d\'emplacement se rend en deux menus, contenant puis place')
     : ko('aucune cellule « emplacement » — le parcours en service porte-t-il le type ?')
 
   if (await cellule.count()) {
     const menus = cellule.locator('select')
-    /* Playwright veut un libellé EXACT : le menu affiche aussi le nombre de
-       places libres, on le reconstruit donc plutôt que de filtrer. */
     const libelleCuve = (await menus.nth(0).locator('option')
       .filter({ hasText: codeCuve }).innerText()).trim()
+    /* Le menu ne compte plus les places libres : il nomme le contenant, et
+       c'est tout ce dont l'opérateur a besoin pour le choisir. */
+    !/libre/i.test(libelleCuve)
+      ? ok(`le contenant se nomme sans décompte : « ${libelleCuve} »`)
+      : ko(`le menu annonce encore une disponibilité : « ${libelleCuve} »`)
+
     await menus.nth(0).selectOption({ label: libelleCuve })
     await page.waitForTimeout(1200)
 
     const options = await menus.nth(1).locator('option').count()
     options >= 13
-      ? ok(`${options - 1} places proposées pour cette cuve`)
+      ? ok(`${options - 1} places proposées pour ce contenant`)
       : ko(`${options - 1} place(s) proposée(s), 12 attendues`)
 
     /* Le libellé d'une place DIT OÙ ELLE EST : cuve, étage, numéro. « place
@@ -2437,27 +2458,8 @@ console.log('\n37. Emplacements de stockage')
 
     const tenue = (await cellule.locator('.cemp-ok').innerText().catch(() => '')).trim()
     tenue.includes(`${codeCuve}-A-02`)
-      ? ok(`la place est tenue et la ligne le dit : « ${tenue} »`)
-      : ko(`la cellule ne montre pas la place tenue : « ${tenue} »`)
-
-    /* La place réservée disparaît du décompte des libres : c'est la base qui
-       compte, l'écran ne fait que la relire. */
-    await page.locator('.onglet', { hasText: 'Codifications' }).click()
-    await page.waitForTimeout(900)
-    await page.locator('.cfg-sst-b', { hasText: 'Stockage' }).click()
-    await page.waitForTimeout(1200)
-    const cellules = await page.locator('.adm-t tbody tr')
-      .filter({ hasText: codeCuve }).first().locator('td').allInnerTexts()
-    cellules[4]?.trim() === '1' && cellules[5]?.trim() === '11'
-      ? ok('une occupée, onze libres : le décompte suit la réservation')
-      : ko(`occupées=${cellules[4]?.trim()} libres=${cellules[5]?.trim()}`)
-
-    await page.locator('.adm-t tbody tr').filter({ hasText: codeCuve }).first()
-      .locator('.adm-b', { hasText: 'Voir les places' }).click()
-    await page.waitForTimeout(900)
-    await page.locator('.stk-case.occ').count() === 1
-      ? ok('la case occupée se distingue au premier coup d\'œil')
-      : ko(`${await page.locator('.stk-case.occ').count()} case(s) marquée(s) occupée(s)`)
+      ? ok(`la ligne dit où le MTI a été posé : « ${tenue} »`)
+      : ko(`la cellule ne montre pas la place choisie : « ${tenue} »`)
   }
 }
 

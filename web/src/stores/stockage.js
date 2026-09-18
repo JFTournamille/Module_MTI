@@ -3,14 +3,12 @@ import { computed, reactive, ref } from 'vue'
 import { appel, messageErreur } from '../api.js'
 
 /**
- * Contenants, emplacements et réservations.
+ * Contenants et emplacements — un référentiel de places, rien de plus.
  *
- * CE QUI EST AFFICHÉ ICI N'EST QU'UN INSTANTANÉ. La liste des places libres
- * peut être périmée au moment où l'opérateur clique : c'est l'index unique en
- * base qui arbitre, et le refus qu'il produit doit remonter à l'écran tel
- * quel — « cette place vient d'être prise », et non « erreur ». Ne JAMAIS
- * décider ici qu'une place est prenable : ce serait redonner au navigateur un
- * arbitrage qui lui a été retiré exprès.
+ * IL N'Y A PLUS DE RÉSERVATION : ni disponibilité, ni délai. Une place existe
+ * et elle est en service, ou non. C'est la SAISIE qui dit où un MTI a été
+ * posé, par qui et à quelle heure — et elle seule est figée par la validation
+ * du dossier.
  */
 export const useStockage = defineStore('stockage', () => {
   const contenants = ref([])
@@ -18,19 +16,13 @@ export const useStockage = defineStore('stockage', () => {
   const chargement = ref(false)
   const erreur = ref('')
 
-  /* Les places d'un contenant sont mises en cache PAR CONTENANT : une cuve en
-     porte deux cents, et les recharger à chaque ouverture de menu ferait
-     clignoter la liste sous les doigts de l'opérateur. Le cache est vidé dès
-     qu'une réservation aboutit — c'est le seul moment où il devient faux de
-     façon certaine. */
+  /* Les places d'un contenant sont mises en cache : une cuve en porte deux
+     cents, et les recharger à chaque ouverture de menu ferait clignoter la
+     liste sous les doigts de l'opérateur. Le référentiel ne bouge qu'en
+     Codifications, où `charger()` le rafraîchit. */
   const placesParContenant = reactive({})
 
   const contenantsActifs = computed(() => contenants.value.filter((c) => c.actif))
-
-  const delaiExpiration = computed(() => {
-    const p = parametres.value.find((x) => x.cle === 'emplacement.expiration_heures')
-    return p ? Number(p.valeur) : null
-  })
 
   async function charger () {
     chargement.value = true
@@ -50,29 +42,24 @@ export const useStockage = defineStore('stockage', () => {
   }
 
   /**
-   * Places d'un contenant.
+   * Places EN SERVICE d'un contenant, telles que le menu de saisie les propose.
    *
-   * `dossierId` est passé au serveur pour qu'il CONSERVE dans la liste la
-   * place déjà tenue par ce dossier : sans cela, rouvrir une fiche ferait
-   * disparaître du menu l'emplacement qu'elle occupe, et l'opérateur croirait
-   * sa saisie perdue.
+   * Une place sortie du service n'est pas proposée : la choisir n'aurait aucun
+   * sens. Rien d'autre n'est filtré — une place n'est ni libre ni occupée.
    */
-  async function chargerPlaces (contenantId, dossierId = null, force = false) {
+  async function chargerPlaces (contenantId, force = false) {
     if (!contenantId) return []
-    const cle = `${contenantId}|${dossierId ?? ''}`
-    if (!force && placesParContenant[cle]) return placesParContenant[cle]
-    const q = new URLSearchParams({ libres: 'oui' })
-    if (dossierId) q.set('dossier', dossierId)
-    const r = await appel(`/api/contenants/${contenantId}/emplacements?${q}`)
+    if (!force && placesParContenant[contenantId]) return placesParContenant[contenantId]
+    const r = await appel(`/api/contenants/${contenantId}/emplacements?enService=oui`)
     if (!r.ok) {
       erreur.value = `Places indisponibles (${r.status}).`
       return []
     }
-    placesParContenant[cle] = await r.json()
-    return placesParContenant[cle]
+    placesParContenant[contenantId] = await r.json()
+    return placesParContenant[contenantId]
   }
 
-  /** Vide le cache : après toute réservation, il est faux de façon certaine. */
+  /** Vide le cache — après une mise hors service depuis Codifications. */
   function oublierPlaces () {
     for (const cle of Object.keys(placesParContenant)) delete placesParContenant[cle]
   }
@@ -119,13 +106,6 @@ export const useStockage = defineStore('stockage', () => {
     return true
   }
 
-  /** Occupations d'un dossier, en vigueur et passées. */
-  async function occupationsDe (dossierId) {
-    if (!dossierId) return []
-    const r = await appel(`/api/dossiers/${dossierId}/emplacements`)
-    return r.ok ? await r.json() : []
-  }
-
   async function messageDe (r, defaut) {
     try {
       const d = await r.json()
@@ -139,7 +119,6 @@ export const useStockage = defineStore('stockage', () => {
     contenants,
     contenantsActifs,
     parametres,
-    delaiExpiration,
     chargement,
     erreur,
     charger,
@@ -147,7 +126,6 @@ export const useStockage = defineStore('stockage', () => {
     oublierPlaces,
     creerContenant,
     basculerContenant,
-    reglerParametre,
-    occupationsDe
+    reglerParametre
   }
 })

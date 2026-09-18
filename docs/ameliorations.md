@@ -552,11 +552,13 @@ fera qu'on le lit ou non.
 
 Trois points, tous identifiés en écrivant, aucun bloquant :
 
-- **Le délai d'expiration d'une réservation d'emplacement** est amorcé à 24 h
-  et se règle depuis l'écran. Il n'a pas encore été confronté à l'usage : une
-  place gelée par un dossier abandonné et une place reprise sous les pieds d'un
-  opérateur sont deux gênes opposées, et c'est la pratique qui dira laquelle
-  pèse.
+- **La réservation d'emplacement a été retirée** le 18 septembre : ni
+  disponibilité, ni délai. Le point `emplacement` constate où le MTI a été
+  posé ; c'est le relevé qui fait foi, et lui seul est figé par la validation.
+  Ce que cela laisse ouvert : rien n'empêche deux dossiers de désigner la même
+  cassette. Si cela gêne à l'usage, ce qu'il faudra rétablir est une
+  **contrainte d'unicité en base** — pas une réservation à durée limitée, qui
+  avait le défaut d'ajouter un délai à régler sans régler le fond.
 - **La ventilation des statistiques par service** n'existe pas, parce que le
   dossier ne porte aucun service. Elle demande d'abord une décision : quel
   service compte, celui qui prescrit ou celui qui administre ? Puis une colonne
