@@ -26,6 +26,34 @@ const lire = async (f) => JSON.parse(await readFile(join(racine, 'shared', f), '
    configuration faite à l'écran passe alors hors service. */
 const adopter = process.argv.includes('--adopter')
 
+/**
+ * Adoption demandée par une MIGRATION, et non par la ligne de commande.
+ *
+ * Une migration ne peut pas adopter une version elle-même : au moment où elle
+ * s'applique, le seed n'a pas encore chargé les parcours de `shared/`, et
+ * l'UPDATE ne trouverait rien. Elle enregistre donc l'intention dans
+ * `mti.parametre`, et c'est ici qu'elle s'exécute — une seule fois, la demande
+ * étant effacée après coup.
+ *
+ * C'est l'exception explicite à « le fichier amorce, l'application fait
+ * autorité ensuite » : datée, limitée à une version, et non rejouable.
+ *
+ * Retourne `{ code, version }` ou `null`.
+ */
+async function adoptionDemandee (client) {
+  const { rows } = await client.query(
+    "SELECT valeur FROM mti.parametre WHERE cle = 'parcours.adoption_demandee'")
+  const brut = String(rows[0]?.valeur ?? '').trim()
+  if (!brut) return null
+  const [code, version] = brut.split(':')
+  const n = Number(version)
+  if (!code || !Number.isInteger(n) || n < 1) {
+    console.log(`· demande d'adoption illisible (« ${brut} ») — ignorée.`)
+    return null
+  }
+  return { code, version: n }
+}
+
 const fichiersParcours = (await readdir(join(racine, 'shared')))
   .filter((f) => /^parcours-.*\.json$/.test(f))
   .sort()
@@ -54,6 +82,10 @@ try {
       [p.code, p.version, p.libelle, JSON.stringify(p)]
     )
   }
+  /* La demande est lue AVANT la boucle : elle peut désigner une version qui
+     n'est pas la plus haute du dépôt, et c'est alors elle qui l'emporte. */
+  const demande = await adoptionDemandee(client)
+
   for (const [code, active] of versionActive) {
     /* Une version publiée DEPUIS L'APPLICATION ne se fait pas démonter par un
        fichier.
@@ -78,7 +110,11 @@ try {
     const enService = etat ? Number(etat.version) : null
     const publieeApres = enService !== null && enService > active.version
 
-    if (publieeApres && !adopter) {
+    /* Une demande portée par une migration vaut `--adopter`, mais pour CE code
+       seulement : elle ne doit pas emporter au passage les autres parcours,
+       dont personne n'a demandé l'adoption. */
+    const demandePourCeCode = demande?.code === code && demande.version === active.version
+    if (publieeApres && !adopter && !demandePourCeCode) {
       console.log(
         `· modèle ${code} : v${active.version} chargée HORS SERVICE — ` +
         `v${enService} publiée depuis l'application reste en service.`)
@@ -95,10 +131,54 @@ try {
     const retirees = parcours.filter((p) => p.code === code && p.version !== active.version)
     console.log(
       `✓ modèle ${code} v${active.version} actif — ${active.processus.length} processus` +
-      (publieeApres ? ` (adoptée : v${enService} retirée du service)` : '') +
+      (publieeApres
+        ? ` (adoptée${demandePourCeCode && !adopter ? ' sur demande de migration' : ''} :` +
+          ` v${enService} retirée du service)`
+        : '') +
       (retirees.length
         ? ` (v${retirees.map((p) => p.version).join(', v')} conservée(s) hors service)`
         : ''))
+  }
+
+  /* La demande peut désigner une version qui n'est PLUS la plus haute du
+     dépôt — si le code a livré une v9 avant que la demande n'ait jamais été
+     honorée. La boucle ne l'a alors pas vue passer, et sans ce rattrapage elle
+     resterait en base indéfiniment, à ne rien faire. On adopte ici exactement
+     ce qui a été demandé, si cette version existe. */
+  if (demande) {
+    const { rows: [cible] } = await client.query(
+      'SELECT version FROM mti.modele_parcours WHERE code = $1 AND version = $2',
+      [demande.code, demande.version])
+    const { rows: [enService] } = await client.query(
+      'SELECT version FROM mti.modele_parcours WHERE code = $1 AND actif', [demande.code])
+
+    if (!cible) {
+      /* La version demandée n'est pas en base : elle a été retirée de
+         `shared/`. On le DIT et on garde la demande — l'effacer sans rien
+         faire donnerait un déploiement qui prétend avoir adopté. */
+      console.log(
+        `· adoption demandée de ${demande.code} v${demande.version} : ` +
+        'cette version n\'est pas en base, demande CONSERVÉE.')
+    } else {
+      if (Number(enService?.version) !== demande.version) {
+        await client.query(
+          'UPDATE mti.modele_parcours SET actif = false WHERE code = $1 AND version <> $2',
+          [demande.code, demande.version])
+        await client.query(
+          'UPDATE mti.modele_parcours SET actif = true WHERE code = $1 AND version = $2',
+          [demande.code, demande.version])
+        console.log(
+          `✓ adoption demandée par migration : ${demande.code} v${demande.version} ` +
+          `mise en service (v${enService?.version ?? '—'} retirée).`)
+      }
+      /* La demande est un geste UNIQUE, pas un réglage permanent : une fois
+         honorée, elle disparaît. La laisser ramènerait le parcours à cette
+         version à chaque déploiement, et rendrait toute publication faite à
+         l'écran éphémère sans que personne ne comprenne pourquoi. */
+      await client.query(
+        "DELETE FROM mti.parametre WHERE cle = 'parcours.adoption_demandee'")
+      console.log('  Demande d\'adoption effacée : elle ne se rejouera pas.')
+    }
   }
 
   // ── Catalogue ──

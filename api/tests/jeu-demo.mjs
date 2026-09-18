@@ -35,10 +35,10 @@ const j = async (m, url, body) => {
   return { statut: r.status, corps: await r.json().catch(() => null) }
 }
 
-/** Lance le seed et rend sa sortie ; échoue bruyamment plutôt qu'en silence. */
-function seed (...args) {
+/** Lance un script de seed et rend sa sortie ; échoue bruyamment. */
+function lancer (script, ...args) {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.execPath, [join(ici, '..', 'src', 'seed-demo.js'), ...args], {
+    const p = spawn(process.execPath, [join(ici, '..', 'src', script), ...args], {
       env: { ...process.env, SEED_DEMO: 'oui' }
     })
     let sortie = ''
@@ -46,9 +46,14 @@ function seed (...args) {
     p.stderr.on('data', (d) => { sortie += d })
     p.on('close', (code) => code === 0
       ? resolve(sortie)
-      : reject(new Error(`seed-demo ${args.join(' ')} → code ${code}\n${sortie}`)))
+      : reject(new Error(`${script} ${args.join(' ')} → code ${code}\n${sortie}`)))
   })
 }
+
+/** Le jeu de démonstration. */
+const seed = (...args) => lancer('seed-demo.js', ...args)
+/** Les référentiels — c'est lui qui porte l'adoption demandée par migration. */
+const seedReferentiels = (...args) => lancer('seed.js', ...args)
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 })
 const un = async (sql, params) => (await pool.query(sql, params)).rows[0]
@@ -329,6 +334,106 @@ await seed()
 n = await un(
   `SELECT count(*)::int AS n FROM mti.dossier WHERE reference LIKE 'DEMO-MTI-%'`)
 n.n === 10 ? ok('jeu de démonstration réinséré') : ko(`${n.n} dossier(s)`)
+
+// ─────────────────────────── Adoption demandée par une migration ──
+//
+// Une migration ne peut pas adopter une version de parcours elle-même : quand
+// elle s'applique, le seed n'a pas encore chargé `shared/`, et l'UPDATE ne
+// trouverait rien. Elle pose donc une demande, que le seed exécute UNE fois.
+//
+// Ce qui est éprouvé ici n'est pas « ça marche » mais les deux propriétés qui
+// rendent le mécanisme acceptable : la demande ne se rejoue pas, et elle ne
+// démonte pas une version publiée à l'écran APRÈS l'adoption. Sans la seconde,
+// on aurait reconstruit exactement la perte de travail silencieuse que le
+// garde-fou du seed a été écrit pour empêcher.
+console.log('\n9. Adoption de parcours demandée par une migration')
+{
+  const enService = async () => (await un(
+    `SELECT version FROM mti.modele_parcours
+      WHERE code = 'PARCOURS_CART_AUTOLOGUE' AND actif`))?.version
+
+  /* EN DEUX TEMPS, comme le seed lui-même : l'index partiel n'admet qu'une
+     version active par code, et il est vérifié ligne à ligne. Un unique
+     `SET actif = (version = $1)` passe par un état intermédiaire à deux
+     actives et se fait refuser. */
+  const mettreEnService = async (version) => {
+    await pool.query(
+      `UPDATE mti.modele_parcours SET actif = false
+        WHERE code = 'PARCOURS_CART_AUTOLOGUE' AND version <> $1`, [version])
+    await pool.query(
+      `UPDATE mti.modele_parcours SET actif = true
+        WHERE code = 'PARCOURS_CART_AUTOLOGUE' AND version = $1`, [version])
+  }
+
+  const depart = Number(await enService())
+
+  // Une version publiée « depuis l'écran », plus haute que celle du dépôt.
+  const publiee = depart + 500
+  await pool.query(
+    `INSERT INTO mti.modele_parcours (code, version, libelle, definition, actif, publie_le)
+     SELECT code, $1, libelle, definition, false, now() FROM mti.modele_parcours
+      WHERE code = 'PARCOURS_CART_AUTOLOGUE' AND version = $2
+     ON CONFLICT (code, version) DO NOTHING`, [publiee, depart])
+  await mettreEnService(publiee)
+
+  // Sans demande, le seed la laisse en service : c'est le garde-fou.
+  await seedReferentiels()
+  Number(await enService()) === publiee
+    ? ok('sans demande, une version publiée à l\'écran reste en service')
+    : ko(`v${await enService()} en service, v${publiee} attendue`)
+
+  // Avec la demande — ce que pose la migration 029.
+  await pool.query(
+    `INSERT INTO mti.parametre (cle, valeur, libelle)
+     VALUES ('parcours.adoption_demandee', $1, 'Recette')
+     ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`,
+    [`PARCOURS_CART_AUTOLOGUE:${depart}`])
+  await seedReferentiels()
+  Number(await enService()) === depart
+    ? ok(`la demande de migration adopte la v${depart}, malgré la v${publiee}`)
+    : ko(`v${await enService()} en service, v${depart} attendue`)
+
+  /* UNE FOIS HONORÉE, LA DEMANDE DISPARAÎT. La laisser ramènerait le parcours
+     à cette version à CHAQUE déploiement, et rendrait toute publication faite
+     à l'écran éphémère sans que personne ne comprenne pourquoi. */
+  const reste = await un(
+    `SELECT count(*)::int AS n FROM mti.parametre
+      WHERE cle = 'parcours.adoption_demandee'`)
+  reste.n === 0
+    ? ok('la demande est effacée : c\'est un geste unique, pas un réglage')
+    : ko('la demande subsiste et se rejouerait à chaque déploiement')
+
+  // Et le garde-fou est intact : republier après l'adoption tient.
+  await mettreEnService(publiee)
+  await seedReferentiels()
+  Number(await enService()) === publiee
+    ? ok('après l\'adoption, une nouvelle publication n\'est plus démontée')
+    : ko(`v${await enService()} en service — le garde-fou a été perdu`)
+
+  // Remise en état, et le jeu de démonstration suit le modèle en service.
+  await mettreEnService(depart)
+  await pool.query(
+    'DELETE FROM mti.modele_parcours WHERE code = $1 AND version = $2',
+    ['PARCOURS_CART_AUTOLOGUE', publiee])
+
+  /* LE JEU DE DÉMONSTRATION SE REFAIT TOUT SEUL : `seed-demo` compare le
+     modèle de chaque dossier fictif à celui en service. Aucun `--regenerer`,
+     et aucun dossier réel touché. */
+  await pool.query(
+    `UPDATE mti.dossier SET modele_parcours_id =
+       (SELECT id FROM mti.modele_parcours
+         WHERE code = 'PARCOURS_CART_AUTOLOGUE' AND version <> $1
+         ORDER BY version LIMIT 1)
+      WHERE reference LIKE 'DEMO-MTI-%'`, [depart])
+  await seed()
+  const surLeModele = await un(
+    `SELECT count(*)::int AS n FROM mti.dossier d
+       JOIN mti.modele_parcours m ON m.id = d.modele_parcours_id
+      WHERE d.reference LIKE 'DEMO-MTI-%' AND m.actif`)
+  surLeModele.n === 10
+    ? ok('le jeu de démonstration se refait sur le parcours en service, sans drapeau')
+    : ko(`${surLeModele.n} dossier(s) de démonstration sur le modèle en service`)
+}
 
 await pool.end()
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')

@@ -199,6 +199,16 @@ réglementaires, pas à des préférences techniques.
 - **Il n'y a pas d'onglet « Parcours ».** Un parcours n'existe qu'une fois un
   dossier ouvert ; son onglet apparaît alors en fin de barre, portant la
   référence du dossier. Le mot « scénario » a disparu de l'interface.
+- **Une migration ne peut pas adopter une version de parcours elle-même.** Au
+  moment où elle s'applique, le seed n'a pas encore chargé `shared/` : l'UPDATE
+  ne trouverait rien, et n'aurait donc aucun effet là où il est attendu. Elle
+  pose une demande dans `mti.parametre` (`parcours.adoption_demandee`, au
+  format `CODE:version`) et c'est `seed.js` qui l'exécute, puis **l'efface** —
+  un geste unique, pas un réglage. La laisser ramènerait le parcours à cette
+  version à chaque déploiement, et rendrait éphémère toute publication faite à
+  l'écran. C'est l'exception explicite à « le fichier amorce, l'application
+  fait autorité ensuite » : datée, limitée à une version, non rejouable. Le
+  garde-fou reste entier après coup — un test l'éprouve.
 - **Une migration appliquée ne se modifie pas.** `api/src/migrer.js` vérifie
   l'empreinte SHA-256 et refuse un fichier altéré : créer une nouvelle
   migration.
