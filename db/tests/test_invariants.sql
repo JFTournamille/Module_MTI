@@ -870,6 +870,150 @@ BEGIN
   RAISE NOTICE '  ✓ elle alerte sans interdire : le dossier reste validable';
 END $$;
 
+\echo ''
+\echo 'TEST 24 — Une place de stockage n''est occupée que par un dossier à la fois'
+DO $$
+DECLARE
+  v_auteur  uuid;
+  v_modele  uuid;
+  v_d1      uuid;
+  v_d2      uuid;
+  v_cont    uuid;
+  v_place   uuid;
+  v_occ     uuid;
+  v_n       integer;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+  SELECT id INTO v_modele FROM mti.modele_parcours WHERE actif LIMIT 1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-STOCK-1', v_modele, v_auteur) RETURNING id INTO v_d1;
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-STOCK-2', v_modele, v_auteur) RETURNING id INTO v_d2;
+
+  INSERT INTO mti.contenant (code, libelle) VALUES ('TEST-CUVE', 'Cuve de test')
+  RETURNING id INTO v_cont;
+  SELECT mti.creer_emplacements(v_cont, ARRAY['A','B'], 5) INTO v_n;
+  IF v_n <> 10 THEN
+    RAISE EXCEPTION 'ÉCHEC : % places créées au lieu de 10', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ deux étages × cinq places : dix emplacements énumérés';
+
+  SELECT id INTO v_place FROM mti.emplacement
+   WHERE contenant_id = v_cont AND etage = 'A' AND numero = 1;
+
+  INSERT INTO mti.occupation_emplacement (emplacement_id, dossier_id, pose_par)
+  VALUES (v_place, v_d1, v_auteur) RETURNING id INTO v_occ;
+
+  /* ═══ LA CONTRAINTE QUI ARBITRE ═══
+     C'est elle, et rien d'autre, qui empêche deux réceptions simultanées de
+     poser deux MTI sur la même cassette. Une vérification côté application
+     aurait laissé passer les deux : entre sa lecture et son écriture, l'autre
+     transaction a le temps de s'insérer. */
+  BEGIN
+    INSERT INTO mti.occupation_emplacement (emplacement_id, dossier_id, pose_par)
+    VALUES (v_place, v_d2, v_auteur);
+    RAISE EXCEPTION 'ÉCHEC : deux dossiers occupent la même place';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE '  ✓ une place, une occupation : la base refuse la seconde';
+  END;
+
+  -- Libérée, la place se reprend — et l'historique garde les deux passages.
+  UPDATE mti.occupation_emplacement
+     SET libere_le = now(), libere_par = v_auteur, motif_liberation = 'Déstockage'
+   WHERE id = v_occ;
+  INSERT INTO mti.occupation_emplacement (emplacement_id, dossier_id, pose_par)
+  VALUES (v_place, v_d2, v_auteur);
+  SELECT count(*) INTO v_n FROM mti.occupation_emplacement WHERE emplacement_id = v_place;
+  IF v_n <> 2 THEN
+    RAISE EXCEPTION 'ÉCHEC : % occupation(s) au lieu de 2 — l''historique est perdu', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ libérée puis reprise : deux occupations, rien d''écrasé';
+
+  /* Une libération DIT POURQUOI. Sans motif, on ne distinguerait pas un
+     déstockage normal d'une expiration automatique — et c'est justement la
+     différence qu'un inventaire doit pouvoir lire. */
+  BEGIN
+    UPDATE mti.occupation_emplacement SET libere_le = now()
+     WHERE emplacement_id = v_place AND libere_le IS NULL;
+    RAISE EXCEPTION 'ÉCHEC : libération sans motif acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ libération sans motif refusée';
+  END;
+
+  /* L'EXPIRATION EST UN ÉVÉNEMENT, pas une condition implicite. Une place
+     « libre parce que le temps a passé » mais toujours marquée occupée serait
+     invérifiable après coup : on ne saurait pas dire qui l'occupait à une date
+     donnée. */
+  UPDATE mti.occupation_emplacement SET expire_le = now() - interval '1 hour'
+   WHERE emplacement_id = v_place AND libere_le IS NULL;
+  SELECT mti.liberer_occupations_expirees() INTO v_n;
+  IF v_n < 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : réservation expirée non libérée';
+  END IF;
+  SELECT count(*) INTO v_n FROM mti.occupation_emplacement
+   WHERE emplacement_id = v_place AND libere_le IS NULL;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : la place reste occupée après expiration';
+  END IF;
+  PERFORM 1 FROM mti.occupation_emplacement
+   WHERE emplacement_id = v_place AND motif_liberation LIKE '%expirée%';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ÉCHEC : l''expiration ne se distingue pas d''un déstockage';
+  END IF;
+  RAISE NOTICE '  ✓ expiration : libérée pour de bon, et distinguable d''un déstockage';
+
+  -- Une place hors service dit pourquoi.
+  BEGIN
+    UPDATE mti.emplacement SET actif = false WHERE id = v_place;
+    RAISE EXCEPTION 'ÉCHEC : mise hors service sans motif acceptée';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '  ✓ un emplacement hors service dit pourquoi';
+  END;
+
+  -- Un point « emplacement » obligatoire et vide n'est pas vert.
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, definition)
+  VALUES (v_d1, 1, 'TEST', 'Stockage', jsonb_build_object(
+    'sections', jsonb_build_array(jsonb_build_object(
+      'titre', 'S', 'points', jsonb_build_array(
+        jsonb_build_object('libelle', 'Place en cuve', 'type', 'emplacement',
+                           'obligatoire', true))))));
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index,
+                          point_type, obligatoire, operateur_id)
+  SELECT dp.id, 0, 0, 'emplacement', true, v_auteur
+    FROM mti.dossier_processus dp WHERE dp.dossier_id = v_d1;
+  SELECT count(*) INTO v_n FROM mti.coches_non_vertes(v_d1);
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : un stockage sans place assignée est déclaré tout vert';
+  END IF;
+  RAISE NOTICE '  ✓ un point « emplacement » obligatoire et vide compte comme non vert';
+END $$;
+
+\echo ''
+\echo 'TEST 25 — L''audit retrouve la clé d''une ligne quelle que soit la table'
+DO $$
+DECLARE
+  v_avant integer;
+  v_apres integer;
+BEGIN
+  /* LE DÉFAUT CORRIGÉ EN 026. `tracer_audit()` ne cherchait la clé que dans
+     `id` et `patient_id`. `mti.parametre` a pour clé primaire `cle` : toute
+     écriture y échouait sur `cle_cible NOT NULL`, c'est-à-dire que la table
+     était impossible à modifier — et le délai d'expiration des emplacements,
+     qui vit là, ne pouvait pas être réglé. */
+  SELECT count(*) INTO v_avant FROM mti.audit WHERE table_cible = 'parametre';
+  UPDATE mti.parametre SET valeur = valeur WHERE cle = 'emplacement.expiration_heures';
+  SELECT count(*) INTO v_apres FROM mti.audit WHERE table_cible = 'parametre';
+  IF v_apres <= v_avant THEN
+    RAISE EXCEPTION 'ÉCHEC : écriture sur parametre non tracée';
+  END IF;
+  PERFORM 1 FROM mti.audit
+   WHERE table_cible = 'parametre' AND cle_cible = 'emplacement.expiration_heures';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ÉCHEC : la trace ne porte pas la clé primaire de la ligne';
+  END IF;
+  RAISE NOTICE '  ✓ une table dont la clé n''est pas « id » reste auditable, et modifiable';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;

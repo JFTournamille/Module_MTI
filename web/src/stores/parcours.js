@@ -198,6 +198,17 @@ export const useParcours = defineStore('parcours', () => {
   // Ce bloc est le câblage manquant.
 
   const dossierId = ref(null)
+
+  /* Refus de réservation d'emplacement, par clé de saisie. Tenu ici et non
+     dans le composant : c'est l'enregistrement du lot qui apprend le refus, et
+     c'est la cellule qui doit le montrer. */
+  const refusEmplacement = reactive({})
+
+  /* Le store de stockage est chargé paresseusement pour ne pas créer une
+     dépendance circulaire entre les deux : `parcours` sait invalider le cache
+     des places, il n'a pas besoin de connaître le reste. */
+  let oublierPlacesStockage = () => {}
+  const brancherStockage = (oublier) => { oublierPlacesStockage = oublier }
   /** id API de chaque processus, indexé comme `processus`. */
   const processusIds = ref([])
   const enregistrement = ref(false)
@@ -496,9 +507,34 @@ export const useParcours = defineStore('parcours', () => {
         body: JSON.stringify({ saisies: lot })
       })
       if (!r.ok) {
+        const corps = await r.clone().json().catch(() => null)
+        /* LE REFUS D'UNE PLACE N'EST PAS UNE PANNE. Il se dit sur la cellule
+           concernée, pas seulement dans le bandeau d'erreur du dossier : la
+           seule réaction utile est d'en choisir une autre, et c'est dans le
+           menu qu'on la choisit. Le lot entier a été annulé côté serveur, donc
+           rien n'est enregistré — le dire aussi, sinon l'opérateur croirait le
+           reste de sa fiche perdu. */
+        if (corps?.code === 'emplacement_pris') {
+          for (const l of lot) {
+            if (l.pointType === 'emplacement' && l.valeurTexte) {
+              refusEmplacement[cleSaisie(idx, l.sectionIndex, l.pointIndex,
+                l.exemplaire, l.operateurRole, l.secours)] = corps.erreur
+            }
+          }
+          erreurDossier.value = corps.erreur +
+            ' Rien n\'a été enregistré : le reste de la fiche est intact.'
+          /* Le cache des places est faux de façon certaine : quelqu'un a pris
+             cette cassette. Le vider force la relecture au prochain menu. */
+          oublierPlacesStockage()
+          return false
+        }
         erreurDossier.value = await messageDe(r, `Enregistrement refusé (${r.status}).`)
         return false
       }
+      /* Une réservation a pu être posée ou déplacée : la liste des places
+         libres en cache n'est plus juste. */
+      if (lot.some((l) => l.pointType === 'emplacement')) oublierPlacesStockage()
+      for (const cle of Object.keys(refusEmplacement)) delete refusEmplacement[cle]
       dernierEnregistrement.value = new Date()
       /* Une saisie enregistrée peut avoir rendu une coche verte, ou rouge : le
          pied de page doit le suivre, sinon il annonce l'état d'avant.
@@ -1506,6 +1542,7 @@ export const useParcours = defineStore('parcours', () => {
     urlPiece, deposerPiece, retirerPiece,
     coches, cochesDossier, rafraichirCoches, conformiteAutomatiquePossible,
     incoherences, incoherencesDossier, alertesLigne,
+    refusEmplacement, brancherStockage,
     pointsIncomplets, arreterHorloge
   }
 })

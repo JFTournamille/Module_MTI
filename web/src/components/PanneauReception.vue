@@ -22,6 +22,7 @@ const badge = {
   photo: ['t-ph', 'Photo'],
   timer: ['t-ti', 'Minuteur'],
   texte: ['t-tx', 'Texte'],
+  emplacement: ['t-em', 'Emplacement'],
   auto: ['t-au', 'Auto']
 }
 const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')

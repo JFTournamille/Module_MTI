@@ -10,7 +10,7 @@ import { requete, transaction } from '../db.js'
    — comme avec `fichier` — un parcours en service qu'on ne peut plus
    republier du tout, la validation refusant ses propres points. */
 const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date',
-  'liste', 'fichier']
+  'liste', 'fichier', 'emplacement']
 
 /**
  * Contrôle de forme d'une définition de parcours.

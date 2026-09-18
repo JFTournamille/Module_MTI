@@ -583,3 +583,28 @@ input[type=radio].ron{accent-color:#cc2200;}
    même pictogramme rendrait les deux illisibles — une température hors seuil
    et deux dates qui se contredisent n'appellent pas le même geste. */
 .tb-incoh{color:#a06000;font-weight:bold;cursor:help;}
+
+/* ── Emplacements de stockage ───────────────────────────────────────────────
+   La grille des places : deux cents cases pour une cuve, il faut qu'un coup
+   d'œil suffise à voir où il reste de la place. */
+.stk-grille{display:flex;flex-wrap:wrap;gap:3px;padding:6px 2px;}
+.stk-case{display:inline-block;min-width:34px;text-align:center;font-size:10px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;padding:2px 3px;border-radius:2px;
+  border:1px solid #c9d4e4;background:#f2f7fd;color:#33507a;cursor:help;}
+.stk-case.occ{background:#e8ddf6;border-color:#a98fd0;color:#4a2d7a;font-weight:bold;}
+.stk-case.hs{background:#eee;border-color:#bbb;color:#888;text-decoration:line-through;}
+.stk-plein{color:#b52a1c;font-weight:bold;}
+.stk-delai{align-items:center;gap:8px;padding:6px 0;}
+
+/* La cellule de saisie : deux menus, la cuve puis la place. Le refus de la
+   base s'affiche SUR la cellule — la seule réaction utile est d'en choisir une
+   autre, et c'est là qu'on la choisit. */
+.cemp{display:flex;flex-direction:column;gap:3px;min-width:200px;}
+.cemp .cse{width:100%;}
+.cemp-refus{background:#fdecea;border:1px solid #e0a49c;color:#8c2114;
+  border-radius:2px;padding:2px 5px;font-size:10px;line-height:1.3;}
+.cemp-ok{font-size:10px;color:#4a2d7a;font-weight:bold;cursor:help;}
+
+/* Badge du type « emplacement » — le violet du stockage, comme les cases
+   occupées de la grille : c'est la même notion à deux endroits. */
+.t-em,.b-empl{background:#e8ddf6;color:#4a2d7a;border:1px solid #a98fd0;}

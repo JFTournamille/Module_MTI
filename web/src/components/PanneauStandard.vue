@@ -15,6 +15,7 @@ const badge = {
   fichier: ['b-fichier', 'Fichier'],
   timer: ['b-timer', 'Minuteur'],
   texte: ['b-texte', 'Texte'],
+  emplacement: ['b-empl', 'Emplacement'],
   auto: ['b-auto', 'Auto']
 }
 const libelleEtat = { valide: 'Validé', en_cours: 'EN COURS', a_venir: 'À venir', annule: 'Annulé' }

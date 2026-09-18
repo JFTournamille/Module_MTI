@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
 import { transaction, requete } from '../db.js'
+import { reserverEmplacement, refusDeReservation } from '../stockage.js'
 
 /** Types de points acceptés — doit rester aligné sur l'enum mti.type_point. */
 const TYPES = new Set(['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'date',
-  'liste', 'fichier'])
+  'liste', 'fichier', 'emplacement'])
 
 /**
  * Les deux statuts qui figent un dossier, et ce qu'on répond alors.
@@ -1043,10 +1044,41 @@ export default async function dossiers (app) {
       }
     }
 
+    /* Le dossier porteur est lu une fois : la réservation d'emplacement en a
+       besoin, et la route ne reçoit que l'identifiant du PROCESSUS. */
+    const { rows: porteur } = await requete(
+      'SELECT dossier_id FROM mti.dossier_processus WHERE id = $1', [request.params.id])
+    if (!porteur.length) return reply.code(404).send({ erreur: 'Processus introuvable.' })
+
     try {
       return await transaction(request.utilisateur.id, request.ip, async (client) => {
         const enregistrees = []
         for (const s of lot) {
+          /* ═══ LE POINT QUI COMPTE POUR LES EMPLACEMENTS ═══
+             La place est réservée DANS LA MÊME TRANSACTION que la saisie qui
+             la désigne. Réserver par un appel séparé laisserait un relevé
+             pointer une cassette que quelqu'un vient de prendre — et sur une
+             fiche de traçabilité, deux MTI rangés à la même place, c'est un
+             produit qu'on ne retrouve pas.
+
+             Le refus vient de la base (index `emplacement_occupe_unique`), pas
+             d'un contrôle ici : la liste des places libres affichée à l'écran
+             n'est qu'un instantané. */
+          if (s.pointType === 'emplacement' && String(s.valeurTexte ?? '').trim()) {
+            const r = await reserverEmplacement(client, {
+              emplacementId: String(s.valeurTexte).trim(),
+              dossierId: porteur[0].dossier_id,
+              processusId: request.params.id,
+              exemplaire: s.exemplaire ?? 1,
+              secours: s.secours === true,
+              utilisateurId: request.utilisateur.id
+            })
+            const refus = refusDeReservation(r)
+            /* Un refus annule TOUT le lot : accepter les autres saisies
+               laisserait une fiche à moitié enregistrée, et l'opérateur
+               croirait le reste perdu alors qu'il ne l'est pas. */
+            if (refus) { const err = new Error('réservation refusée'); err.refus = refus; throw err }
+          }
           // L'alarme est FIGÉE ici, côté serveur : le front l'affiche, la base
           // en conserve la valeur qui faisait foi au moment de la saisie.
           const seuil = s.seuil ?? null
@@ -1096,6 +1128,10 @@ export default async function dossiers (app) {
         return { enregistrees: enregistrees.length }
       })
     } catch (e) {
+      /* Le refus de réservation est rendu tel quel : « déjà prise » et non
+         « erreur », parce que la réaction attendue est d'en choisir une autre,
+         pas d'appeler l'informatique. */
+      if (e.refus) return reply.code(e.refus.statut).send(e.refus.corps)
       // Le trigger de verrouillage post-validation remonte ici.
       if (e.code === '23000' || /lecture seule/.test(e.message)) {
         return reply.code(409).send({ erreur: e.message })

@@ -9,10 +9,16 @@ import PanneauCodifications from './components/PanneauCodifications.vue'
 import PanneauConfiguration from './components/PanneauConfiguration.vue'
 import PanneauTableauBord from './components/PanneauTableauBord.vue'
 import { useParcours } from './stores/parcours.js'
+import { useStockage } from './stores/stockage.js'
 import { useSession } from './stores/session.js'
 
 const session = useSession()
 const store = useParcours()
+/* Les deux stores se connaissent par une seule fonction, et dans un seul sens :
+   enregistrer une saisie d'emplacement rend le cache des places libres faux, et
+   `parcours` doit pouvoir le vider sans rien savoir du reste de `stockage`. */
+const stockage = useStockage()
+store.brancherStockage(stockage.oublierPlaces)
 
 /** Onglet affiché. Le tableau de bord est le point d'entrée : on part de la
  *  liste des dossiers, pas d'un formulaire vide. */
@@ -20,7 +26,7 @@ const onglet = ref('bord')
 const TITRES = {
   bord: 'Tableau de bord MTI',
   parcours: 'Parcours MTI — Processus chronologique',
-  codifications: 'Codifications — Utilisateurs, services, produits, patients',
+  codifications: 'Codifications — Utilisateurs, services, produits, stockage, patients',
   configuration: 'Configuration — Processus et points de contrôle'
 }
 
@@ -146,7 +152,12 @@ const modaleCatalogue = ref(false)
 
 onMounted(async () => {
   await session.charger()
-  await store.charger()
+  /* Le référentiel de stockage est chargé AU DÉMARRAGE et non à l'ouverture de
+     l'onglet Codifications : un point « emplacement » doit pouvoir proposer ses
+     cuves dès la première fiche, sans qu'on soit allé les regarder avant. Il
+     est court — quelques contenants — et la liste des places, elle, reste
+     chargée à la demande. */
+  await Promise.all([store.charger(), stockage.charger()])
   // Reprendre le dossier laissé ouvert. S'il a disparu, on retombe sur l'état
   // vide plutôt que sur un formulaire qui n'enregistrerait rien.
   const memorise = store.dossierMemorise()

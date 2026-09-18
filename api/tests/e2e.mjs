@@ -861,6 +861,20 @@ console.log('\n21. Conformité automatique')
   // Remplir tous les points obligatoires du parcours, en vert.
   r = await j('GET', `/api/dossiers/${dos}`)
   const procs = r.corps.processus
+  /* Un point « emplacement » ne se remplit pas avec du texte : il attend
+     l'identifiant d'une place réelle, et la réservation qui va avec. Une
+     réserve de places est donc constituée ici, et piochée au fur et à
+     mesure — sans elle, le lot entier partait en erreur et TOUS les points du
+     processus restaient « jamais saisis », ce qui masquait ce que ce groupe
+     éprouve vraiment. */
+  const cuveConf = await j('POST', '/api/contenants', {
+    code: `E2E-CONF-${Date.now().toString(36).toUpperCase()}`,
+    libelle: 'Cuve pour la conformité', etages: ['A'], emplacementsParEtage: 12
+  })
+  const placesConf = cuveConf.statut === 200
+    ? (await j('GET', `/api/contenants/${cuveConf.corps.id}/emplacements?libres=oui`)).corps
+    : []
+  let placeSuivante = 0
   let poses = 0
   for (const p of procs) {
     if (p.externe) continue
@@ -884,6 +898,13 @@ console.log('\n21. Conformité automatique')
           lot.push({ ...base, obligatoire: false })
         }
         else if (pt.type === 'liste') lot.push({ ...base, valeurTexte: (pt.options ?? ['x'])[0] })
+        else if (pt.type === 'emplacement') {
+          const place = placesConf[placeSuivante++]
+          /* Faute de place disponible, le point est rendu facultatif plutôt
+             que renseigné avec une valeur fausse : un identifiant inventé
+             ferait échouer la réservation, donc tout le lot. */
+          lot.push(place ? { ...base, valeurTexte: place.id } : { ...base, obligatoire: false })
+        }
         else lot.push({ ...base, valeurTexte: 'renseigné en recette' })
         poses++
       }
@@ -1479,6 +1500,161 @@ console.log('\n27. Cohérence de dates')
       ? ok(`publication refusée : ${quoi}`)
       : ko(`${quoi} accepté (${r.statut})`)
   }
+}
+
+// ── 28. Emplacements de stockage : le référentiel, et la réservation ──
+console.log('\n28. Emplacements de stockage')
+{
+  const code = `E2E-CUVE-${Date.now().toString(36).toUpperCase()}`
+  let r = await j('POST', '/api/contenants', {
+    code, libelle: 'Cuve de recette', genre: 'cuve',
+    etages: ['A', 'B'], emplacementsParEtage: 5
+  })
+  const cuve = r.corps
+  r.statut === 200 && cuve?.nbPlaces === 10
+    ? ok('cuve créée : 2 étages × 5 places = 10 emplacements énumérés')
+    : ko(`statut ${r.statut} : ${JSON.stringify(cuve)}`)
+
+  for (const [corps, quoi] of [
+    [{ code, libelle: 'Doublon', etages: ['A'], emplacementsParEtage: 1 }, 'code déjà pris'],
+    [{ code: `${code}-X`, libelle: 'Sans étage', etages: [], emplacementsParEtage: 5 }, 'aucun étage'],
+    [{ code: `${code}-Y`, libelle: 'Étages en double', etages: ['A', 'A'], emplacementsParEtage: 5 }, 'deux étages identiques'],
+    [{ code: `${code}-Z`, libelle: 'Trop', etages: ['A'], emplacementsParEtage: 9999 }, 'places par étage hors bornes']
+  ]) {
+    r = await j('POST', '/api/contenants', corps)
+    r.statut === 400 || r.statut === 409
+      ? ok(`création refusée : ${quoi}`)
+      : ko(`${quoi} accepté (${r.statut})`)
+  }
+
+  r = await j('GET', `/api/contenants/${cuve.id}/emplacements?libres=oui`)
+  const places = r.corps
+  places.length === 10 && places[0].libelle === `${code}-A-01`
+    ? ok(`dix places libres, nommées « ${places[0].libelle} »`)
+    : ko(`${places.length} place(s), première « ${places[0]?.libelle} »`)
+
+  // Deux dossiers, une seule place.
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E stockage A' })
+  const dosA = r.corps?.id
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E stockage B' })
+  const dosB = r.corps?.id
+
+  r = await j('POST', `/api/emplacements/${places[0].id}/reserver`, { dossierId: dosA })
+  r.statut === 200 ? ok('place prise par le premier dossier') : ko(`statut ${r.statut}`)
+
+  /* ═══ LE POINT QUI COMPTE ═══
+     Le refus vient de la base, et il se dit comme il doit l'être : « déjà
+     prise », avec un code que le front reconnaît — la réaction attendue est
+     d'en choisir une autre, pas d'appeler l'informatique. */
+  r = await j('POST', `/api/emplacements/${places[0].id}/reserver`, { dossierId: dosB })
+  r.statut === 409 && r.corps?.code === 'emplacement_pris'
+    ? ok('la seconde réservation est refusée, et dit qu\'il faut en choisir une autre')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  // Reprendre SA propre place ne la relâche pas au passage.
+  r = await j('POST', `/api/emplacements/${places[0].id}/reserver`, { dossierId: dosA })
+  r.statut === 200 && r.corps?.inchange === true
+    ? ok('ré-enregistrer sa propre place ne rouvre pas de fenêtre de reprise')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+
+  // Déplacement : l'ancienne est libérée, et le motif dit que c'en est un.
+  r = await j('POST', `/api/emplacements/${places[3].id}/reserver`, { dossierId: dosA })
+  r = await j('GET', `/api/dossiers/${dosA}/emplacements`)
+  const liberee = r.corps.find((o) => o.libere_le)
+  liberee?.motif_liberation?.includes('Déplacement')
+    ? ok('changer de place libère l\'ancienne, en disant que c\'est un déplacement')
+    : ko(`historique : ${JSON.stringify(r.corps.map((o) => [o.libelle, o.motif_liberation]))}`)
+
+  /* La réservation se fait DANS LA TRANSACTION DE LA SAISIE : c'est ce qui
+     empêche un relevé de désigner une cassette prise entre-temps. */
+  r = await j('GET', `/api/dossiers/${dosB}`)
+  const cible = (() => {
+    for (const p of r.corps.processus) {
+      const sections = p.definition?.sections ?? []
+      for (let iS = 0; iS < sections.length; iS++) {
+        const points = sections[iS].points ?? []
+        for (let iP = 0; iP < points.length; iP++) {
+          if (points[iP].type === 'emplacement') return { pid: p.id, iS, iP }
+        }
+      }
+    }
+    return null
+  })()
+
+  if (!cible) {
+    console.log('  · aucun point « emplacement » au parcours — saisie non éprouvée')
+  } else {
+    /* Le témoin porte une valeur DIFFÉRENTE à chaque lot : avec la même, on
+       ne saurait pas si la ligne retrouvée vient du lot accepté ou du lot
+       refusé — et le test passerait au vert en ne vérifiant rien. */
+    const saisir = (place, temoin) => j('PUT', `/api/processus/${cible.pid}/saisies`, {
+      saisies: [
+        { sectionIndex: cible.iS, pointIndex: cible.iP, pointType: 'emplacement',
+          operateurRole: 'op1', obligatoire: true, valeurTexte: place },
+        /* Une seconde saisie dans le même lot : c'est elle qui montre que le
+           refus annule TOUT, et ne laisse pas une fiche à moitié écrite. */
+        { sectionIndex: 0, pointIndex: 0, pointType: 'texte',
+          operateurRole: 'op1', obligatoire: false, valeurTexte: temoin }
+      ]
+    })
+
+    r = await saisir(places[1].id, 'témoin-accepté')
+    r.statut === 200 ? ok('la saisie du point réserve la place') : ko(`statut ${r.statut}`)
+    r = await j('GET', `/api/dossiers/${dosB}/emplacements`)
+    r.corps.some((o) => !o.libere_le && o.libelle === `${code}-A-02`)
+      ? ok('la place est tenue par le dossier, sans appel séparé')
+      : ko(`occupations : ${JSON.stringify(r.corps.map((o) => o.libelle))}`)
+
+    // La place de l'autre dossier : refusée, et RIEN n'est enregistré.
+    r = await saisir(places[3].id, 'témoin-refusé')
+    r.statut === 409 && r.corps?.code === 'emplacement_pris'
+      ? ok('saisie d\'une place déjà prise : refusée')
+      : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+    r = await j('GET', `/api/dossiers/${dosB}`)
+    const temoins = r.corps.saisies.map((x) => x.valeur_texte)
+    temoins.includes('témoin-accepté') && !temoins.includes('témoin-refusé')
+      ? ok('le lot refusé est annulé EN ENTIER, et le lot accepté reste intact')
+      : ko(`témoins en base : ${JSON.stringify(temoins.filter((t) => t?.startsWith('témoin')))}`)
+  }
+
+  // Une place occupée ne se met pas hors service en douce.
+  r = await j('PATCH', `/api/emplacements/${places[1].id}`,
+    { actif: false, motif: 'Rack tordu' })
+  r.statut === 409
+    ? ok('mettre hors service une place occupée est refusé')
+    : ko(`statut ${r.statut} — un MTI disparaîtrait de l'inventaire`)
+
+  r = await j('PATCH', `/api/emplacements/${places[8].id}`, { actif: false })
+  r.statut === 400
+    ? ok('une place hors service dit pourquoi')
+    : ko(`mise hors service sans motif acceptée (${r.statut})`)
+
+  r = await j('PATCH', `/api/emplacements/${places[8].id}`,
+    { actif: false, motif: 'Rack tordu' })
+  r.statut === 200 ? ok('place mise hors service, avec son motif') : ko(`statut ${r.statut}`)
+  r = await j('GET', `/api/contenants/${cuve.id}/emplacements?libres=oui`)
+  r.corps.every((e) => e.id !== places[8].id)
+    ? ok('une place hors service n\'est plus proposée')
+    : ko('une place hors service reste proposée')
+
+  // Le délai d'expiration vit dans le référentiel, et il est borné.
+  r = await j('PATCH', '/api/parametres/emplacement.expiration_heures', { valeur: '0' })
+  r.statut === 400
+    ? ok('délai d\'expiration nul refusé : la cuve paraîtrait vide en permanence')
+    : ko(`0 h accepté (${r.statut})`)
+  r = await j('PATCH', '/api/parametres/emplacement.expiration_heures', { valeur: '48' })
+  r.statut === 200 && r.corps?.valeur === '48'
+    ? ok('le délai se règle sans redéploiement')
+    : ko(`statut ${r.statut} : ${JSON.stringify(r.corps)}`)
+  await j('PATCH', '/api/parametres/emplacement.expiration_heures', { valeur: '24' })
+
+  // Un contenant ne se supprime pas : il se désactive.
+  r = await j('PATCH', `/api/contenants/${cuve.id}`, { actif: false })
+  r.statut === 200 && r.corps?.actif === false
+    ? ok('un contenant se désactive — les occupations passées restent lisibles')
+    : ko(`statut ${r.statut}`)
 }
 
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')

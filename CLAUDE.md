@@ -108,6 +108,21 @@ réglementaires, pas à des préférences techniques.
   tout le parcours. Les deux extrémités sont rendues, pour que l'écran marque
   les deux cellules — l'opérateur ne sait pas encore laquelle des deux dates
   est fausse.
+- **Une place de stockage n'est prise qu'une fois, et c'est LA BASE qui
+  l'arbitre.** L'index partiel `emplacement_occupe_unique` est le seul juge :
+  la liste des places libres affichée à l'écran n'est qu'un instantané, et
+  entre son affichage et le clic une autre réception peut avoir pris la même
+  cassette. Ne jamais remettre cette décision dans le navigateur. Le refus se
+  dit « déjà prise », avec le code `emplacement_pris` — la réaction attendue
+  est d'en choisir une autre. **La réservation se fait DANS LA TRANSACTION DE
+  LA SAISIE** (`api/src/stockage.js:reserverEmplacement`, appelée depuis la
+  route de saisie) : un appel séparé laisserait un relevé désigner une place
+  prise entre-temps, et un refus annule tout le lot plutôt que de laisser une
+  fiche à moitié écrite. **L'expiration est un ÉVÉNEMENT**, jamais une
+  condition implicite : une réservation périmée est réellement libérée, avec sa
+  date et son motif — `now()` ne peut pas figurer dans le prédicat d'un index,
+  et surtout une place « libre parce que le temps a passé » serait
+  invérifiable après coup. Le délai vit dans `mti.parametre`, pas en dur.
 - **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
   stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
   reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le
@@ -196,7 +211,9 @@ Un point de contrôle :
 ```
 
 - `type` : `ouinon` | `valeur` | `photo` | `fichier` | `timer` | `texte` |
-  `auto` | `date` | `liste` (aligné sur l'enum `mti.type_point`)
+  `auto` | `date` | `liste` | `emplacement` (aligné sur l'enum `mti.type_point`)
+- `code` : identifiant STABLE du point, unique dans tout le parcours. C'est par
+  lui qu'une règle le désigne — jamais par son rang
 - `multi` : `false` | `"photo"` | `"cuve"` — duplication par n exemplaires
 - `seuil` : déclenche l'alarme de température, figée à l'enregistrement dans
   `saisie.hors_seuil` côté serveur

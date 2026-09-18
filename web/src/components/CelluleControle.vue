@@ -7,8 +7,9 @@
  * (`cDetail()` / `renderMain()`), ce qui interdisait toute liaison
  * bidirectionnelle : la valeur saisie n'existait que dans le DOM.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useParcours } from '../stores/parcours.js'
+import { useStockage } from '../stores/stockage.js'
 import CapturePhoto from './CapturePhoto.vue'
 
 const props = defineProps({
@@ -18,8 +19,87 @@ const props = defineProps({
 })
 
 const store = useParcours()
+const stockage = useStockage()
 const saisie = computed(() => store.saisie(props.cle, props.point))
 const alarme = computed(() => store.alarme(props.cle, props.point))
+
+// ── Emplacement de stockage ──
+const contenantChoisi = ref('')
+const places = ref([])
+const refusPlace = computed(() => store.refusEmplacement[props.cle] ?? '')
+
+/** Libellé de la place tenue, pour que la ligne dise où est le MTI. */
+const placeTenue = computed(() =>
+  places.value.find((e) => e.id === saisie.value.valeurTexte)?.libelle ?? null)
+
+const detailOccupation = computed(() => {
+  const e = places.value.find((x) => x.id === saisie.value.valeurTexte)
+  if (!e?.occupation) return 'Place réservée à l\'enregistrement'
+  const jusque = e.occupation.expireLe
+    ? new Date(e.occupation.expireLe).toLocaleString('fr-FR')
+    : null
+  return jusque
+    ? `Réservée jusqu'au ${jusque} si le processus reste ouvert`
+    : 'Réservée'
+})
+
+async function chargerPlaces (force = false) {
+  places.value = contenantChoisi.value
+    ? await stockage.chargerPlaces(contenantChoisi.value, store.dossierId, force)
+    : []
+}
+
+async function changerContenant () {
+  /* `v-model` a déjà posé la valeur : cette fonction ne fait que recharger la
+     liste des places, et vérifier que la place choisie appartient encore à la
+     cuve affichée. */
+  await chargerPlaces()
+  if (saisie.value.valeurTexte &&
+      !places.value.some((e) => e.id === saisie.value.valeurTexte)) {
+    saisie.value.valeurTexte = ''
+  }
+}
+
+/* Vrai quand la fiche porte une place que ce dossier NE TIENT PLUS : la
+   réservation a expiré, ou elle a été libérée ailleurs. Le cas est réel — c'est
+   tout l'objet du délai d'expiration — et il ne doit pas se traduire par un
+   menu vide sans explication : l'opérateur croirait à une panne, alors que la
+   seule chose à faire est d'en choisir une autre.
+
+   CALCULÉ et non mémorisé : un drapeau posé une fois restait allumé après que
+   l'opérateur avait choisi une autre place, et l'écran continuait d'annoncer un
+   problème résolu. Ce qui fait foi est la liste des places du moment. */
+const placePerdue = computed(() =>
+  Boolean(saisie.value.valeurTexte) && places.value.length > 0 &&
+  !places.value.some((e) => e.id === saisie.value.valeurTexte))
+
+if (props.point.type === 'emplacement') {
+  /* La cuve se déduit de la place déjà enregistrée : à la réouverture d'une
+     fiche, l'opérateur doit retrouver son choix, pas un menu vide. */
+  watch(() => [stockage.contenants.length, saisie.value.valeurTexte], async () => {
+    if (contenantChoisi.value) return
+    const actifs = stockage.contenantsActifs
+    if (!actifs.length) return
+    for (const c of actifs) {
+      const liste = await stockage.chargerPlaces(c.id, store.dossierId)
+      if (!saisie.value.valeurTexte || liste.some((e) => e.id === saisie.value.valeurTexte)) {
+        contenantChoisi.value = c.id
+        places.value = liste
+        return
+      }
+    }
+    /* Aucune cuve ne propose la place enregistrée : on ouvre quand même la
+       première, pour que le menu soit utilisable. `placePerdue` le dira. */
+    contenantChoisi.value = actifs[0].id
+    places.value = await stockage.chargerPlaces(actifs[0].id, store.dossierId)
+  }, { immediate: true })
+
+  /* Après chaque enregistrement, les places sont relues : une réservation
+     vient d'être posée ou déplacée, et la liste en mémoire ne porte plus la
+     bonne date d'expiration. `force` court-circuite le cache, que
+     l'enregistrement a de toute façon vidé. */
+  watch(() => store.dernierEnregistrement, () => { chargerPlaces(true) })
+}
 
 // ── Pièces jointes : photos d'un côté, documents de l'autre ──
 const champFichier = ref(null)
@@ -324,6 +404,44 @@ function heure (epoch) {
     class="cfi" type="date" style="width:150px;"
     v-model="saisie.valeurTexte" :disabled="lectureSeule"
   >
+
+  <!-- Emplacement de stockage.
+       Un choix dans le référentiel, jamais du texte libre : « A3 »,
+       « étage A n°3 » et « A-03 » désignaient la même cassette sans que rien
+       ne les rapproche — et rien n'empêchait deux réceptions de prendre la
+       même. Choisir ici RÉSERVE la place, dès la saisie.
+
+       La liste affichée n'est qu'un instantané : c'est la base qui arbitre, et
+       son refus revient sous les yeux de l'opérateur avec la seule réaction
+       utile — en choisir une autre. -->
+  <div v-else-if="point.type === 'emplacement'" class="cemp">
+    <!-- `v-model` et non `:value` : sur un `<select>`, une liaison manuelle
+         posée dans la même passe de rendu que ses `<option>` ne prend pas — le
+         DOM refuse une valeur dont l'option n'existe pas encore, et le menu
+         restait vide alors que la donnée était là. `v-model` applique la
+         valeur après le rendu des options, c'est tout son intérêt ici. -->
+    <select class="cfi cse" v-model="contenantChoisi" :disabled="lectureSeule"
+            @change="changerContenant()">
+      <option value="">— cuve —</option>
+      <option v-for="c in stockage.contenantsActifs" :key="c.id" :value="c.id">
+        {{ c.libelle }} ({{ c.nbLibres }} libre{{ c.nbLibres > 1 ? 's' : '' }})
+      </option>
+    </select>
+    <select class="cfi cse" v-model="saisie.valeurTexte"
+            :disabled="lectureSeule || !contenantChoisi">
+      <option value="">— place —</option>
+      <option v-for="e in places" :key="e.id" :value="e.id">{{ e.libelle }}</option>
+    </select>
+    <!-- Le refus de la base, dit comme il doit l'être. -->
+    <div v-if="refusPlace" class="cemp-refus">{{ refusPlace }}</div>
+    <div v-else-if="placePerdue" class="cemp-refus">
+      La place enregistrée n'est plus tenue par ce dossier — réservation expirée
+      ou libérée. En choisir une autre.
+    </div>
+    <div v-else-if="placeTenue" class="cemp-ok" :title="detailOccupation">
+      ⬛ {{ placeTenue }}
+    </div>
+  </div>
 
   <!-- Automatique : renseigné par le système à la validation -->
   <span v-else style="font-size:10px;color:#777;font-style:italic;">

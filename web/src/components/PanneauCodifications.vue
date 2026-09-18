@@ -2,13 +2,16 @@
 /**
  * Codifications — les référentiels que le module consulte ou tient.
  *
- * Quatre listes qui n'ont pas la même nature, et l'écran doit le dire plutôt
+ * Cinq listes qui n'ont pas la même nature, et l'écran doit le dire plutôt
  * que de les aligner comme si elles se valaient :
  *
  *   Utilisateurs — TENU ici. Les comptes sont créés et gérés dans le module.
  *   Services     — TENU ici. L'UF est la clé, le libellé la décrit.
  *   Produits     — TENU ici, mais court : dénomination, DCI, seuil de
  *                  conservation. Pas un livret thérapeutique.
+ *   Stockage     — TENU ici, et le seul qui porte un ÉTAT plutôt qu'une liste :
+ *                  une place est libre ou occupée, et c'est la base qui en
+ *                  décide. L'écran la montre, il ne l'arbitre pas.
  *   Patients     — CONSULTÉ, jamais constitué. L'annuaire de référence est le
  *                  SIH (ou Pharma®/CHIMIO®) ; on ne montre ici que les
  *                  patients qu'un dossier a effectivement rattachés.
@@ -19,12 +22,17 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { appel, messageErreur } from '../api.js'
+import { useStockage } from '../stores/stockage.js'
 import PanneauUtilisateurs from './PanneauUtilisateurs.vue'
 
 const SOUS_ONGLETS = [
   ['utilisateurs', 'Utilisateurs'],
   ['services', 'Services'],
   ['produits', 'Produits'],
+  /* Stockage — TENU ici, et c'est le seul de ces référentiels qui porte un
+     ÉTAT plutôt qu'une simple liste : une place est libre ou occupée, et c'est
+     la base qui en décide. L'écran la montre, il ne l'arbitre pas. */
+  ['stockage', 'Stockage'],
   ['patients', 'Patients']
 ]
 const sousOnglet = ref('utilisateurs')
@@ -60,6 +68,67 @@ async function charger () {
   }
 }
 onMounted(charger)
+
+// ── Stockage : cuves, places, et le délai d'expiration ──
+const stockage = useStockage()
+onMounted(() => stockage.charger())
+
+const nouvelleCuve = ref({
+  code: '', libelle: '', genre: 'cuve', etages: 'A-J', emplacementsParEtage: 20
+})
+const formulaireCuve = ref(false)
+const placesVues = ref([])
+const cuveOuverte = ref(null)
+const delaiSaisi = ref('')
+
+/** « A-J » ou « A,B,C » : les deux s'écrivent, la première est plus rapide. */
+function etagesDepuis (texte) {
+  const brut = String(texte ?? '').trim().toUpperCase()
+  const plage = brut.match(/^([A-Z])\s*-\s*([A-Z])$/)
+  if (plage) {
+    const [, a, b] = plage
+    const [d, f] = [a.charCodeAt(0), b.charCodeAt(0)]
+    if (d > f) return []
+    return Array.from({ length: f - d + 1 }, (_, i) => String.fromCharCode(d + i))
+  }
+  return brut.split(',').map((e) => e.trim()).filter(Boolean)
+}
+
+const apercuEtages = computed(() => etagesDepuis(nouvelleCuve.value.etages))
+const apercuPlaces = computed(() =>
+  apercuEtages.value.length * (Number(nouvelleCuve.value.emplacementsParEtage) || 0))
+
+async function creerCuve () {
+  erreur.value = ''
+  const etages = etagesDepuis(nouvelleCuve.value.etages)
+  if (!etages.length) { erreur.value = 'Étages illisibles : « A-J » ou « A,B,C ».'; return }
+  const fait = await stockage.creerContenant({
+    code: nouvelleCuve.value.code,
+    libelle: nouvelleCuve.value.libelle,
+    genre: nouvelleCuve.value.genre,
+    etages,
+    emplacementsParEtage: Number(nouvelleCuve.value.emplacementsParEtage)
+  })
+  if (!fait) { erreur.value = stockage.erreur; return }
+  nouvelleCuve.value = {
+    code: '', libelle: '', genre: 'cuve', etages: 'A-J', emplacementsParEtage: 20
+  }
+  formulaireCuve.value = false
+}
+
+async function ouvrirCuve (c) {
+  if (cuveOuverte.value === c.id) { cuveOuverte.value = null; return }
+  cuveOuverte.value = c.id
+  const r = await appel(`/api/contenants/${c.id}/emplacements`)
+  placesVues.value = r.ok ? await r.json() : []
+}
+
+async function reglerDelai () {
+  erreur.value = ''
+  if (!(await stockage.reglerParametre('emplacement.expiration_heures', delaiSaisi.value))) {
+    erreur.value = stockage.erreur
+  }
+}
 
 const servicesFiltres = computed(() => {
   const q = recherche.value.trim().toLowerCase()
@@ -229,6 +298,128 @@ async function enregistrerService (s, champ, valeur) {
             <td>{{ p.dci }}</td>
             <td>{{ p.laboratoire }}</td>
             <td>{{ p.seuilTempC ?? p.seuil_temp_c }} °C</td>
+          </tr>
+        </tbody>
+      </table>
+    </template>
+
+    <!-- ══ Stockage ══ -->
+    <template v-else-if="sousOnglet === 'stockage'">
+      <div class="adm-aide">
+        Les places d'une cuve sont <strong>énumérées une à une</strong> : c'est ce qui
+        permet de mettre une cassette hors service sans toucher aux autres, et c'est en
+        base qu'une place ne peut être prise qu'une fois. La liste affichée à l'opérateur
+        n'est qu'un instantané — entre son affichage et le clic, une autre réception peut
+        avoir pris la même place. C'est la base qui arbitre, et elle le dit.
+      </div>
+
+      <div class="adm-r stk-delai">
+        <label for="stk-delai">Réservation non confirmée libérée après</label>
+        <input id="stk-delai" type="number" min="1" max="8760" style="width:80px;"
+               :value="delaiSaisi || stockage.delaiExpiration"
+               @input="delaiSaisi = $event.target.value">
+        <span>heures</span>
+        <button class="adm-b" @click="reglerDelai()">Régler</button>
+        <span class="meta">
+          Une place gelée par un dossier abandonné finirait par remplir la cuve.
+          Réglé haut : une place reprise sous les pieds d'un opérateur est plus grave.
+        </span>
+      </div>
+
+      <div class="adm-bar">
+        <span style="flex:1"></span>
+        <button class="adm-b-p" @click="formulaireCuve = !formulaireCuve">
+          + Nouveau contenant
+        </button>
+      </div>
+
+      <div v-if="formulaireCuve" class="adm-form">
+        <div class="adm-form-t">Nouveau contenant</div>
+        <div class="adm-r">
+          <label for="cv-code">Code</label>
+          <input id="cv-code" type="text" v-model="nouvelleCuve.code" style="min-width:120px;"
+                 placeholder="CUVE-2">
+          <label for="cv-lib">Libellé</label>
+          <input id="cv-lib" type="text" v-model="nouvelleCuve.libelle" style="min-width:300px;"
+                 placeholder="Cuve d'azote n°2 — PUI">
+        </div>
+        <div class="adm-r">
+          <label for="cv-genre">Genre</label>
+          <select id="cv-genre" v-model="nouvelleCuve.genre">
+            <option value="cuve">Cuve d'azote</option>
+            <option value="congelateur">Congélateur</option>
+            <option value="enceinte">Enceinte</option>
+          </select>
+          <label for="cv-etages">Étages</label>
+          <input id="cv-etages" type="text" v-model="nouvelleCuve.etages" style="width:120px;"
+                 placeholder="A-J">
+          <label for="cv-par">Places par étage</label>
+          <input id="cv-par" type="number" min="1" max="200" style="width:70px;"
+                 v-model="nouvelleCuve.emplacementsParEtage">
+          <span class="meta">
+            {{ apercuEtages.length }} étage(s) × {{ nouvelleCuve.emplacementsParEtage }}
+            = <strong>{{ apercuPlaces }}</strong> places
+          </span>
+        </div>
+        <div class="adm-r">
+          <button class="adm-b-p" :disabled="!apercuPlaces" @click="creerCuve()">Créer</button>
+          <button class="adm-b" @click="formulaireCuve = false">Annuler</button>
+        </div>
+      </div>
+
+      <table class="adm-t">
+        <thead>
+          <tr>
+            <th style="width:120px;">Code</th>
+            <th>Libellé</th>
+            <th style="width:110px;">Genre</th>
+            <th style="width:90px;">Places</th>
+            <th style="width:90px;">Occupées</th>
+            <th style="width:90px;">Libres</th>
+            <th style="width:150px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="c in stockage.contenants" :key="c.id">
+            <tr :class="{ inactif: !c.actif }">
+              <td class="ident">{{ c.code }}</td>
+              <td>{{ c.libelle }}</td>
+              <td>{{ c.genre }}</td>
+              <td>{{ c.nbPlaces }}</td>
+              <td>{{ c.nbOccupees }}</td>
+              <td :class="{ 'stk-plein': c.nbLibres === 0 }">{{ c.nbLibres }}</td>
+              <td>
+                <button class="adm-b" @click="ouvrirCuve(c)">
+                  {{ cuveOuverte === c.id ? 'Replier' : 'Voir les places' }}
+                </button>
+                <!-- Un contenant ne se supprime pas : les occupations passées
+                     disent où était un MTI à une date donnée. -->
+                <button class="adm-b" @click="stockage.basculerContenant(c.id, !c.actif)">
+                  {{ c.actif ? 'Désactiver' : 'Réactiver' }}
+                </button>
+              </td>
+            </tr>
+            <tr v-if="cuveOuverte === c.id">
+              <td colspan="7">
+                <div class="stk-grille">
+                  <span v-for="e in placesVues" :key="e.id"
+                        class="stk-case"
+                        :class="{ occ: e.occupation, hs: !e.actif }"
+                        :title="e.occupation
+                          ? `${e.libelle} — dossier ${e.occupation.dossier}`
+                          : (!e.actif ? `${e.libelle} — hors service : ${e.horsServiceMotif}`
+                                      : `${e.libelle} — libre`)">
+                    {{ e.etage }}{{ String(e.numero).padStart(2, '0') }}
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </template>
+          <tr v-if="!stockage.contenants.length">
+            <td colspan="7" class="meta">
+              Aucun contenant. Sans référentiel, un point « emplacement » n'a rien à
+              proposer.
+            </td>
           </tr>
         </tbody>
       </table>
