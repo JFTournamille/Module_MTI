@@ -8,6 +8,7 @@ import ModaleCatalogue from './components/ModaleCatalogue.vue'
 import PanneauCodifications from './components/PanneauCodifications.vue'
 import PanneauConfiguration from './components/PanneauConfiguration.vue'
 import PanneauTableauBord from './components/PanneauTableauBord.vue'
+import PanneauStatistiques from './components/PanneauStatistiques.vue'
 import { useParcours } from './stores/parcours.js'
 import { useStockage } from './stores/stockage.js'
 import { useSession } from './stores/session.js'
@@ -28,7 +29,8 @@ const TITRES = {
   bord: 'Tableau de bord MTI',
   parcours: 'Parcours MTI — Processus chronologique',
   codifications: 'Codifications — Utilisateurs, services, produits, stockage, paramètres, patients',
-  configuration: 'Configuration — Processus et points de contrôle'
+  configuration: 'Configuration — Processus et points de contrôle',
+  statistiques: 'Statistiques d\'activité'
 }
 
 /* « Parcours » n'est pas un onglet de la barre : on n'y accède qu'en ouvrant un
@@ -37,6 +39,7 @@ const TITRES = {
    tableau de bord. La vue s'ouvre sur un dossier et se referme vers la liste. */
 const ONGLETS = [
   ['bord', 'Tableau de bord'],
+  ['statistiques', 'Statistiques'],
   ['configuration', 'Configuration'],
   ['codifications', 'Codifications']
 ]
@@ -801,6 +804,7 @@ const blocages = computed(() => {
     </div>
     </template>
 
+    <PanneauStatistiques v-else-if="onglet === 'statistiques'" />
     <PanneauConfiguration v-else-if="onglet === 'configuration'" />
     <PanneauCodifications v-else-if="onglet === 'codifications'" />
   </div>

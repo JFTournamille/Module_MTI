@@ -137,6 +137,18 @@ réglementaires, pas à des préférences techniques.
   édition est **tracée** dans `mti.export_dossier` avec son empreinte, l'état
   du dossier au moment de l'édition et son auteur — un fait daté, qui ne se
   réécrit pas quand le dossier change ensuite.
+- **Les statistiques sont d'ACTIVITÉ, quantitatives.** Dossiers ouverts,
+  validés, clos — par mois de création, parcours et produit. **Pas de taux de
+  non-conformité** : la machine ne prononce jamais une non-conformité, donc
+  l'indicateur compterait des jugements pharmaceutiques en les présentant comme
+  des constats. **Pas de ventilation par service** : `dossier` n'en porte
+  aucun, et une statistique devinée est pire qu'une statistique absente — c'est
+  dit à l'écran plutôt que rendu par une colonne vide. Un dossier est compté
+  **une seule fois**, au mois de sa création et dans son état du jour ;
+  l'agrégation se fait **en base**, jamais à partir de la liste du tableau de
+  bord, qui est plafonnée à 200 lignes. La couleur ne porte jamais seule : trois
+  teintes passées au validateur de palette, légende toujours présente,
+  étiquettes dans les segments et vue tableau complète.
 - **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
   stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
   reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le

@@ -2526,7 +2526,80 @@ console.log('\n38. Exports depuis l\'écran')
     : ko('aucun tableur téléchargé')
 }
 
-console.log('\n39. Console du navigateur et réseau')
+// ── 39. Statistiques d'activité ──
+console.log('\n39. Statistiques d\'activité')
+{
+  await page.locator('.onglet', { hasText: 'Statistiques' }).click()
+  await page.waitForTimeout(2000)
+
+  await page.locator('.st-tuile').count() === 4
+    ? ok('quatre nombres de tête : ouverts, en cours, validés, clos')
+    : ko(`${await page.locator('.st-tuile').count()} tuile(s)`)
+
+  /* LE TOTAL EST CELUI DE LA BASE, pas celui de la liste affichée au tableau
+     de bord — plafonnée à 200 lignes. Compter à partir d'une liste tronquée
+     donnerait un total faux sans le dire. */
+  const total = Number((await page.locator('.st-tuile .st-t-v').first().innerText()).trim())
+  total > 200
+    ? ok(`${total} dossiers comptés : au-delà du plafond d'affichage, donc bien la base`)
+    : console.log(`  · base à ${total} dossiers, le plafond n'est pas éprouvé`)
+
+  /* LA COULEUR NE PORTE JAMAIS SEULE : légende toujours là, et le tableau
+     complet à un clic. C'est ce qui répond à l'impression et au daltonisme —
+     et le contraste de l'aqua l'impose, le validateur l'ayant signalé. */
+  const legende = await page.locator('.st-lg').allInnerTexts()
+  legende.length === 3 && legende.join('|').includes('Validés')
+    ? ok('la légende nomme les trois états : l\'identité ne dépend pas de la teinte')
+    : ko(`légende : ${JSON.stringify(legende)}`)
+
+  await page.locator('.st-ligne').count() > 0
+    ? ok(`${await page.locator('.st-ligne').count()} lignes tracées`)
+    : ko('aucune barre tracée')
+
+  /* L'échelle est COMMUNE : une barre mise à l'échelle de sa propre valeur
+     ferait paraître égaux un mois à 3 dossiers et un mois à 300. Le plus gros
+     total doit donc occuper toute la piste, et les autres moins. */
+  const pistes = await page.locator('.st-bloc').first().locator('.st-ligne')
+    .evaluateAll((lignes) => lignes.map((l) => {
+      const piste = l.querySelector('.st-piste')
+      const remplie = [...l.querySelectorAll('.st-seg')]
+        .reduce((a, s) => a + s.getBoundingClientRect().width, 0)
+      return {
+        total: Number(l.querySelector('.st-lv')?.textContent?.trim() ?? 0),
+        part: remplie / piste.getBoundingClientRect().width
+      }
+    }))
+  if (pistes.length >= 2) {
+    const plusGros = pistes.reduce((a, b) => (b.total > a.total ? b : a))
+    const plusPetit = pistes.reduce((a, b) => (b.total < a.total ? b : a))
+    plusGros.part > 0.9 && plusPetit.part < plusGros.part
+      ? ok('l\'échelle est commune : le plus gros mois remplit la piste, les autres non')
+      : ko(`parts : ${JSON.stringify(pistes.map((p) => [p.total, p.part.toFixed(2)]))}`)
+  } else {
+    console.log('  · un seul mois en base — l\'échelle commune n\'est pas éprouvée')
+  }
+
+  // La vue tableau : ce qui répond quand une teinte ne se distingue pas.
+  await page.locator('.adm-b', { hasText: 'Voir le tableau' }).click()
+  await page.waitForTimeout(900)
+  await page.locator('.adm-t').count() >= 3
+    ? ok('la vue tableau donne les trois ventilations au complet')
+    : ko(`${await page.locator('.adm-t').count()} tableau(x)`)
+
+  /* CE QUI MANQUE EST DIT. Le dossier ne porte pas de service : une colonne
+     vide laisserait croire à une donnée absente, alors que c'est la donnée
+     elle-même qui n'existe pas. */
+  const manque = await page.locator('.st-manque').innerText().catch(() => '')
+  const manqueDit = /service/i.test(manque)
+  manqueDit
+    ? ok('l\'absence de ventilation par service est dite à l\'écran')
+    : ko(`mention : « ${manque.slice(0, 60)} »`)
+
+  await page.locator('.adm-b', { hasText: 'Voir les graphiques' }).click()
+  await page.waitForTimeout(700)
+}
+
+console.log('\n40. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

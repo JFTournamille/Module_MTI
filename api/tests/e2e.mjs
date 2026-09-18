@@ -1762,5 +1762,80 @@ console.log('\n29. Exports PDF et tableur')
   f.statut === 404 ? ok('dossier inconnu : 404') : ko(`statut ${f.statut}`)
 }
 
+// ── 30. Statistiques d'activité ──
+console.log('\n30. Statistiques d\'activité')
+{
+  let r = await j('GET', '/api/statistiques')
+  const avant = r.corps
+  r.statut === 200 && avant?.total && Array.isArray(avant.parMois)
+    ? ok(`${avant.total.total} dossier(s) comptés sur ${avant.parMois.length} mois`)
+    : ko(`statut ${r.statut} : ${JSON.stringify(avant)?.slice(0, 120)}`)
+
+  /* UN MOIS EST UNE CLÉ UNIQUE. La première version regroupait sur un objet
+     `Date` rendu par `pg` : une Map clée par objet ne regroupe rien, et chaque
+     ligne devenait son propre mois — les séries sortaient en doublons, avec
+     des totaux qui paraissaient justes. */
+  const mois = avant.parMois.map((m) => m.cle)
+  new Set(mois).size === mois.length
+    ? ok('chaque mois n\'apparaît qu\'une fois')
+    : ko(`mois en double : ${JSON.stringify(mois)}`)
+
+  mois.every((m) => /^\d{4}-\d{2}$/.test(m))
+    ? ok('les mois sortent en « AAAA-MM », triables tels quels')
+    : ko(`format des mois : ${JSON.stringify(mois.slice(0, 3))}`)
+
+  /* UN DOSSIER EST COMPTÉ UNE SEULE FOIS : la somme des trois états fait le
+     total, sur chaque ligne comme sur l'ensemble. Un décompte où un dossier
+     compterait deux fois donnerait des totaux supérieurs au nombre de
+     dossiers, et se lirait faux sans qu'on le voie. */
+  const t = avant.total
+  t.enCours + t.valides + t.clos === t.total
+    ? ok('la somme des états fait le total : un dossier compte une seule fois')
+    : ko(`${t.enCours} + ${t.valides} + ${t.clos} != ${t.total}`)
+
+  avant.parMois.every((m) => m.enCours + m.valides + m.clos === m.total)
+    ? ok('l\'égalité tient aussi mois par mois')
+    : ko('un mois ne totalise pas ses états')
+
+  const sommeMois = avant.parMois.reduce((a, m) => a + m.total, 0)
+  const sommeParcours = avant.parParcours.reduce((a, p) => a + p.total, 0)
+  const sommeProduit = avant.parProduit.reduce((a, p) => a + p.total, 0)
+  sommeMois === t.total && sommeParcours === t.total && sommeProduit === t.total
+    ? ok('les trois ventilations retombent sur le même total')
+    : ko(`mois ${sommeMois}, parcours ${sommeParcours}, produit ${sommeProduit}, total ${t.total}`)
+
+  /* CE QUI MANQUE EST DIT, plutôt que rendu par une colonne vide : le dossier
+     ne porte aucun service, et une statistique devinée serait pire qu'une
+     statistique absente. */
+  avant.parService === null && /service/i.test(avant.serviceIndisponible ?? '')
+    ? ok('l\'absence de ventilation par service est DITE, pas masquée')
+    : ko(`parService : ${JSON.stringify(avant.parService)}`)
+
+  // Un dossier de plus se retrouve dans le décompte.
+  r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E statistiques' })
+  r = await j('GET', '/api/statistiques')
+  r.corps.total.total === avant.total.total + 1
+    ? ok('un dossier créé se retrouve dans le décompte')
+    : ko(`${avant.total.total} → ${r.corps.total.total}`)
+  r.corps.parProduit.some((p) => p.cle === 'E2E statistiques')
+    ? ok('il apparaît dans la ventilation par produit')
+    : ko('le produit du nouveau dossier est absent')
+
+  /* Les bornes filtrent réellement : une fenêtre fermée dans le passé ne doit
+     rien rendre, et une borne haute INCLUT son jour — un filtre « jusqu'au 18 »
+     qui exclurait le 18 serait un piège silencieux. */
+  r = await j('GET', '/api/statistiques?depuis=1990-01-01&jusqua=1990-12-31')
+  r.corps.total.total === 0
+    ? ok('une fenêtre vide rend zéro, pas la base entière')
+    : ko(`${r.corps.total.total} dossier(s) en 1990`)
+
+  const aujourdhui = new Date().toISOString().slice(0, 10)
+  r = await j('GET', `/api/statistiques?depuis=${aujourdhui}&jusqua=${aujourdhui}`)
+  r.corps.total.total >= 1
+    ? ok('la borne haute inclut son jour')
+    : ko('un dossier créé aujourd\'hui échappe au filtre « jusqu\'à aujourd\'hui »')
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

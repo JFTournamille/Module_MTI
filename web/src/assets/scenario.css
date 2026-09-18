@@ -608,3 +608,53 @@ input[type=radio].ron{accent-color:#cc2200;}
 /* Badge du type « emplacement » — le violet du stockage, comme les cases
    occupées de la grille : c'est la même notion à deux endroits. */
 .t-em,.b-empl{background:#e8ddf6;color:#4a2d7a;border:1px solid #a98fd0;}
+
+/* ── Statistiques d'activité ────────────────────────────────────────────────
+   Palette passée au validateur (violet / aqua / orange, surface blanche) :
+   séparation CVD et plancher en vision normale au vert, contraste de l'aqua
+   sous 3:1 — d'où l'obligation, tenue, des étiquettes dans les segments et du
+   tableau complet sous les graphiques. La couleur ne porte jamais seule. */
+.st-root .st-filtres{align-items:center;gap:8px;}
+
+/* Quatre nombres de tête. Ce ne sont pas des graphiques et il ne faut pas en
+   faire : lire une longueur pour retrouver un chiffre qu'on peut écrire est
+   une perte sèche. */
+.st-tuiles{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px;}
+.st-tuile{flex:1;min-width:130px;background:#faf8ff;border:1px solid #ddd4f2;
+  border-radius:3px;padding:10px 12px;}
+.st-t-v{font-size:26px;font-weight:bold;color:#3a2870;line-height:1.1;}
+.st-t-l{font-size:11px;color:#6a6080;margin-top:2px;}
+
+.st-bloc{margin:18px 0 6px;}
+.st-titre{font-size:12px;font-weight:bold;color:#3a2870;margin-bottom:6px;}
+
+/* Légende : toujours présente dès deux séries — l'identité ne doit jamais
+   dépendre de la seule teinte. */
+.st-legende{display:flex;gap:14px;margin-bottom:8px;font-size:11px;color:#52514e;}
+.st-lg{display:flex;align-items:center;gap:5px;}
+.st-pastille{width:10px;height:10px;border-radius:2px;display:inline-block;}
+
+.st-ligne{display:flex;align-items:center;gap:10px;margin-bottom:5px;}
+.st-ll{width:190px;min-width:190px;font-size:11px;color:#52514e;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.st-lv{width:52px;text-align:right;font-size:11px;font-weight:bold;color:#3a2870;}
+
+/* La piste porte l'échelle commune : une barre mise à l'échelle de sa propre
+   valeur ferait paraître égaux un mois à 3 dossiers et un mois à 300. */
+.st-piste{flex:1;display:flex;height:22px;background:#f4f2f8;border-radius:2px;
+  overflow:hidden;}
+/* Le segment : bout arrondi côté données, carré au départ, et un filet de
+   surface de 2 px entre deux segments — c'est le blanc qui sépare, jamais un
+   trait, qui ajouterait de l'encre qui n'est pas de la donnée. */
+.st-seg{height:100%;display:flex;align-items:center;justify-content:flex-end;
+  box-shadow:2px 0 0 #fff inset;transition:width .2s;}
+.st-seg:last-child{border-radius:0 3px 3px 0;box-shadow:2px 0 0 #fff inset;}
+.st-seg:first-child{box-shadow:none;}
+.st-in{font-size:9.5px;font-weight:bold;color:#fff;padding:0 5px;white-space:nowrap;}
+.st-c1{background:#4a3aa7;}   /* violet  — en cours */
+.st-c2{background:#1baf7a;}   /* aqua    — validés */
+.st-c3{background:#eb6834;}   /* orange  — clos */
+/* Une seule série : une seule teinte, et pas de légende — le titre dit déjà
+   ce qui est tracé. */
+.st-seul{background:#6045a0;border-radius:0 3px 3px 0;}
+.st-manque{margin-top:16px;}
