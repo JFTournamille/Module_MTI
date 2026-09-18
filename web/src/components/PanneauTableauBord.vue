@@ -242,6 +242,13 @@ const dateCourte = (v) => v
             <td class="ident">
               {{ d.reference }}
               <span v-if="d.nbAlarmes" class="tb-alarme" :title="`${d.nbAlarmes} relevé(s) hors seuil`">⚠</span>
+              <!-- Distinct de l'alarme hors seuil, et pas dans le même
+                   pictogramme : une température hors seuil et deux dates qui
+                   se contredisent n'appellent pas le même geste. Une règle qui
+                   ne se verrait qu'en ouvrant le dossier ne servirait qu'à
+                   celui qui l'a déjà ouvert. -->
+              <span v-if="d.nbIncoherences" class="tb-incoh"
+                    :title="`${d.nbIncoherences} incohérence(s) de dates`">⚠ dates</span>
               <!-- La quarantaine ne change pas le statut : elle se signale à
                    côté. La confondre avec un statut ferait disparaître un
                    traitement douteux des vues où il faut justement le voir. -->

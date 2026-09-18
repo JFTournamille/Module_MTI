@@ -91,10 +91,14 @@ const aDesMulti = computed(() => (props.processus.sections ?? [])
           <tr v-if="ligne.genre === 'section'" class="std-sec">
             <td colspan="6">{{ ligne.titre }}</td>
           </tr>
-          <tr v-else class="std-ir">
+          <!-- Une règle de cohérence ALERTE, elle n'interdit pas : la ligne se
+               signale et dit la cause, la saisie reste possible. -->
+          <tr v-else class="std-ir" :class="{ 'lg-alerte': store.alertesLigne(ligne).length }">
             <td>
               <div class="std-lbl">
                 {{ ligne.point.libelle }}
+                <span v-if="store.alertesLigne(ligne).length" class="alerte-pastille"
+                      :title="store.alertesLigne(ligne).join('\n')">⚠ incohérence</span>
                 <!-- Une unité de secours se signale dans le libellé : le
                      panneau standard n'a pas de colonne de rang, et sans
                      marqueur un secours passerait pour un doublon. -->

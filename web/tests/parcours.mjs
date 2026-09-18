@@ -2273,7 +2273,73 @@ console.log('\n35. Unités de secours')
     : ko('des lignes de secours subsistent')
 }
 
-console.log('\n36. Console du navigateur et réseau')
+// ── 36. Règles de cohérence entre deux dates ──
+console.log('\n36. Cohérence de dates')
+{
+  await allerAuScenario()
+  await allerAuProcessus('Commande MTI')
+  await page.waitForTimeout(600)
+
+  /* Les deux dates de la règle sont repérées par leur LIBELLÉ à l'écran : le
+     test fait le même chemin que l'opérateur, et si la règle devenait inerte
+     il verrait l'absence d'alerte, pas une erreur de sélecteur. */
+  const ligneDe = (libelle) =>
+    page.locator('.crow, .std-ir').filter({ hasText: libelle }).first()
+  const champDate = (libelle) => ligneDe(libelle).locator('input[type=date]')
+
+  const reception = champDate('Date de réception prévue du produit')
+  const expedition = champDate("Date d'expédition annoncée")
+  await reception.count() && await expedition.count()
+    ? ok('les deux dates de la règle sont à l\'écran')
+    : ko('dates de la règle introuvables — le parcours en service porte-t-il les codes ?')
+
+  if (await reception.count() && await expedition.count()) {
+    // On reçoit le 10, on expédie le 25 : impossible.
+    await reception.fill('2026-10-10')
+    await reception.dispatchEvent('change')
+    await expedition.fill('2026-10-25')
+    await expedition.dispatchEvent('change')
+    await page.locator('.pied-processus .f-btn').last().click()
+    await page.waitForTimeout(2200)
+
+    await page.locator('.lg-alerte').count() >= 2
+      ? ok('les DEUX cellules en cause sont marquées, pas seulement la fautive')
+      : ko(`${await page.locator('.lg-alerte').count()} ligne(s) marquée(s), 2 attendues`)
+
+    const pied = await page.locator('.conf-alerte').innerText().catch(() => '')
+    const pieDit = /⚠/.test(pied) && /incohérence/i.test(pied)
+    pieDit
+      ? ok('l\'alerte est dans le pied, sous les yeux de celui qui valide')
+      : ko(`pied : « ${pied.replace(/\n/g, ' | ')} »`)
+
+    /* LA CAUSE EST DITE. Un pictogramme seul dirait qu'il y a un problème sans
+       dire lequel, et l'opérateur n'aurait pas de quoi décider. */
+    const cause = await page.locator('.alerte-pastille, .tagl-alerte').first()
+      .getAttribute('title')
+    const causeDite = /expédi/i.test(cause ?? '')
+    causeDite
+      ? ok('la cause est lisible au survol de la pastille')
+      : ko(`pastille sans cause : « ${cause} »`)
+
+    /* ELLE ALERTE, ELLE N'INTERDIT PAS. La saisie reste possible et le bouton
+       de validation du processus n'est pas désarmé par l'incohérence. Si ce
+       test échoue, c'est que le périmètre a changé. */
+    await page.locator('.pied-processus .f-btn').last().isEnabled()
+      ? ok('la saisie reste possible : la règle signale, elle n\'interdit pas')
+      : ko('l\'enregistrement est bloqué par une incohérence — périmètre non voulu')
+
+    // Corriger la date éteint l'alerte, des deux côtés.
+    await expedition.fill('2026-10-01')
+    await expedition.dispatchEvent('change')
+    await page.locator('.pied-processus .f-btn').last().click()
+    await page.waitForTimeout(2200)
+    await page.locator('.lg-alerte').count() === 0
+      ? ok('date corrigée : l\'alerte s\'éteint des deux côtés')
+      : ko(`${await page.locator('.lg-alerte').count()} ligne(s) encore marquée(s)`)
+  }
+}
+
+console.log('\n37. Console du navigateur et réseau')
 erreurs.length === 0 ? ok('aucune erreur JavaScript')
   : ko(`${erreurs.length} erreur(s) JS :\n     ${erreurs.join('\n     ')}`)
 // Le favicon n'est pas fourni : sans conséquence fonctionnelle. Les autres

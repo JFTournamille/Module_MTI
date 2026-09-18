@@ -1350,5 +1350,136 @@ console.log('\n26. Unités de secours')
   }
 }
 
+// ── 27. Règles de cohérence entre deux dates ──
+console.log('\n27. Cohérence de dates')
+{
+  let r = await j('POST', '/api/dossiers',
+    { codeModele: 'PARCOURS_CART_AUTOLOGUE', designationProduit: 'E2E dates' })
+  const dos = r.corps?.id
+  r = await j('GET', `/api/dossiers/${dos}`)
+  const parcours = r.corps.processus
+
+  /* Les points sont retrouvés par leur CODE, comme les règles les désignent —
+     si le test les cherchait par leur rang, il passerait au vert sur un
+     parcours où les règles, elles, seraient devenues inertes. */
+  const situer = (code) => {
+    for (const p of parcours) {
+      const sections = p.definition?.sections ?? []
+      for (let iS = 0; iS < sections.length; iS++) {
+        const points = sections[iS].points ?? []
+        for (let iP = 0; iP < points.length; iP++) {
+          if (points[iP].code === code) return { pid: p.id, iS, iP }
+        }
+      }
+    }
+    return null
+  }
+  const expedition = situer('date-expedition-annoncee')
+  const reception = situer('date-reception-prevue')
+  const rcp = situer('date-rcp')
+
+  if (!expedition || !reception || !rcp) {
+    ko(`parcours sans points codés : ${JSON.stringify({ expedition, reception, rcp })}`)
+  } else {
+    ok('les trois points datés portent un code, comme les règles les désignent')
+
+    const poser = (ou, valeur) => j('PUT', `/api/processus/${ou.pid}/saisies`, {
+      saisies: [{
+        sectionIndex: ou.iS, pointIndex: ou.iP, pointType: 'date',
+        operateurRole: 'op1', obligatoire: true, valeurTexte: valeur
+      }]
+    })
+    const alertes = async () => {
+      const x = await j('GET', `/api/dossiers/${dos}`)
+      return x.corps?.alertes ?? []
+    }
+
+    // Une seule date : la règle ne se prononce pas.
+    await poser(reception, '2026-10-10')
+    const seule = await alertes()
+    seule.length === 0
+      ? ok('une seule date renseignée : aucune règle ne se prononce')
+      : ko('règle déclenchée sur une date isolée')
+
+    // Expédition APRÈS la réception prévue : on ne reçoit pas avant d'expédier.
+    await poser(expedition, '2026-10-25')
+    let a = await alertes()
+    a.some((x) => x.regle === 'EXPEDITION_AVANT_RECEPTION')
+      ? ok('expédition postérieure à la réception : signalée')
+      : ko(`non signalée : ${JSON.stringify(a.map((x) => x.regle))}`)
+
+    /* Les DEUX extrémités sont rendues, pas seulement la fautive : l'écran
+       doit pouvoir marquer les deux cellules, l'opérateur ne sachant pas
+       encore laquelle des deux dates est fausse. */
+    const inc = a.find((x) => x.regle === 'EXPEDITION_AVANT_RECEPTION')
+    inc?.point_avant && inc?.point_apres && inc?.date_avant && inc?.date_apres &&
+    inc?.processus_avant_id && inc?.processus_apres_id
+      ? ok('l\'alerte porte ses deux extrémités, avec leurs dates et leurs processus')
+      : ko(`alerte incomplète : ${JSON.stringify(inc)}`)
+
+    /* UNE RÈGLE PEUT ENJAMBER DEUX PROCESSUS. C'est pour cela qu'elle vit au
+       niveau du parcours et non d'un processus : la RCP est décidée dans un
+       processus, la réception prévue est saisie dans un autre. */
+    await poser(rcp, '2026-11-15')
+    a = await alertes()
+    const croisee = a.find((x) => x.regle === 'RCP_AVANT_RECEPTION')
+    croisee && croisee.processus_avant_id !== croisee.processus_apres_id
+      ? ok('une règle enjambe deux processus et le dit')
+      : ko(`règle croisée absente ou repliée sur un processus : ${JSON.stringify(croisee)}`)
+
+    /* ELLE ALERTE, ELLE N'INTERDIT PAS — décision du 18 septembre. La saisie
+       passe, et le verdict de conformité ignore les incohérences : c'est un
+       jugement pharmaceutique, pas un constat machine. Si ce test échoue, le
+       périmètre a changé. */
+    const c = await j('GET', `/api/dossiers/${dos}/conformite`)
+    c.corps?.incoherences?.length >= 2 &&
+    !c.corps.nonVertes.some((x) => String(x.raison ?? '').includes('date'))
+      ? ok('les incohérences sont rendues À CÔTÉ du verdict, jamais dedans')
+      : ko(`incohérences mêlées au verdict : ${JSON.stringify(c.corps?.nonVertes?.slice(0, 2))}`)
+
+    r = await j('PATCH', `/api/dossiers/${dos}`, { numeroLot: 'DATES-INCOHERENTES' })
+    r.statut === 200
+      ? ok('la saisie reste possible : la règle signale, elle n\'interdit pas')
+      : ko(`la règle bloque la saisie (${r.statut}) — périmètre non voulu`)
+
+    // Le tableau de bord le dit, sans confondre avec une alarme hors seuil.
+    r = await j('GET', '/api/dossiers?statut=en_cours')
+    const ligne = r.corps.find((x) => x.id === dos)
+    ligne?.nbIncoherences === 2 && ligne?.nbAlarmes === 0
+      ? ok('signalées au tableau de bord, distinctes des alarmes hors seuil')
+      : ko(`ligne : ${JSON.stringify({ i: ligne?.nbIncoherences, a: ligne?.nbAlarmes })}`)
+
+    // Corriger les deux dates éteint les deux alertes.
+    await poser(expedition, '2026-10-01')
+    await poser(rcp, '2026-09-01')
+    const apres = await alertes()
+    apres.length === 0
+      ? ok('dates corrigées : plus aucune alerte')
+      : ko(`alertes résiduelles : ${JSON.stringify(apres.map((x) => x.regle))}`)
+  }
+
+  /* Une règle refusée à la PUBLICATION plutôt qu'au moment de la saisie : une
+     alerte qui ne viendrait jamais est plus grave qu'un refus, parce que
+     personne ne la cherche. */
+  r = await j('GET', '/api/modeles/PARCOURS_CART_AUTOLOGUE')
+  const base = r.corps
+  const avec = (regles) => ({ definition: { ...base, regles } })
+  const casDeRefus = [
+    [[{ code: 'X', type: 'ordre_dates', avant: { processus: 'COMMANDE_MTI', point: 'fantome' }, apres: { processus: 'COMMANDE_MTI', point: 'date-reception-prevue' } }],
+      'point inexistant'],
+    [[{ code: 'X', type: 'ordre_dates', avant: { processus: 'ACCES_TRAITEMENT', point: 'date-reception-prevue' }, apres: { processus: 'COMMANDE_MTI', point: 'date-rcp' } }],
+      'point rattaché au mauvais processus'],
+    [[{ code: 'X', type: 'grigri', avant: {}, apres: {} }], 'type de règle inconnu'],
+    [[{ code: 'X', type: 'ordre_dates', avant: { processus: 'COMMANDE_MTI', point: 'date-rcp' }, apres: { processus: 'COMMANDE_MTI', point: 'date-rcp' } }],
+      'les deux bornes sur le même point']
+  ]
+  for (const [regles, quoi] of casDeRefus) {
+    r = await j('POST', '/api/modeles/PARCOURS_CART_AUTOLOGUE/versions', avec(regles))
+    r.statut === 400
+      ? ok(`publication refusée : ${quoi}`)
+      : ko(`${quoi} accepté (${r.statut})`)
+  }
+}
+
 console.log(echec ? '\n✗ Des vérifications ont échoué.' : '\n✓ Toutes les vérifications passent.')
 process.exit(echec ? 1 : 0)

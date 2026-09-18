@@ -94,6 +94,20 @@ réglementaires, pas à des préférences techniques.
   l'asymétrie est voulue — un secours **non renseigné** est le cas normal et ne
   compte pas, un secours **contrôlé** hors seuil ou répondu « non » compte,
   parce qu'il porte sur une unité bien présente au dossier.
+- **Une règle de cohérence ALERTE, elle n'INTERDIT pas.** `mti.incoherences_dates()`
+  rend les règles `ordre_dates` en défaut ; rien n'est empêché — ni la saisie,
+  ni la validation, ni le constat automatique de conformité. Une date peut être
+  légitimement étrange, et un opérateur empêché d'enregistrer un fait réel
+  saisira une fausse date plausible : une date fausse et muette est pire qu'une
+  date vraie et signalée. Les règles vivent dans
+  `modele_parcours.definition.regles`, donc dans la VERSION à laquelle le
+  dossier est rattaché — corriger une règle ne corrige pas les dossiers en
+  cours, c'est voulu. **Une règle désigne ses points par leur `code`**, jamais
+  par leur rang, et une règle dont un point est introuvable est INERTE : elle
+  ne compare rien plutôt que n'importe quoi. Un code de point est unique dans
+  tout le parcours. Les deux extrémités sont rendues, pour que l'écran marque
+  les deux cellules — l'opérateur ne sait pas encore laquelle des deux dates
+  est fausse.
 - **La quarantaine SIGNALE, elle n'INTERDIT rien** — périmètre voulu à ce
   stade : filigrane sur tout l'écran, mention au tableau de bord, et la saisie
   reste possible. Un test le vérifie explicitement ; s'il échoue, c'est que le

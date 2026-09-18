@@ -27,6 +27,9 @@ const TYPES_POINT = ['ouinon', 'valeur', 'photo', 'timer', 'texte', 'auto', 'dat
 function reprochesDefinition (definition) {
   const erreurs = []
   const codesVus = new Set()
+  // Les codes de points sont uniques dans TOUT le parcours, pas seulement dans
+  // leur processus : une règle les désigne sans dire où ils sont.
+  const codesPoints = new Map()
   definition.processus.forEach((p, i) => {
     const ou = `processus ${i + 1}`
     if (!p || typeof p !== 'object') { erreurs.push(`${ou} : objet attendu`); return }
@@ -98,8 +101,93 @@ function reprochesDefinition (definition) {
         if (pt?.kit && !idsKits.has(pt.kit)) {
           erreurs.push(`${ouPt} : kit « ${pt.kit} » absent de la section`)
         }
+        /* Le code d'un point est ce par quoi une RÈGLE le désigne. Deux points
+           portant le même code rendraient la règle ambiguë : elle en
+           comparerait un, et personne ne saurait lequel. */
+        if (pt?.code !== undefined && pt.code !== null) {
+          const code = String(pt.code).trim()
+          if (!code) erreurs.push(`${ouPt} : code vide`)
+          else if (!/^[a-z0-9][a-z0-9-]*$/.test(code)) {
+            erreurs.push(`${ouPt} : code « ${pt.code} » — minuscules, chiffres et tirets`)
+          } else if (codesPoints.has(code)) {
+            erreurs.push(`${ouPt} : code de point « ${code} » en double`)
+          } else {
+            codesPoints.set(code, { processus: p.code, type: pt?.type })
+          }
+        }
       })
     })
+  })
+  erreurs.push(...reprochesRegles(definition, codesPoints))
+  return erreurs
+}
+
+/**
+ * Reproches sur les règles de cohérence du parcours.
+ *
+ * Une règle vit au niveau du PARCOURS, pas d'un processus : elle peut enjamber
+ * deux processus, elle n'appartient donc à aucun. Elle désigne ses points par
+ * leur `code`, jamais par leur rang — retirer l'aphérèse en v3 avait décalé
+ * douze processus, et une règle positionnelle se serait mise, sans rien dire,
+ * à comparer deux autres dates.
+ *
+ * On refuse ici une règle qui désigne un point inexistant. La base, elle, la
+ * rendrait simplement inerte : mieux vaut le dire au moment de la publication,
+ * quand quelqu'un peut encore corriger, qu'au moment de la saisie, où l'alerte
+ * attendue ne viendrait simplement jamais.
+ */
+function reprochesRegles (definition, codesPoints) {
+  const regles = definition.regles
+  if (regles === undefined || regles === null) return []
+  if (!Array.isArray(regles)) return ['« regles » : tableau attendu']
+
+  const erreurs = []
+  const codesVus = new Set()
+  regles.forEach((r, i) => {
+    const ou = `règle ${i + 1}`
+    if (!r || typeof r !== 'object') { erreurs.push(`${ou} : objet attendu`); return }
+
+    const code = String(r.code ?? '').trim()
+    if (!code) erreurs.push(`${ou} : code manquant`)
+    else if (codesVus.has(code)) erreurs.push(`${ou} : code « ${code} » en double`)
+    else codesVus.add(code)
+
+    if (r.type !== 'ordre_dates') {
+      erreurs.push(`${ou} : type de règle inconnu « ${r.type} »`)
+      return
+    }
+
+    for (const borne of ['avant', 'apres']) {
+      const b = r[borne]
+      if (!b || typeof b !== 'object') {
+        erreurs.push(`${ou} : « ${borne} » manquant`)
+        continue
+      }
+      const codeProcessus = String(b.processus ?? '').trim()
+      const codePoint = String(b.point ?? '').trim()
+      if (!codeProcessus || !codePoint) {
+        erreurs.push(`${ou}, ${borne} : processus et point attendus`)
+        continue
+      }
+      const vu = codesPoints.get(codePoint)
+      if (!vu) {
+        erreurs.push(`${ou}, ${borne} : aucun point ne porte le code « ${codePoint} »`)
+      } else if (vu.processus !== codeProcessus) {
+        erreurs.push(`${ou}, ${borne} : le point « ${codePoint} » est dans ` +
+          `« ${vu.processus} », pas dans « ${codeProcessus} »`)
+      } else if (vu.type !== 'date') {
+        /* Une règle d'ordre posée sur un oui/non ne se déclencherait jamais,
+           et son auteur croirait l'alerte armée. */
+        erreurs.push(`${ou}, ${borne} : « ${codePoint} » est de type ` +
+          `« ${vu.type} », une règle de dates attend un point « date »`)
+      }
+    }
+
+    /* Comparer un point à lui-même est toujours vrai ou toujours faux selon
+       la stricte : dans les deux cas la règle ne dit rien. */
+    if (r.avant?.point && r.avant.point === r.apres?.point) {
+      erreurs.push(`${ou} : les deux bornes désignent le même point`)
+    }
   })
   return erreurs
 }

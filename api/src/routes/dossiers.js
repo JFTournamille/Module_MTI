@@ -649,6 +649,7 @@ export default async function dossiers (app) {
               m.code AS code_modele, m.version AS version_modele,
               proc.etape, proc.nb_processus, proc.nb_valides, proc.dernier_valide,
               coalesce(al.nb_alarmes, 0) AS nb_alarmes,
+              coalesce(inc.nb_incoherences, 0) AS nb_incoherences,
               greatest(d.cree_le, d.valide_le, d.clos_le, proc.dernier_valide,
                        al.derniere_saisie) AS derniere_activite
          FROM mti.dossier d
@@ -674,6 +675,13 @@ export default async function dossiers (app) {
              JOIN mti.dossier_processus dp ON dp.id = s.dossier_processus_id
             WHERE dp.dossier_id = d.id
          ) al ON true
+         /* Les incohérences de dates remontent au tableau de bord : une règle
+            qui ne se voit qu'en ouvrant le dossier ne sert qu'à celui qui l'a
+            déjà ouvert. */
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS nb_incoherences
+             FROM mti.incoherences_dates(d.id)
+         ) inc ON true
         ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''}
         ORDER BY derniere_activite DESC NULLS LAST
         LIMIT 200`,
@@ -732,6 +740,10 @@ export default async function dossiers (app) {
         nbValides: r.nb_valides,
         avancement: r.nb_processus ? Math.round((r.nb_valides / r.nb_processus) * 100) : 0,
         nbAlarmes: r.nb_alarmes,
+        /* Distinct des alarmes hors seuil : une incohérence de dates ne dit
+           pas la même chose qu'un relevé de température, et les additionner
+           dans un même compteur rendrait les deux illisibles. */
+        nbIncoherences: r.nb_incoherences,
         codeModele: r.code_modele,
         versionModele: r.version_modele,
         creeLe: r.cree_le,
@@ -826,7 +838,14 @@ export default async function dossiers (app) {
         [saisies.map((s) => s.id)])
       : { rows: [] }
 
-    return { dossier: rows[0], patient, processus, saisies, pieces: photos }
+    /* Les incohérences de dates accompagnent le dossier : l'écran doit
+       pouvoir marquer LES DEUX cellules en cause, pas seulement dire qu'il y a
+       un problème quelque part. Elles ALERTENT, elles n'interdisent rien —
+       aucune écriture n'est empêchée par ce tableau. */
+    const { rows: alertes } = await requete(
+      'SELECT * FROM mti.incoherences_dates($1)', [request.params.id])
+
+    return { dossier: rows[0], patient, processus, saisies, pieces: photos, alertes }
   })
 
   // ── Photos : dépôt, lecture, retrait ─────────────────────────────────────
@@ -1367,10 +1386,22 @@ export default async function dossiers (app) {
          FROM mti.coches_non_vertes($1, $2)`,
       [request.params.id, pid])
 
+    /* Les incohérences de dates sont rendues À CÔTÉ du verdict, jamais
+       dedans. Elles alertent sans interdire : une date peut être légitimement
+       étrange, et c'est un jugement pharmaceutique, pas un constat machine.
+       Mais elles doivent être SOUS LES YEUX de celui qui valide — signaler
+       une incohérence ailleurs que là où se prend la décision reviendrait à
+       ne pas la signaler. */
+    const { rows: incoherences } = await requete(
+      'SELECT * FROM mti.incoherences_dates($1, $2)', [request.params.id, pid])
+
     return {
       nonVertes: rows,
+      incoherences,
       /* Le verdict est rendu par le serveur, pas déduit du tableau par le
-         client : c'est lui qui décidera à la validation. */
+         client : c'est lui qui décidera à la validation. Les incohérences n'y
+         entrent PAS — la règle alerte, elle n'interdit pas, décision du
+         18 septembre. */
       toutVert: rows.length === 0,
       portee: pid ? 'processus' : 'dossier'
     }

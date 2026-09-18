@@ -411,6 +411,19 @@ const blocages = computed(() => {
              un dossier dont l'opérateur ne voit qu'un onzième à l'écran.
              Le verdict vient du serveur (`store.coches`) : le recalculer ici
              donnerait deux réponses qui divergeraient. -->
+        <!-- L'incohérence de dates est À CÔTÉ du verdict, jamais dedans : elle
+             alerte sans interdire, donc elle ne peut pas entrer dans un
+             décompte de « points à traiter » — mais elle doit être sous les
+             yeux de celui qui valide. Signalée ailleurs que là où se prend la
+             décision, elle ne serait pas signalée. -->
+        <div v-if="store.incoherences.length" class="conf-alerte"
+             :title="store.incoherences.map((i) => i.message).join('\n')">
+          <span>⚠</span>
+          <span class="ca-t">
+            <strong>{{ store.incoherences.length }} incohérence(s) de dates</strong>
+            <span class="ca-d">{{ store.incoherences[0].message }}</span>
+          </span>
+        </div>
         <div class="conf-grp" :class="{ 'conf-vert': store.coches.charge && store.coches.toutVert,
                                         'conf-rouge': store.coches.nonVertes.length > 0 }">
           <template v-if="store.coches.charge && store.coches.toutVert">

@@ -188,7 +188,8 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
             </tr>
 
             <template v-else>
-              <tr class="crow">
+              <!-- Une règle de cohérence ALERTE, elle n'interdit pas. -->
+              <tr class="crow" :class="{ 'lg-alerte': store.alertesLigne(ligne).length }">
                 <td class="c">
                   <button
                     class="etoile"
@@ -219,6 +220,13 @@ const uniteMulti = (multi) => (multi === 'photo' ? 'photo(s)' : 'cuve(s)')
                   <!-- Les marqueurs du point, en pastilles sous le libellé :
                        ils qualifient le point, pas la saisie. -->
                   <div class="cflags">
+                    <!-- L'alerte est dans les pastilles du point, avec sa
+                         cause au survol : un pictogramme seul dirait qu'il y a
+                         un problème sans dire lequel. -->
+                    <span v-if="store.alertesLigne(ligne).length" class="tagl tagl-alerte"
+                          :title="store.alertesLigne(ligne).join('\n')">
+                      ⚠ incohérence de dates
+                    </span>
                     <span v-if="ligne.point.doubleValidation" class="tagl tagl-dbl"
                           title="Point soumis à double validation : contresigné par une 2e personne">
                       👥 2 pers.

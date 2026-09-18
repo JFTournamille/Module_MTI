@@ -1380,6 +1380,14 @@ export const useParcours = defineStore('parcours', () => {
   const coches = reactive({ nonVertes: [], toutVert: false, charge: false })
   const cochesDossier = reactive({ nonVertes: [], toutVert: false, charge: false })
 
+  /* Les incohérences de dates sont tenues À PART des coches, et jamais
+     fondues dedans : elles ALERTENT sans interdire. Les compter avec les
+     points obligatoires ferait dire au pied de page « 3 points à traiter »
+     alors qu'aucun n'attend une saisie — et bloquerait de fait ce qui a été
+     décidé comme un simple signalement. */
+  const incoherences = ref([])
+  const incoherencesDossier = ref([])
+
   async function chargerCoches (cible, processusId) {
     if (!dossierId.value) { cible.charge = false; return }
     const q = processusId ? `?processus=${encodeURIComponent(processusId)}` : ''
@@ -1390,12 +1398,53 @@ export const useParcours = defineStore('parcours', () => {
       cible.nonVertes = d.nonVertes ?? []
       cible.toutVert = d.toutVert === true
       cible.charge = true
+      const alertes = d.incoherences ?? []
+      if (processusId) incoherences.value = alertes
+      else incoherencesDossier.value = alertes
     } catch {
       /* Hors ligne : on ne prétend pas que tout est vert. `charge` reste faux
          et l'écran demande une conclusion à la main. */
       cible.charge = false
       cible.toutVert = false
     }
+  }
+
+  /**
+   * Cellules en cause dans une incohérence, indexées par clé de saisie.
+   *
+   * Les DEUX extrémités sont marquées, pas seulement la date la plus tardive :
+   * l'opérateur qui regarde l'une doit voir qu'elle est en défaut avec
+   * l'autre, sans savoir laquelle des deux est fausse — c'est justement ce
+   * qu'il est en train de décider. « L'alerte se déclenche à la saisie de
+   * l'une comme de l'autre », demande du 17 septembre.
+   */
+  const cellulesIncoherentes = computed(() => {
+    const index = new Map()
+    const marquer = (processusId, libelle, exemplaire, secours, message) => {
+      const idx = processusIds.value.indexOf(processusId)
+      if (idx < 0) return
+      /* La clé se reconstruit depuis le LIBELLÉ du point, la fonction SQL ne
+         rendant pas les index de section : c'est le libellé qui est affiché,
+         donc celui qui permet de retrouver la ligne à l'écran. */
+      const cle = `${idx}|${libelle}|${exemplaire}|${secours ? 's' : 'n'}`
+      const deja = index.get(cle) ?? []
+      index.set(cle, [...deja, message])
+    }
+    for (const a of incoherencesDossier.value) {
+      marquer(a.processus_avant_id, a.point_avant, a.exemplaire_avant,
+        a.secours_avant, a.message)
+      marquer(a.processus_apres_id, a.point_apres, a.exemplaire_apres,
+        a.secours_apres, a.message)
+    }
+    return index
+  })
+
+  /** Motifs d'alerte portés par une ligne affichée, ou un tableau vide. */
+  const alertesLigne = (ligne) => {
+    if (ligne?.point?.type !== 'date') return []
+    const cle = `${selection.value}|${ligne.point.libelle}|${ligne.exemplaire}` +
+      `|${ligne.secours ? 's' : 'n'}`
+    return cellulesIncoherentes.value.get(cle) ?? []
   }
 
   /** Rafraîchit les deux portées. À appeler après toute écriture de saisie. */
@@ -1456,6 +1505,7 @@ export const useParcours = defineStore('parcours', () => {
     basculerPreallocation, choisirPatient, processusIdentification,
     urlPiece, deposerPiece, retirerPiece,
     coches, cochesDossier, rafraichirCoches, conformiteAutomatiquePossible,
+    incoherences, incoherencesDossier, alertesLigne,
     pointsIncomplets, arreterHorloge
   }
 })

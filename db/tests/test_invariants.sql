@@ -737,6 +737,139 @@ BEGIN
   END;
 END $$;
 
+\echo ''
+\echo 'TEST 23 — Une règle de dates alerte, et ne désigne ses points que par leur code'
+DO $$
+DECLARE
+  v_auteur  uuid;
+  v_modele  uuid;
+  v_dossier uuid;
+  v_p1      uuid;
+  v_p2      uuid;
+  v_n       integer;
+  v_def     jsonb;
+BEGIN
+  SELECT id INTO v_auteur FROM mti.utilisateur WHERE actif LIMIT 1;
+
+  -- Un parcours de test portant UNE règle, et deux points datés qui la portent.
+  INSERT INTO mti.modele_parcours (code, version, libelle, definition, actif)
+  VALUES ('TEST_REGLES', 1, 'Parcours de test', jsonb_build_object(
+    'regles', jsonb_build_array(jsonb_build_object(
+      'code', 'DEPART_AVANT_ARRIVEE', 'type', 'ordre_dates',
+      'libelle', 'Départ avant arrivée',
+      'avant', jsonb_build_object('processus', 'P1', 'point', 'date-depart'),
+      'apres', jsonb_build_object('processus', 'P2', 'point', 'date-arrivee'),
+      'message', 'Le départ est postérieur à l''arrivée.'))), false)
+  RETURNING id INTO v_modele;
+
+  INSERT INTO mti.dossier (reference, modele_parcours_id, cree_par)
+  VALUES ('TEST-REGLE-1', v_modele, v_auteur) RETURNING id INTO v_dossier;
+
+  v_def := jsonb_build_object('sections', jsonb_build_array(jsonb_build_object(
+    'titre', 'S', 'points', jsonb_build_array(
+      jsonb_build_object('libelle', 'Bouchon', 'type', 'ouinon'),
+      jsonb_build_object('libelle', 'Date de départ', 'type', 'date',
+                         'code', 'date-depart')))));
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, definition)
+  VALUES (v_dossier, 1, 'P1', 'Départ', v_def) RETURNING id INTO v_p1;
+
+  INSERT INTO mti.dossier_processus (dossier_id, ordre, code, nom, definition)
+  VALUES (v_dossier, 2, 'P2', 'Arrivée', jsonb_build_object(
+    'sections', jsonb_build_array(jsonb_build_object(
+      'titre', 'S', 'points', jsonb_build_array(
+        jsonb_build_object('libelle', 'Date d''arrivée', 'type', 'date',
+                           'code', 'date-arrivee'))))))
+  RETURNING id INTO v_p2;
+
+  -- Sans les deux dates, la règle ne se prononce pas : une date manquante est
+  -- un point non saisi, pas une incohérence.
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : règle déclenchée sans les deux dates (%)', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ une date manquante n''est pas une incohérence';
+
+  INSERT INTO mti.saisie (dossier_processus_id, section_index, point_index,
+                          point_type, valeur_texte, operateur_id)
+  VALUES (v_p1, 0, 1, 'date', '2026-05-20', v_auteur),
+         (v_p2, 0, 0, 'date', '2026-05-10', v_auteur);
+
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : départ après arrivée non signalé (%)', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ départ après arrivée : signalé, avec sa cause';
+
+  -- Dates remises dans l'ordre : plus rien à signaler.
+  UPDATE mti.saisie SET valeur_texte = '2026-05-01'
+   WHERE dossier_processus_id = v_p1;
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : dates remises dans l''ordre encore signalées (%)', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ dates remises dans l''ordre : plus d''alerte';
+
+  /* LE POINT QUI COMPTE. Un point RENOMMÉ ne casse pas la règle — c'est le
+     code qui la porte. Un point dont le CODE disparaît la rend inerte, et
+     c'est voulu : elle ne compare rien plutôt que de comparer n'importe quoi.
+     Retirer l'aphérèse en v3 avait décalé douze processus ; une règle
+     positionnelle se serait mise, sans rien dire, à comparer deux autres
+     dates. */
+  UPDATE mti.saisie SET valeur_texte = '2026-05-20'
+   WHERE dossier_processus_id = v_p1;
+  UPDATE mti.dossier_processus
+     SET definition = jsonb_set(definition, '{sections,0,points,1,libelle}',
+                                '"Date de départ (renommée)"')
+   WHERE id = v_p1;
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : renommer un point a cassé la règle (%)', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ renommer un point ne casse pas la règle : c''est le code qui porte';
+
+  UPDATE mti.dossier_processus
+     SET definition = definition #- '{sections,0,points,1,code}'
+   WHERE id = v_p1;
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : règle encore active alors que son point n''a plus de code (%)', v_n;
+  END IF;
+  RAISE NOTICE '  ✓ un point sans code rend la règle INERTE, pas approximative';
+
+  -- Une date illisible ne fait échouer aucune requête.
+  UPDATE mti.saisie SET valeur_texte = 'pas une date'
+   WHERE dossier_processus_id = v_p2;
+  PERFORM count(*) FROM mti.incoherences_dates(v_dossier);
+  RAISE NOTICE '  ✓ une date illisible ne fait pas échouer la lecture';
+
+  /* ELLE ALERTE, ELLE N'INTERDIT PAS — décision du 18 septembre, et le seul
+     point de ce test qui dit le PÉRIMÈTRE plutôt que le mécanisme. Une
+     incohérence ne pèse pas sur la conformité, et le dossier reste validable.
+     S'il échoue un jour, c'est que le périmètre a changé : vérifier que
+     c'était voulu.
+
+     Remis en état d'abord — la validation fige, on ne peut pas revenir en
+     arrière après (`interdire_devalidation`), donc c'est le dernier geste. */
+  UPDATE mti.dossier_processus
+     SET definition = jsonb_set(definition, '{sections,0,points,1,code}', '"date-depart"')
+   WHERE id = v_p1;
+  UPDATE mti.saisie SET valeur_texte = '2026-05-10' WHERE dossier_processus_id = v_p2;
+  SELECT count(*) INTO v_n FROM mti.incoherences_dates(v_dossier);
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'ÉCHEC : incohérence attendue avant la validation (%)', v_n;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM mti.coches_non_vertes(v_dossier);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'ÉCHEC : une incohérence de dates pèse sur la conformité (%)', v_n;
+  END IF;
+  UPDATE mti.dossier
+     SET statut = 'valide', conformite = 'conforme', conformite_automatique = true,
+         valide_par = v_auteur, valide_le = now()
+   WHERE id = v_dossier;
+  RAISE NOTICE '  ✓ elle alerte sans interdire : le dossier reste validable';
+END $$;
+
 -- Les traces produites par les tests disparaissent avec la transaction ; celles
 -- déjà présentes en base restent, l'audit étant append-only par construction.
 ROLLBACK;
